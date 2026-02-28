@@ -259,9 +259,7 @@ pub async fn basic_validator(
                 Err(_) => {
                     warn!(user = %credentials.user_id(), "Unknown user attempted authentication");
                     return Err((
-                        actix_web::error::ErrorUnauthorized(
-                            json!({"error":"Unauthorized access"}),
-                        ),
+                        actix_web::error::ErrorUnauthorized(json!({"error":"Unauthorized access"})),
                         req,
                     ));
                 }

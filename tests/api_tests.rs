@@ -12,6 +12,13 @@ use actix_web::{test, web::Data, App};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use breakfast::{models::*, routes::routes};
 use serde_json::{json, Value};
+use std::net::SocketAddr;
+
+/// Fake peer address for test requests (required by actix-governor's PeerIpKeyExtractor).
+const PEER: SocketAddr = SocketAddr::new(
+    std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+    12345,
+);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -67,6 +74,7 @@ async fn login_admin(
 ) -> Auth {
     let req = test::TestRequest::post()
         .uri("/auth")
+        .peer_addr(PEER)
         .insert_header((
             "Authorization",
             format!("Basic {}", STANDARD.encode("admin@admin.com:Very Secret")),
@@ -121,6 +129,7 @@ async fn auth_rejects_wrong_password() {
 
     let req = test::TestRequest::post()
         .uri("/auth")
+        .peer_addr(PEER)
         .insert_header((
             "Authorization",
             format!(
@@ -142,6 +151,7 @@ async fn auth_rejects_unknown_user() {
 
     let req = test::TestRequest::post()
         .uri("/auth")
+        .peer_addr(PEER)
         .insert_header((
             "Authorization",
             format!("Basic {}", STANDARD.encode("unknown@example.com:anything")),
@@ -254,6 +264,7 @@ async fn refresh_token_rejects_access_token() {
     // Try using the access token on /auth/refresh — should be rejected
     let req = test::TestRequest::post()
         .uri("/auth/refresh")
+        .peer_addr(PEER)
         .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
         .to_request();
 
@@ -280,6 +291,7 @@ async fn refresh_token_issues_new_pair() {
     // Use the refresh token to get a new pair
     let req = test::TestRequest::post()
         .uri("/auth/refresh")
+        .peer_addr(PEER)
         .insert_header(("Authorization", format!("Bearer {}", auth.refresh_token)))
         .to_request();
 
@@ -306,6 +318,7 @@ async fn old_refresh_token_is_revoked_after_rotation() {
     // Use refresh token → old one should be revoked
     let req = test::TestRequest::post()
         .uri("/auth/refresh")
+        .peer_addr(PEER)
         .insert_header(("Authorization", format!("Bearer {}", auth.refresh_token)))
         .to_request();
 
@@ -315,6 +328,7 @@ async fn old_refresh_token_is_revoked_after_rotation() {
     // Try using the old refresh token again — should fail
     let req2 = test::TestRequest::post()
         .uri("/auth/refresh")
+        .peer_addr(PEER)
         .insert_header(("Authorization", format!("Bearer {}", auth.refresh_token)))
         .to_request();
 
@@ -396,6 +410,7 @@ async fn full_lifecycle() {
     // 3. Refresh tokens
     let req = test::TestRequest::post()
         .uri("/auth/refresh")
+        .peer_addr(PEER)
         .insert_header(("Authorization", format!("Bearer {}", auth.refresh_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -442,9 +457,13 @@ async fn login_user(
 ) -> Auth {
     let req = test::TestRequest::post()
         .uri("/auth")
+        .peer_addr(PEER)
         .insert_header((
             "Authorization",
-            format!("Basic {}", STANDARD.encode(format!("{}:Very Secret", email))),
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:Very Secret", email))
+            ),
         ))
         .to_request();
     let resp = test::call_service(app, req).await;

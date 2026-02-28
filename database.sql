@@ -155,19 +155,19 @@ INSERT INTO roles (title)
   VALUES ('Guest');
 
 INSERT INTO users (firstname, lastname, email, PASSWORD)
-  VALUES ('admin', 'root', 'admin@admin.com', '$argon2id$v=19$m=19456,t=2,p=1$VmVyeSBTZWNyZXQ$BT6JB0Qi7yrvPmQXFxNS8CeegXoTZQ1x6yEDplbjR7A');
+  VALUES ('admin', 'root', 'admin@admin.com', '$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQxMjM0NTY$y8G3TwVWPtVgPT/SfBZY08vUClR99BeLYo3HHqJ5v8I');
 
 INSERT INTO users (firstname, lastname, email, PASSWORD)
-  VALUES ('U1_F', 'U1_L', 'U1_F.U1_L@LEGO.com', '$argon2id$v=19$m=19456,t=2,p=1$VmVyeSBTZWNyZXQ$BT6JB0Qi7yrvPmQXFxNS8CeegXoTZQ1x6yEDplbjR7A');
+  VALUES ('U1_F', 'U1_L', 'U1_F.U1_L@LEGO.com', '$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQxMjM0NTY$y8G3TwVWPtVgPT/SfBZY08vUClR99BeLYo3HHqJ5v8I');
 
 INSERT INTO users (firstname, lastname, email, PASSWORD)
-  VALUES ('U2_F', 'U2_L', 'U2_F.U2_L@LEGO.com', '$argon2id$v=19$m=19456,t=2,p=1$VmVyeSBTZWNyZXQ$BT6JB0Qi7yrvPmQXFxNS8CeegXoTZQ1x6yEDplbjR7A');
+  VALUES ('U2_F', 'U2_L', 'U2_F.U2_L@LEGO.com', '$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQxMjM0NTY$y8G3TwVWPtVgPT/SfBZY08vUClR99BeLYo3HHqJ5v8I');
 
 INSERT INTO users (firstname, lastname, email, PASSWORD)
-  VALUES ('U3_F', 'U3_L', 'U3_F.U3_L@LEGO.com', '$argon2id$v=19$m=19456,t=2,p=1$VmVyeSBTZWNyZXQ$BT6JB0Qi7yrvPmQXFxNS8CeegXoTZQ1x6yEDplbjR7A');
+  VALUES ('U3_F', 'U3_L', 'U3_F.U3_L@LEGO.com', '$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQxMjM0NTY$y8G3TwVWPtVgPT/SfBZY08vUClR99BeLYo3HHqJ5v8I');
 
 INSERT INTO users (firstname, lastname, email, PASSWORD)
-  VALUES ('U4_F', 'U4_L', 'U4_F.U4_L@LEGO.com', '$argon2id$v=19$m=19456,t=2,p=1$VmVyeSBTZWNyZXQ$BT6JB0Qi7yrvPmQXFxNS8CeegXoTZQ1x6yEDplbjR7A');
+  VALUES ('U4_F', 'U4_L', 'U4_F.U4_L@LEGO.com', '$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQxMjM0NTY$y8G3TwVWPtVgPT/SfBZY08vUClR99BeLYo3HHqJ5v8I');
 
 INSERT INTO items (descr, price)
   VALUES ('håndværker', '9.00');
