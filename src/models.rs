@@ -129,6 +129,8 @@ pub struct UpdateUserRequest {
     pub password: Option<String>,
 }
 
+// Signature uses `&String` because the `validator` crate passes the inner type of Option<String> by reference.
+#[allow(clippy::ptr_arg)]
 fn validate_optional_password(password: &String) -> Result<(), validator::ValidationError> {
     if password.len() < 8 {
         let mut err = validator::ValidationError::new("password");
