@@ -1,7 +1,7 @@
 use crate::{errors::Error, models::*};
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2,
+    password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
 };
 use deadpool_postgres::Client;
 use tokio_pg_mapper::FromTokioPostgresRow;
@@ -639,6 +639,30 @@ pub async fn delete_team_orders(client: &Client, team_id: Uuid) -> Result<u64, E
 }
 
 // ── Memberof management ────────────────────────────────────────────────────
+
+/// Check whether the user holds the "Admin" role in any team.
+pub async fn is_admin(client: &Client, user_id: Uuid) -> Result<bool, Error> {
+    let statement = client
+        .prepare(
+            r#"
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM memberof m
+                    JOIN roles r ON r.role_id = m.memberof_role_id
+                    WHERE m.memberof_user_id = $1 AND r.title = 'Admin'
+                ) AS is_admin
+            "#,
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    let row = client
+        .query_one(&statement, &[&user_id])
+        .await
+        .map_err(Error::Db)?;
+
+    Ok(row.get("is_admin"))
+}
 
 pub async fn get_member_role(
     client: &Client,

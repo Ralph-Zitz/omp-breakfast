@@ -97,6 +97,7 @@ tests/
 - Token revocation uses an in-memory `flurry::HashMap` blacklist (not persisted)
 - Auth cache uses TTL (5min) and max-size (1000 entries) with LRU-style eviction
 - RBAC: JWT claims are stored in request extensions; user mutation handlers (update_user, delete_user, delete_user_by_email) check `claims.sub` matches target user
+- Global Admin RBAC: `require_admin` helper in `handlers/mod.rs` checks if the user holds the "Admin" role in any team (via `db::is_admin`); gates team create/update/delete
 - Team RBAC: `require_team_member` and `require_team_admin` helpers in `handlers/mod.rs` gate team-scoped mutations
 - `Error::Forbidden` variant maps to HTTP 403 for authorization failures
 - Production safety: server panics at startup if JWT secret is still the default value when `ENV=production`
@@ -202,6 +203,7 @@ When asked to **assess the project** (or "project assessment"), perform the foll
    - `dependency-check` — analyze Cargo dependencies for freshness, redundancy, and compatibility
    - `openapi-sync` — validate OpenAPI spec against routes and frontend API usage
    - `practices-audit` — audit code against conventions documented in this file
+   - `rbac-rules` — audit RBAC enforcement against the documented role policy table
    - `review` — full code review (idioms, error handling, duplication, dead code)
    - `security-audit` — JWT/auth, input validation, secrets, TLS, Docker, frontend security
    - `test-gaps` — identify missing test coverage and suggest specific new tests
@@ -228,7 +230,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### Backend
 
 - 35 unit tests across `errors`, `middleware::auth`, and `validate` modules
-- 23 integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 26 integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - No tests for `db.rs` functions (they require a live DB connection)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs ignored tests, then tears down)

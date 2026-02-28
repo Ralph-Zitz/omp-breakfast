@@ -5,7 +5,7 @@ pub mod teams;
 pub mod users;
 
 use crate::{db, errors::Error, models::*};
-use actix_web::{web::Data, HttpMessage, HttpRequest, HttpResponse, Responder};
+use actix_web::{HttpMessage, HttpRequest, HttpResponse, Responder, web::Data};
 use deadpool_postgres::{Client, Pool};
 use tracing::{error, instrument};
 use uuid::Uuid;
@@ -34,6 +34,17 @@ pub async fn require_team_member(
     match db::get_member_role(client, team_id, user_id).await? {
         Some(_) => Ok(()),
         None => Err(Error::Forbidden("Team membership required".to_string())),
+    }
+}
+
+/// Require the requesting user to hold the "Admin" role in any team (global admin check).
+pub async fn require_admin(client: &Client, req: &HttpRequest) -> Result<(), Error> {
+    let user_id = requesting_user_id(req)
+        .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+    if db::is_admin(client, user_id).await? {
+        Ok(())
+    } else {
+        Err(Error::Forbidden("Admin role required".to_string()))
     }
 }
 

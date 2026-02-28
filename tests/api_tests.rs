@@ -689,20 +689,25 @@ async fn non_member_cannot_create_team_order() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // admin is not a member of any team
-    let auth: Auth = login_admin(&app).await;
+    // U1_F is a member of "League of Cool Coders" but NOT "Pixel Bakers"
+    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
     let token = &auth.access_token;
 
-    // Get teams
+    // Get teams to find "Pixel Bakers"
     let req = test::TestRequest::get()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let teams: Vec<Value> = test::read_body_json(resp).await;
-    let team_id = teams[0]["team_id"].as_str().unwrap();
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap();
 
-    // Try to create order → should be 403 (not a member)
+    // Try to create order → should be 403 (not a member of Pixel Bakers)
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
@@ -714,6 +719,94 @@ async fn non_member_cannot_create_team_order() {
         403,
         "non-member should not create team orders"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Team RBAC: admin-only team CRUD
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn non_admin_cannot_create_team() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U1_F is a Member, not an Admin
+    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let token = &auth.access_token;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"tname": "Forbidden Team", "descr": "Should not be created"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "non-admin should not be able to create teams"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn non_admin_cannot_delete_team() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U1_F is a Member, not an Admin
+    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let token = &auth.access_token;
+
+    // Get teams
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let team_id = teams[0]["team_id"].as_str().unwrap();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "non-admin should not be able to delete teams"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn admin_can_create_and_delete_team() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // admin@admin.com is an Admin of "League of Cool Coders"
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Create a team
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"tname": "Temp Admin Team", "descr": "Created by admin"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201, "admin should be able to create teams");
+    let team: Value = test::read_body_json(resp).await;
+    let team_id = team["team_id"].as_str().unwrap();
+
+    // Delete the team
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "admin should be able to delete teams");
 }
 
 // ---------------------------------------------------------------------------

@@ -191,6 +191,20 @@ FROM
   teams,
   roles
 WHERE
+  firstname = 'admin'
+  AND teams.tname = 'League of Cool Coders'
+  AND roles.title = 'Admin';
+
+INSERT INTO memberof (memberof_team_id, memberof_user_id, memberof_role_id)
+SELECT
+  team_id,
+  user_id,
+  role_id
+FROM
+  users,
+  teams,
+  roles
+WHERE
   firstname = 'U1_F'
   AND teams.tname = 'League of Cool Coders'
   AND roles.title = 'Member';

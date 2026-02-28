@@ -54,11 +54,12 @@ pub async fn get_team(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
     responses(
         (status = 201, description = "Team created", body = TeamEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 409, description = "Team already exists", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn create_team(
     state: Data<State>,
     json: Json<CreateTeamEntry>,
@@ -66,6 +67,7 @@ pub async fn create_team(
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
     let client: Client = get_client(state.pool.clone()).await?;
+    require_admin(&client, &req).await?;
     let team = db::create_team(&client, json.into_inner()).await?;
     let mut response = HttpResponse::Created();
     if let Ok(url) = req.url_for("/teams/team_id", [team.team_id.to_string()]) {
@@ -80,6 +82,7 @@ pub async fn create_team(
     responses(
         (status = 200, description = "Team deleted successfully", body = DeletedResponse),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 404, description = "Team not deleted", body = DeletedResponse),
     ),
     params(
@@ -91,7 +94,7 @@ pub async fn create_team(
 pub async fn delete_team(state: Data<State>, tid: Path<Uuid>, req: HttpRequest) -> Result<impl Responder, Error> {
     let team_id = tid.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
-    require_team_admin(&client, &req, team_id).await?;
+    require_admin(&client, &req).await?;
     let deleted = db::delete_team(&client, team_id).await?;
     if deleted {
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
@@ -107,6 +110,7 @@ pub async fn delete_team(state: Data<State>, tid: Path<Uuid>, req: HttpRequest) 
     responses(
         (status = 200, description = "Team updated successfully", body = TeamEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 404, description = "Team not updated", body = ErrorResponse),
     ),
     params(
@@ -124,7 +128,7 @@ pub async fn update_team(
     validate(&json)?;
     let team_id = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
-    require_team_admin(&client, &req, team_id).await?;
+    require_admin(&client, &req).await?;
     let team = db::update_team(&client, team_id, json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(team))
 }
