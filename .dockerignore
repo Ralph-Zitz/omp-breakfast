@@ -1,4 +1,6 @@
 target
+frontend/target
+frontend/dist
 Dockerfile
 .dockerignore
 .gitignore

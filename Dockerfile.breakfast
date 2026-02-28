@@ -40,8 +40,18 @@ COPY --from=cacher /usr/local/cargo /usr/local/cargo
 RUN cargo build --release
 RUN strip -s /app/target/release/breakfast
 
-# Stage 4 - Copy binary and settings to final container
+# Stage 4 - build frontend (WASM via Trunk)
+FROM rust:1.93.1 AS frontend-builder
+RUN rustup target add wasm32-unknown-unknown
+RUN cargo install trunk
+WORKDIR /frontend
+# Copy only the frontend crate for better layer caching
+COPY frontend/ .
+RUN trunk build --release
+
+# Stage 5 - Copy binary, frontend, and settings to final container
 FROM gcr.io/distroless/cc-debian13
+WORKDIR /app
 COPY --from=builder --chown=web:web /app/target/release/breakfast /usr/local/bin/breakfast
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group
@@ -55,5 +65,7 @@ COPY --chown=web:web localhost_ca.pem /localhost_ca.pem
 COPY localhost_ca.pem /etc/ssl/certs/
 COPY --chown=web:web rds-ca-2019-root.pem /rds-ca-2019-root.pem
 COPY rds-ca-2019-root.pem /etc/ssl/certs/
+# Copy built frontend assets
+COPY --from=frontend-builder --chown=web:web /frontend/dist /app/frontend/dist
 USER web:web
 CMD ["breakfast"]
