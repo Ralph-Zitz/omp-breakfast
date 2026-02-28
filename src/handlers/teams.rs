@@ -8,7 +8,6 @@ use crate::{
 use actix_web::{
     http::header, web::Data, web::Json, web::Path, HttpRequest, HttpResponse, Responder,
 };
-use deadpool_postgres::Client;
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -148,78 +147,61 @@ pub async fn team_users(state: Data<State>, path: Path<Uuid>) -> Result<impl Res
     Ok(HttpResponse::Ok().json(users))
 }
 
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(_state), level = "debug")]
 pub async fn get_team_orders(
-    state: Data<State>,
+    _state: Data<State>,
     _team_id: Path<Uuid>,
 ) -> Result<impl Responder, Error> {
-    let _client: Client = get_client(state.pool.clone()).await?;
     Ok(HttpResponse::NotImplemented().json(ErrorResponse {
         error: "Not Implemented".to_string(),
     }))
 }
 
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(_state), level = "debug")]
 pub async fn get_team_order(
-    state: Data<State>,
-    _team_id: Path<Uuid>,
+    _state: Data<State>,
+    _path: Path<(Uuid, Uuid)>,
 ) -> Result<impl Responder, Error> {
-    let _client: Client = get_client(state.pool.clone()).await?;
     Ok(HttpResponse::NotImplemented().json(ErrorResponse {
         error: "Not Implemented".to_string(),
     }))
 }
 
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(_state), level = "debug")]
 pub async fn create_team_order(
-    state: Data<State>,
+    _state: Data<State>,
     _team_id: Path<Uuid>,
-    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
-    let _client: Client = get_client(state.pool.clone()).await?;
-    Ok(HttpResponse::NotImplemented()
-        .append_header((
-            header::LOCATION,
-            req.url_for("/teams/team_id/orders", ["NotImplemented"])
-                .unwrap()
-                .as_str(),
-        ))
-        .json(ErrorResponse {
-            error: "Not Implemented".to_string(),
-        }))
+    Ok(HttpResponse::NotImplemented().json(ErrorResponse {
+        error: "Not Implemented".to_string(),
+    }))
 }
 
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(_state), level = "debug")]
 pub async fn delete_team_order(
-    state: Data<State>,
-    _team_id: Path<Uuid>,
-    _order_id: Path<Uuid>,
+    _state: Data<State>,
+    _path: Path<(Uuid, Uuid)>,
 ) -> Result<impl Responder, Error> {
-    let _client: Client = get_client(state.pool.clone()).await?;
     Ok(HttpResponse::NotImplemented().json(ErrorResponse {
         error: "Not Implemented".to_string(),
     }))
 }
 
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(_state), level = "debug")]
 pub async fn delete_team_orders(
-    state: Data<State>,
+    _state: Data<State>,
     _team_id: Path<Uuid>,
-    _order_id: Path<Uuid>,
 ) -> Result<impl Responder, Error> {
-    let _client: Client = get_client(state.pool.clone()).await?;
     Ok(HttpResponse::NotImplemented().json(ErrorResponse {
         error: "Not Implemented".to_string(),
     }))
 }
 
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(_state), level = "debug")]
 pub async fn update_team_order(
-    state: Data<State>,
-    _team_id: Path<Uuid>,
-    _order_id: Path<Uuid>,
+    _state: Data<State>,
+    _path: Path<(Uuid, Uuid)>,
 ) -> Result<impl Responder, Error> {
-    let _client: Client = get_client(state.pool.clone()).await?;
     Ok(HttpResponse::NotImplemented().json(ErrorResponse {
         error: "Not Implemented".to_string(),
     }))

@@ -2,7 +2,7 @@ use crate::{
     db::get_user, db::get_user_by_email, errors::Error, handlers::get_client, models::Auth,
     models::Claims, models::State,
 };
-use actix_web::{dev::ServiceRequest, web::block, web::Data};
+use actix_web::{dev::ServiceRequest, web::Data};
 use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
 use argon2::{
     password_hash::{PasswordHash, PasswordVerifier},
@@ -42,41 +42,34 @@ fn generate_token(
 
 #[instrument(skip(jwt_secret), level = "debug")]
 pub async fn generate_token_pair(user_id: Uuid, jwt_secret: String) -> Result<Auth, Error> {
-    let auth = block(move || {
-        let access_token = generate_token(
-            user_id,
-            &jwt_secret,
-            "access",
-            Duration::try_minutes(ACCESS_TOKEN_DURATION_MINUTES).expect("valid duration"),
-        )?;
-        let refresh_token = generate_token(
-            user_id,
-            &jwt_secret,
-            "refresh",
-            Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration"),
-        )?;
-        Ok::<Auth, jsonwebtoken::errors::Error>(Auth {
-            access_token,
-            refresh_token,
-            token_type: "Bearer".to_string(),
-            expires_in: ACCESS_TOKEN_DURATION_MINUTES * 60,
-        })
+    let access_token = generate_token(
+        user_id,
+        &jwt_secret,
+        "access",
+        Duration::try_minutes(ACCESS_TOKEN_DURATION_MINUTES).expect("valid duration"),
+    )
+    .map_err(Error::Jwt)?;
+    let refresh_token = generate_token(
+        user_id,
+        &jwt_secret,
+        "refresh",
+        Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration"),
+    )
+    .map_err(Error::Jwt)?;
+    Ok(Auth {
+        access_token,
+        refresh_token,
+        token_type: "Bearer".to_string(),
+        expires_in: ACCESS_TOKEN_DURATION_MINUTES * 60,
     })
-    .await
-    .map_err(|e| Error::Argonautica(format!("blocking error: {e}")))?;
-    Ok(auth?)
 }
 
 #[instrument(skip(jwt_secret), level = "debug")]
 pub async fn verify_jwt(token: String, jwt_secret: String) -> Result<TokenData<Claims>, Error> {
-    let result = block(move || {
-        let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
-        let validation = Validation::default();
-        decode::<Claims>(&token, &decoding_key, &validation)
-    })
-    .await
-    .map_err(|e| Error::Argonautica(format!("blocking error: {e}")))?;
-    Ok(result?)
+    let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
+    let validation = Validation::default();
+    let result = decode::<Claims>(&token, &decoding_key, &validation)?;
+    Ok(result)
 }
 
 pub fn revoke_token(state: &Data<State>, jti: &str) {
@@ -98,11 +91,20 @@ pub async fn jwt_validator(
     req: ServiceRequest,
     credentials: BearerAuth,
 ) -> Result<ServiceRequest, (actix_web::Error, ServiceRequest)> {
-    let state = req.app_data::<Data<State>>().unwrap();
-    let client = get_client(state.pool.clone())
-        .await
-        .map_err(|err| (err, &req))
-        .unwrap();
+    let state = req
+        .app_data::<Data<State>>()
+        .expect("State must be configured");
+    let client = match get_client(state.pool.clone()).await {
+        Ok(c) => c,
+        Err(_) => {
+            return Err((
+                actix_web::error::ErrorInternalServerError(
+                    json!({"error":"Database connection error"}),
+                ),
+                req,
+            ));
+        }
+    };
     let jwt_secret = &state.jwtsecret;
     let claims = verify_jwt(credentials.token().to_string(), jwt_secret.clone()).await;
     if let Ok(c) = claims {
@@ -142,7 +144,9 @@ pub async fn refresh_validator(
     req: ServiceRequest,
     credentials: BearerAuth,
 ) -> Result<ServiceRequest, (actix_web::Error, ServiceRequest)> {
-    let state = req.app_data::<Data<State>>().unwrap();
+    let state = req
+        .app_data::<Data<State>>()
+        .expect("State must be configured");
     let jwt_secret = &state.jwtsecret;
     let claims = verify_jwt(credentials.token().to_string(), jwt_secret.clone()).await;
     if let Ok(c) = claims {
@@ -181,23 +185,60 @@ pub async fn basic_validator(
     req: ServiceRequest,
     credentials: BasicAuth,
 ) -> Result<ServiceRequest, (actix_web::Error, ServiceRequest)> {
-    let state = req.app_data::<Data<State>>().unwrap();
+    let state = req
+        .app_data::<Data<State>>()
+        .expect("State must be configured");
     let cache = &state.cache;
-    let client = get_client(state.pool.clone()).await.unwrap();
-    let user = match cache.pin().get(&credentials.user_id().to_string()) {
-        Some(u) => u.to_owned(),
+    let client = match get_client(state.pool.clone()).await {
+        Ok(c) => c,
+        Err(_) => {
+            return Err((
+                actix_web::error::ErrorInternalServerError(
+                    json!({"error":"Database connection error"}),
+                ),
+                req,
+            ));
+        }
+    };
+    let user = {
+        let guard = cache.pin();
+        guard.get(&credentials.user_id().to_string()).map(|u| u.to_owned())
+    };
+    let user = match user {
+        Some(u) => u,
         None => {
-            let u = get_user_by_email(&client, credentials.user_id())
-                .await
-                .unwrap();
-            cache
-                .pin()
-                .insert(credentials.user_id().to_string(), u.clone());
-            u
+            match get_user_by_email(&client, credentials.user_id()).await {
+                Ok(u) => {
+                    cache
+                        .pin()
+                        .insert(credentials.user_id().to_string(), u.clone());
+                    u
+                }
+                Err(_) => {
+                    warn!(user = %credentials.user_id(), "Unknown user attempted authentication");
+                    return Err((
+                        actix_web::error::ErrorUnauthorized(
+                            json!({"error":"Unauthorized access"}),
+                        ),
+                        req,
+                    ));
+                }
+            }
         }
     };
     if let Some(pswd) = credentials.password() {
-        let parsed_hash = PasswordHash::new(&user.password).unwrap();
+        let parsed_hash = match PasswordHash::new(&user.password) {
+            Ok(h) => h,
+            Err(_) => {
+                warn!(user = %credentials.user_id(), "Malformed password hash in database");
+                return Err((
+                    actix_web::error::ErrorInternalServerError(
+                        json!({"error":"Internal server error"}),
+                    ),
+                    req,
+                ));
+            }
+        };
         match Argon2::default().verify_password(pswd.as_bytes(), &parsed_hash) {
             Ok(_) => Ok(req),
             Err(_) => {
@@ -408,5 +449,32 @@ mod tests {
     async fn is_token_revoked_returns_false_for_unknown() {
         let state = test_state();
         assert!(!is_token_revoked(&state, "nonexistent-jti"));
+    }
+
+    // -- Cache invalidation --
+
+    #[actix_web::test]
+    async fn invalidate_cache_removes_existing_entry() {
+        let state = test_state();
+        let user = crate::models::UpdateUserEntry {
+            user_id: Uuid::now_v7(),
+            firstname: "Test".to_string(),
+            lastname: "User".to_string(),
+            email: "test@example.com".to_string(),
+            password: "password123".to_string(),
+        };
+        state.cache.pin().insert("test@example.com".to_string(), user);
+        assert!(state.cache.pin().contains_key("test@example.com"));
+
+        let removed = invalidate_cache(state.clone(), "test@example.com");
+        assert!(removed);
+        assert!(!state.cache.pin().contains_key("test@example.com"));
+    }
+
+    #[actix_web::test]
+    async fn invalidate_cache_returns_false_for_missing_key() {
+        let state = test_state();
+        let removed = invalidate_cache(state, "nonexistent@example.com");
+        assert!(!removed);
     }
 }

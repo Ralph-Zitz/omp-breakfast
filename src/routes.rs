@@ -11,6 +11,7 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 pub fn routes(cfg: &mut ServiceConfig) {
     let basic_auth = HttpAuthentication::basic(basic_validator);
     let jwt_auth = HttpAuthentication::bearer(jwt_validator);
+    let jwt_auth_revoke = HttpAuthentication::bearer(jwt_validator);
     let refresh_auth = HttpAuthentication::bearer(refresh_validator);
 
     cfg
@@ -29,17 +30,23 @@ pub fn routes(cfg: &mut ServiceConfig) {
                 .wrap(Compat::new(refresh_auth))
                 .route(post().to(refresh_token)),
         )
-        .route("/auth/revoke", post().to(revoke_user_token))
+        .service(
+            resource("/auth/revoke")
+                .name("auth_revoke")
+                .wrap(Compat::new(jwt_auth_revoke))
+                .route(post().to(revoke_user_token)),
+        )
         .service(
             scope("/api/v1.0")
                 .wrap(Compat::new(jwt_auth))
+                .app_data(JsonConfig::default().error_handler(json_error_handler))
+                .app_data(PathConfig::default().error_handler(path_error_handler))
                 .service(
                     resource("/users")
                         .name("/users")
                         .route(get().to(get_users))
                         .route(post().to(create_user)),
                 )
-                .app_data(JsonConfig::default().error_handler(json_error_handler))
                 .service(
                     scope("/users")
                         .service(
@@ -60,14 +67,12 @@ pub fn routes(cfg: &mut ServiceConfig) {
                                 .route(delete().to(delete_user_by_email)),
                         ),
                 )
-                .app_data(PathConfig::default().error_handler(path_error_handler))
                 .service(
                     resource("/teams")
                         .name("/teams")
                         .route(get().to(get_teams))
                         .route(post().to(create_team)),
                 )
-                .app_data(JsonConfig::default().error_handler(json_error_handler))
                 .service(
                     scope("/teams")
                         .service(
@@ -97,14 +102,12 @@ pub fn routes(cfg: &mut ServiceConfig) {
                                 .route(get().to(team_users)),
                         ),
                 )
-                .app_data(PathConfig::default().error_handler(path_error_handler))
                 .service(
                     resource("/roles")
                         .name("/roles")
                         .route(get().to(get_roles))
                         .route(post().to(create_role)),
                 )
-                .app_data(JsonConfig::default().error_handler(json_error_handler))
                 .service(
                     scope("/roles").service(
                         resource("/{role_id}")
@@ -113,7 +116,6 @@ pub fn routes(cfg: &mut ServiceConfig) {
                             .route(delete().to(delete_role))
                             .route(put().to(update_role)),
                     ),
-                )
-                .app_data(PathConfig::default().error_handler(path_error_handler)),
+                ),
         );
 }

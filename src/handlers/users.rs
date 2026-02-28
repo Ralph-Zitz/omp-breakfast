@@ -160,7 +160,7 @@ pub async fn create_user(
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
     let client: Client = get_client(state.pool.clone()).await?;
-    let user = db::create_user(&client, json.into_inner(), state.secret.clone()).await?;
+    let user = db::create_user(&client, json.into_inner()).await?;
     Ok(HttpResponse::Created()
         .append_header((
             header::LOCATION,

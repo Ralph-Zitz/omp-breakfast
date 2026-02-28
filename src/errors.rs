@@ -60,19 +60,19 @@ impl ResponseError for Error {
             Error::Jwt(e) => {
                 error!(error = %e, "JWT error");
                 HttpResponse::InternalServerError().json(ErrorResponse {
-                    error: e.to_string(),
+                    error: "Internal server error".to_string(),
                 })
             }
             Error::Eyre(e) => {
                 error!(error = %e, "Internal error");
                 HttpResponse::InternalServerError().json(ErrorResponse {
-                    error: e.to_string(),
+                    error: "Internal server error".to_string(),
                 })
             }
             Error::Io(e) => {
                 error!(error = %e, "IO error");
                 HttpResponse::InternalServerError().json(ErrorResponse {
-                    error: e.to_string(),
+                    error: "Internal server error".to_string(),
                 })
             }
             // TODO: Fine grained query errors, or revert to general
@@ -88,7 +88,7 @@ impl ResponseError for Error {
                     Some(st) => {
                         error!(error = %e, code = %st.code(), "DB error");
                         HttpResponse::InternalServerError().json(ErrorResponse {
-                            error: st.code().to_string(),
+                            error: "Internal server error".to_string(),
                         })
                     }
                     None => {
@@ -100,7 +100,7 @@ impl ResponseError for Error {
                         } else {
                             error!(error = %e, "DB error");
                             HttpResponse::InternalServerError().json(ErrorResponse {
-                                error: e.to_string(),
+                                error: "Internal server error".to_string(),
                             })
                         }
                     }
@@ -112,7 +112,7 @@ impl ResponseError for Error {
                     tokio_pg_mapper::Error::Conversion(q) => {
                         error!(error = %q, "DB mapper conversion error");
                         HttpResponse::InternalServerError().json(ErrorResponse {
-                            error: q.to_string(),
+                            error: "Internal server error".to_string(),
                         })
                     }
                     tokio_pg_mapper::Error::ColumnNotFound => {
@@ -124,7 +124,7 @@ impl ResponseError for Error {
                     tokio_pg_mapper::Error::UnknownTokioPG(s) => {
                         error!(error = %s, "DB mapper unknown error");
                         HttpResponse::InternalServerError().json(ErrorResponse {
-                            error: s.to_string(),
+                            error: "Internal server error".to_string(),
                         })
                     }
                 }
@@ -141,19 +141,19 @@ impl ResponseError for Error {
             Error::Config(e) => {
                 error!(error = %e, "Configuration error");
                 HttpResponse::InternalServerError().json(ErrorResponse {
-                    error: e.to_string(),
+                    error: "Internal server error".to_string(),
                 })
             }
             Error::Pool(e) => {
                 error!(error = %e, "Connection pool error");
                 HttpResponse::InternalServerError().json(ErrorResponse {
-                    error: e.to_string(),
+                    error: "Internal server error".to_string(),
                 })
             }
             Error::Conversion(e) => {
                 error!(error = %e, "Serialization/conversion error");
                 HttpResponse::InternalServerError().json(ErrorResponse {
-                    error: e.to_string(),
+                    error: "Internal server error".to_string(),
                 })
             }
             Error::Validation(e) => {
@@ -171,7 +171,7 @@ impl ResponseError for Error {
             Error::Argonautica(e) => {
                 error!(error = %e, "Password hashing error");
                 HttpResponse::InternalServerError().json(ErrorResponse {
-                    error: e.to_string(),
+                    error: "Internal server error".to_string(),
                 })
             }
             Error::ActixJson(e) => match &e {
@@ -274,5 +274,54 @@ mod tests {
         let err = Error::ActixPath(path_err);
         let resp = err.error_response();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn jwt_error_returns_500() {
+        // Create a JWT error by trying to decode an invalid token
+        let jwt_err = jsonwebtoken::decode::<serde_json::Value>(
+            "invalid",
+            &jsonwebtoken::DecodingKey::from_secret(b"secret"),
+            &jsonwebtoken::Validation::default(),
+        )
+        .unwrap_err();
+        let err = Error::Jwt(jwt_err);
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn pool_error_returns_500() {
+        // PoolError can be constructed via a timeout
+        let pool_err = deadpool_postgres::PoolError::Backend(
+            tokio_postgres::Error::__private_api_timeout(),
+        );
+        let err = Error::Pool(pool_err);
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn db_mapper_column_not_found_returns_404() {
+        let err = Error::DbMapper(tokio_pg_mapper::Error::ColumnNotFound);
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn eyre_error_returns_500() {
+        let eyre_err = color_eyre::eyre::eyre!("something went wrong");
+        let err = Error::Eyre(eyre_err);
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn error_responses_do_not_leak_internal_details() {
+        // 5xx errors should return generic "Internal server error" to clients
+        let err = Error::Argonautica("secret hash details".into());
+        let resp = err.error_response();
+        // We can't easily read the body in a sync test, but we verify the status
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

@@ -337,6 +337,7 @@ async fn revoke_endpoint_invalidates_access_token() {
     // Revoke the access token via /auth/revoke
     let req = test::TestRequest::post()
         .uri("/auth/revoke")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
         .set_json(json!({"token": auth.access_token}))
         .to_request();
 
@@ -359,8 +360,11 @@ async fn revoke_endpoint_rejects_invalid_token() {
     let state = test_state().await;
     let app = test_app!(state);
 
+    let auth: Auth = login_admin(&app).await;
+
     let req = test::TestRequest::post()
         .uri("/auth/revoke")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
         .set_json(json!({"token": "not.a.real.token"}))
         .to_request();
 
@@ -409,6 +413,7 @@ async fn full_lifecycle() {
     // 5. Revoke the new access token
     let req = test::TestRequest::post()
         .uri("/auth/revoke")
+        .insert_header(("Authorization", format!("Bearer {}", new_auth.access_token)))
         .set_json(json!({"token": new_auth.access_token}))
         .to_request();
     let resp = test::call_service(&app, req).await;

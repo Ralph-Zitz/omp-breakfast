@@ -1,9 +1,11 @@
 # omp-breakfast — Project Context
 
 ## Overview
+
 A breakfast ordering REST API for teams, built in Rust with actix-web. Users belong to teams via roles, teams can place breakfast orders composed of items. The project is used internally at LEGO (FabuLab).
 
 ## Tech Stack
+
 - **Language:** Rust 2021 edition
 - **Web framework:** actix-web 4 (with rustls TLS)
 - **Database:** PostgreSQL via `deadpool-postgres` connection pool + `tokio-postgres`
@@ -16,6 +18,7 @@ A breakfast ordering REST API for teams, built in Rust with actix-web. Users bel
 - **TLS:** rustls with local certs (mkcert) for both the web server and DB connections
 
 ## Build & Run
+
 ```bash
 cargo build                    # compile
 cargo test                     # run unit tests only (integration tests auto-skip)
@@ -29,7 +32,8 @@ make db-down                   # stop and remove test DB
 ```
 
 ## Project Structure
-```
+
+```text
 src/
   main.rs          – Entry point, calls server()
   server.rs        – Server setup: TLS, tracing, DB pool, HTTP server
@@ -58,6 +62,7 @@ tests/
 ```
 
 ## Key Conventions
+
 - Every handler returns `Result<impl Responder, Error>` using the custom `errors::Error` enum
 - DB functions take a `&Client` and return `Result<T, Error>`, using `.map_err(Error::Db)?` pattern
 - All handlers are instrumented with `#[instrument(skip(state), level = "debug")]`
@@ -69,11 +74,13 @@ tests/
 - Config is layered: default.yml → environment.yml → env vars (separator: `_`)
 
 ## Unfinished Work
+
 - Team order endpoints in `handlers/teams.rs` are stubs returning `NotImplemented`
 - The `items` and `teamorders` and `orders` tables exist in `database.sql` but have no corresponding models, db functions, or handlers in Rust code
 - No `items` CRUD endpoints exist
 
 ## Testing
+
 - 27 unit tests across `errors`, `middleware::auth`, and `validate` modules
 - 15 integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - No tests for `db.rs` functions (they require a live DB connection)

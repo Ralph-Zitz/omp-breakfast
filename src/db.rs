@@ -1,6 +1,6 @@
 use crate::{errors::Error, models::*};
 use argon2::{
-    password_hash::{PasswordHasher, SaltString},
+    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2,
 };
 use deadpool_postgres::Client;
@@ -57,11 +57,7 @@ pub async fn get_user_by_email(client: &Client, email: &str) -> Result<UpdateUse
         .map_err(Error::DbMapper)
 }
 
-pub async fn create_user(
-    client: &Client,
-    user: CreateUserEntry,
-    sc: String,
-) -> Result<UserEntry, Error> {
+pub async fn create_user(client: &Client, user: CreateUserEntry) -> Result<UserEntry, Error> {
     let statement = client
         .prepare(
             r#"
@@ -73,7 +69,7 @@ pub async fn create_user(
         .await
         .map_err(Error::Db)?;
 
-    let salt = SaltString::encode_b64(sc.as_bytes()).unwrap();
+    let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default()
         .hash_password(user.password.as_bytes(), &salt)
         .map_err(|err| Error::Argonautica(err.to_string()))?
@@ -97,23 +93,23 @@ pub async fn update_user(
         .prepare(
             r#"
                update users set firstname = $1, lastname = $2, email = $3, password = $4
-               where uid = $5
+               where user_id = $5
                returning user_id, firstname, lastname, email, created, changed
             "#,
         )
         .await
         .map_err(Error::Db)?;
 
+    let salt = SaltString::generate(&mut OsRng);
+    let hash = Argon2::default()
+        .hash_password(user.password.as_bytes(), &salt)
+        .map_err(|err| Error::Argonautica(err.to_string()))?
+        .to_string();
+
     client
         .query_one(
             &statement,
-            &[
-                &user.firstname,
-                &user.lastname,
-                &user.email,
-                &user.password,
-                &uid,
-            ],
+            &[&user.firstname, &user.lastname, &user.email, &hash, &uid],
         )
         .await
         .map(UserEntry::from_row)?

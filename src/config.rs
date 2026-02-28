@@ -1,5 +1,5 @@
 use config::{Config, ConfigError, Environment, File};
-use git_version::git_describe;
+use git_version::git_version;
 use serde::Deserialize;
 use std::env;
 use tracing::instrument;
@@ -37,10 +37,11 @@ impl Settings {
         let cfg = Config::builder()
             .add_source(File::with_name("config/default"))
             .add_source(File::with_name(&format!("config/{}", env)).required(false))
-            .add_source(Environment::default().separator("_"))
+            .add_source(Environment::with_prefix("BREAKFAST").separator("_"))
             .build()?;
         let mut settings: Settings = cfg.try_deserialize()?;
-        settings.server.git_version = git_describe!("--tags").to_string();
+        settings.server.git_version =
+            git_version!(args = ["--tags", "--always"], fallback = "unknown").to_string();
         Ok(settings)
     }
 }
