@@ -128,6 +128,41 @@ The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via 
 - Token is stored in `localStorage` under the key `access_token`
 - HTTP requests use `gloo_net::http::Request` (wraps `window.fetch`)
 
+## Frontend Roadmap
+
+The frontend will evolve from login + dashboard into a full-featured SPA. This section captures planned layout, navigation, pages, and UI requirements.
+
+### Layout
+
+- **Sidebar + main content area:** A collapsible sidebar on the left provides navigation; the main content panel fills the remaining space
+- The sidebar should show the app branding/logo at the top, navigation links in the middle, and the logged-in user's name + logout button at the bottom
+- On mobile viewports the sidebar collapses into a hamburger menu overlay
+
+### Navigation
+
+- Continue using the signal-based `Page` enum approach (no router crate)
+- Extend the `Page` enum with variants for each new page (e.g., `Teams`, `Orders`, `Items`, `Profile`, `Admin`, `Roles`)
+- Active page is highlighted in the sidebar
+- Unauthorized pages (e.g., `Admin`) should not appear in the sidebar for non-admin users
+
+### Planned Pages
+
+1. **Team Management** — Create, view, and edit teams; add/remove members; assign team roles
+2. **Order Management** — Create and view team orders; add, edit, and remove order line items; show order totals
+3. **Item Catalog** — Browse available breakfast items with descriptions and prices; admin users can create, edit, and delete items
+4. **User Profile** — View and edit own profile details; change password
+5. **Admin Dashboard** — Admin-only view for managing all users and assigning roles; not visible to non-admin users
+6. **Role Management** — View and assign roles (admin-gated)
+
+### UI / UX Requirements
+
+- **Theming:** Support both light and dark mode; respect the user's OS/browser `prefers-color-scheme` preference, with a manual toggle in the sidebar or top bar
+- **Responsive design:** Mobile-first CSS; must render correctly on iPhone 13 and later (Safari, ≥ 390px viewport width)
+- **Toast notifications:** Non-blocking success/error toasts for CRUD operations (e.g., "Item created", "Failed to delete team")
+- **Confirmation modals:** Destructive actions (delete user, remove team member, delete order) require a confirmation dialog before executing
+- **Loading states:** Show skeleton loaders or spinners while fetching data from the API
+- **Form validation:** Client-side validation with inline error messages before submission; mirror backend `validator` rules where applicable
+
 ## Markdown Style Rules
 
 When creating or editing `.md` files (including `.claude/commands/*.md`), follow these rules to avoid markdownlint warnings:
@@ -182,9 +217,11 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ## Unfinished Work
 
-- Frontend only has login + dashboard pages; no order management UI yet
-- No client-side routing library (manual signal-based page switching)
+- Frontend only has login + dashboard pages; remaining pages are tracked in the **Frontend Roadmap** section
+- No client-side routing library (manual signal-based page switching, by design)
 - Frontend does not yet consume the team, role, item, or order APIs
+- Dark/light mode toggle not yet implemented
+- Toast notifications and confirmation modals not yet implemented
 
 ## Testing
 
