@@ -1,5 +1,5 @@
 use crate::errors::{json_error_handler, path_error_handler};
-use crate::handlers::{roles::*, teams::*, users::*, *};
+use crate::handlers::{items::*, roles::*, teams::*, users::*, *};
 use crate::middleware::auth::{basic_validator, jwt_validator, refresh_validator};
 use crate::middleware::openapi::*;
 use actix_web::{
@@ -99,8 +99,30 @@ pub fn routes(cfg: &mut ServiceConfig) {
                         .service(
                             resource("/{team_id}/users")
                                 .name("/teams/team_id/users")
-                                .route(get().to(team_users)),
+                                .route(get().to(team_users))
+                                .route(post().to(add_team_member)),
+                        )
+                        .service(
+                            resource("/{team_id}/users/{user_id}")
+                                .name("/teams/team_id/users/user_id")
+                                .route(delete().to(remove_team_member))
+                                .route(put().to(update_member_role)),
                         ),
+                )
+                .service(
+                    resource("/items")
+                        .name("/items")
+                        .route(get().to(get_items))
+                        .route(post().to(create_item)),
+                )
+                .service(
+                    scope("/items").service(
+                        resource("/{item_id}")
+                            .name("/items/item_id")
+                            .route(get().to(get_item))
+                            .route(delete().to(delete_item))
+                            .route(put().to(update_item)),
+                    ),
                 )
                 .service(
                     resource("/roles")

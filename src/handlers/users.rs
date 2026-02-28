@@ -9,7 +9,8 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    http::header, web::Data, web::Json, web::Path, HttpRequest, HttpResponse, Responder,
+    http::header, web::Data, web::Json, web::Path, HttpMessage, HttpRequest, HttpResponse,
+    Responder,
 };
 use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
 use deadpool_postgres::Client;
@@ -64,8 +65,8 @@ pub async fn get_user(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
 #[instrument(skip(state), level = "debug")]
 pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Responder, Error> {
     let cache = &state.cache;
-    if let Some(user) = cache.pin().get(&basic.user_id().to_string()) {
-        let auth = generate_token_pair(user.user_id, state.jwtsecret.clone()).await?;
+    if let Some(cached) = cache.pin().get(&basic.user_id().to_string()) {
+        let auth = generate_token_pair(cached.user.user_id, state.jwtsecret.clone()).await?;
         Ok(HttpResponse::Ok().json(auth))
     } else {
         Ok(HttpResponse::Unauthorized().json("Unauthorized"))
@@ -123,6 +124,7 @@ pub async fn refresh_token(
         (status = 200, description = "Token revoked successfully", body = StatusResponse),
         (status = 400, description = "Invalid token", body = ErrorResponse),
     ),
+    security(("bearer_auth" = [])),
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn revoke_user_token(
@@ -184,10 +186,31 @@ pub async fn create_user(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
-pub async fn delete_user(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
+#[instrument(skip(state, req), level = "debug")]
+pub async fn delete_user(
+    state: Data<State>,
+    path: Path<Uuid>,
+    req: HttpRequest,
+) -> Result<impl Responder, Error> {
+    let uid = path.into_inner();
+
+    // RBAC: only the user themselves can delete their account
+    if let Some(claims) = req.extensions().get::<Claims>() {
+        if claims.sub != uid {
+            return Ok(HttpResponse::Forbidden().json(ErrorResponse {
+                error: "You can only delete your own account".to_string(),
+            }));
+        }
+    }
+
     let client: Client = get_client(state.pool.clone()).await?;
-    let deleted = db::delete_user(&client, path.into_inner()).await?;
+
+    // Fetch user email before deletion to invalidate the auth cache
+    if let Ok(user) = db::get_user(&client, uid).await {
+        invalidate_cache(state.clone(), &user.email);
+    }
+
+    let deleted = db::delete_user(&client, uid).await?;
     if deleted {
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
     } else {
@@ -225,7 +248,7 @@ pub async fn delete_user_by_email(
 #[utoipa::path(
     put,
     path = "/api/v1.0/users/{id}",
-    request_body = UpdateUserEntry,
+    request_body = UpdateUserRequest,
     responses(
         (status = 200, description = "User updated successfully", body = UserEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
@@ -233,19 +256,31 @@ pub async fn delete_user_by_email(
     ),
     params(
         ("id", description = "Unique UUID of the User"),
-        UpdateUserEntry
+        UpdateUserRequest
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn update_user(
     state: Data<State>,
     path: Path<Uuid>,
-    json: Json<UpdateUserEntry>,
+    json: Json<UpdateUserRequest>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
+    let uid = path.into_inner();
+
+    // RBAC: only the user themselves can update their account
+    if let Some(claims) = req.extensions().get::<Claims>() {
+        if claims.sub != uid {
+            return Ok(HttpResponse::Forbidden().json(ErrorResponse {
+                error: "You can only update your own account".to_string(),
+            }));
+        }
+    }
+
     validate(&json)?;
     let client: Client = get_client(state.pool.clone()).await?;
-    let user = db::update_user(&client, path.into_inner(), json.into_inner()).await?;
+    let user = db::update_user(&client, uid, json.into_inner()).await?;
     invalidate_cache(state, &user.email);
     Ok(HttpResponse::Ok().json(user))
 }

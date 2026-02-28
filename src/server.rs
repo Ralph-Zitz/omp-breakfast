@@ -133,6 +133,15 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     let host = settings.server.host.clone();
     let port = settings.server.port;
 
+    // C1: Reject the default JWT secret in production
+    let is_prod = env::var("ENV").unwrap_or_default() == "production";
+    if is_prod && settings.server.jwtsecret == "Very Secret" {
+        panic!("FATAL: JWT secret must be changed from the default value in production. Set BREAKFAST_SERVER_JWTSECRET environment variable.");
+    }
+    if !is_prod && settings.server.jwtsecret == "Very Secret" {
+        warn!("Using default JWT secret — acceptable for development only");
+    }
+
     // Database pool
     let pool = settings
         .pg

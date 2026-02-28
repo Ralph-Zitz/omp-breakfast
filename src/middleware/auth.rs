@@ -1,7 +1,8 @@
 use crate::{
     db::get_user, db::get_user_by_email, errors::Error, handlers::get_client, models::Auth,
-    models::Claims, models::State,
+    models::CachedUser, models::Claims, models::State,
 };
+use actix_web::HttpMessage;
 use actix_web::{dev::ServiceRequest, web::Data};
 use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
 use argon2::{
@@ -18,6 +19,10 @@ use uuid::Uuid;
 const ACCESS_TOKEN_DURATION_MINUTES: i64 = 15;
 // Refresh token lifetime: 7 days
 const REFRESH_TOKEN_DURATION_DAYS: i64 = 7;
+// Auth cache TTL: 5 minutes
+const CACHE_TTL_SECONDS: i64 = 300;
+// Auth cache maximum entries
+const CACHE_MAX_SIZE: usize = 1000;
 
 #[instrument(skip(jwt_secret), level = "debug")]
 fn generate_token(
@@ -127,7 +132,10 @@ pub async fn jwt_validator(
             ));
         }
         match get_user(&client, c.claims.sub).await {
-            Ok(_) => Ok(req),
+            Ok(_) => {
+                req.extensions_mut().insert(c.claims);
+                Ok(req)
+            }
             Err(e) => Err((actix_web::error::ErrorUnauthorized(e), req)),
         }
     } else {
@@ -202,16 +210,50 @@ pub async fn basic_validator(
     };
     let user = {
         let guard = cache.pin();
-        guard.get(&credentials.user_id().to_string()).map(|u| u.to_owned())
+        guard
+            .get(&credentials.user_id().to_string())
+            .filter(|cached| {
+                // TTL check: reject entries older than CACHE_TTL_SECONDS
+                (Utc::now() - cached.cached_at).num_seconds() < CACHE_TTL_SECONDS
+            })
+            .map(|cached| cached.user.clone())
     };
+    // Evict expired entry if TTL expired
+    if user.is_none() {
+        let guard = cache.pin();
+        if let Some(cached) = guard.get(&credentials.user_id().to_string()) {
+            if (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS {
+                guard.remove(&credentials.user_id().to_string());
+            }
+        }
+    }
     let user = match user {
         Some(u) => u,
         None => {
+            // Enforce max cache size before inserting
+            if cache.pin().len() >= CACHE_MAX_SIZE {
+                // Evict oldest entries
+                let guard = cache.pin();
+                let mut entries: Vec<(String, i64)> = guard
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.cached_at.timestamp()))
+                    .collect();
+                entries.sort_by_key(|(_, ts)| *ts);
+                // Remove oldest 10% to avoid evicting on every request
+                let to_remove = (CACHE_MAX_SIZE / 10).max(1);
+                for (key, _) in entries.into_iter().take(to_remove) {
+                    guard.remove(&key);
+                }
+            }
             match get_user_by_email(&client, credentials.user_id()).await {
                 Ok(u) => {
-                    cache
-                        .pin()
-                        .insert(credentials.user_id().to_string(), u.clone());
+                    cache.pin().insert(
+                        credentials.user_id().to_string(),
+                        CachedUser {
+                            user: u.clone(),
+                            cached_at: Utc::now(),
+                        },
+                    );
                     u
                 }
                 Err(_) => {
@@ -463,7 +505,13 @@ mod tests {
             email: "test@example.com".to_string(),
             password: "password123".to_string(),
         };
-        state.cache.pin().insert("test@example.com".to_string(), user);
+        state.cache.pin().insert(
+            "test@example.com".to_string(),
+            CachedUser {
+                user,
+                cached_at: Utc::now(),
+            },
+        );
         assert!(state.cache.pin().contains_key("test@example.com"));
 
         let removed = invalidate_cache(state.clone(), "test@example.com");

@@ -60,13 +60,23 @@ impl Modify for SecurityAddon {
         teams::delete_team,
         teams::update_team,
         teams::team_users,
-        // Team Orders (stubs)
+        // Team Orders
         teams::get_team_orders,
         teams::get_team_order,
         teams::create_team_order,
         teams::delete_team_order,
         teams::delete_team_orders,
         teams::update_team_order,
+        // Team Members
+        teams::add_team_member,
+        teams::remove_team_member,
+        teams::update_member_role,
+        // Items
+        items::get_items,
+        items::get_item,
+        items::create_item,
+        items::delete_item,
+        items::update_item,
         // Roles
         roles::get_roles,
         roles::get_role,
@@ -81,6 +91,7 @@ impl Modify for SecurityAddon {
         UserEntry,
         UserInTeams,
         UpdateUserEntry,
+        UpdateUserRequest,
         DeletedResponse,
         CreateUserEntry,
         ErrorResponse,
@@ -91,6 +102,14 @@ impl Modify for SecurityAddon {
         RoleEntry,
         CreateRoleEntry,
         UpdateRoleEntry,
+        ItemEntry,
+        CreateItemEntry,
+        UpdateItemEntry,
+        TeamOrderEntry,
+        CreateTeamOrderEntry,
+        UpdateTeamOrderEntry,
+        AddMemberEntry,
+        UpdateMemberRoleEntry,
     ))
 )]
 pub(crate) struct ApiDoc;

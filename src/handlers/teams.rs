@@ -151,32 +151,31 @@ pub async fn team_users(state: Data<State>, path: Path<Uuid>) -> Result<impl Res
     get,
     path = "/api/v1.0/teams/{team_id}/orders",
     responses(
-        (status = 200, description = "List of orders for the team", body = [ErrorResponse]),
+        (status = 200, description = "List of orders for the team", body = [TeamOrderEntry]),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 501, description = "Not implemented", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team")
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(_state), level = "debug")]
+#[instrument(skip(state), level = "debug")]
 pub async fn get_team_orders(
-    _state: Data<State>,
-    _team_id: Path<Uuid>,
+    state: Data<State>,
+    team_id: Path<Uuid>,
 ) -> Result<impl Responder, Error> {
-    Ok(HttpResponse::NotImplemented().json(ErrorResponse {
-        error: "Not Implemented".to_string(),
-    }))
+    let client: Client = get_client(state.pool.clone()).await?;
+    let orders = db::get_team_orders(&client, team_id.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(orders))
 }
 
 #[utoipa::path(
     get,
     path = "/api/v1.0/teams/{team_id}/orders/{order_id}",
     responses(
-        (status = 200, description = "Order found", body = ErrorResponse),
+        (status = 200, description = "Order found", body = TeamOrderEntry),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 501, description = "Not implemented", body = ErrorResponse),
+        (status = 404, description = "Order not found", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team"),
@@ -184,46 +183,50 @@ pub async fn get_team_orders(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(_state), level = "debug")]
+#[instrument(skip(state), level = "debug")]
 pub async fn get_team_order(
-    _state: Data<State>,
-    _path: Path<(Uuid, Uuid)>,
+    state: Data<State>,
+    path: Path<(Uuid, Uuid)>,
 ) -> Result<impl Responder, Error> {
-    Ok(HttpResponse::NotImplemented().json(ErrorResponse {
-        error: "Not Implemented".to_string(),
-    }))
+    let (team_id, order_id) = path.into_inner();
+    let client: Client = get_client(state.pool.clone()).await?;
+    let order = db::get_team_order(&client, team_id, order_id).await?;
+    Ok(HttpResponse::Ok().json(order))
 }
 
 #[utoipa::path(
     post,
     path = "/api/v1.0/teams/{team_id}/orders",
+    request_body = CreateTeamOrderEntry,
     responses(
-        (status = 201, description = "Order created", body = ErrorResponse),
+        (status = 201, description = "Order created", body = TeamOrderEntry),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 501, description = "Not implemented", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team")
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(_state), level = "debug")]
+#[instrument(skip(state), level = "debug")]
 pub async fn create_team_order(
-    _state: Data<State>,
-    _team_id: Path<Uuid>,
+    state: Data<State>,
+    team_id: Path<Uuid>,
+    json: Json<CreateTeamOrderEntry>,
 ) -> Result<impl Responder, Error> {
-    Ok(HttpResponse::NotImplemented().json(ErrorResponse {
-        error: "Not Implemented".to_string(),
-    }))
+    validate(&json)?;
+    let client: Client = get_client(state.pool.clone()).await?;
+    let order =
+        db::create_team_order(&client, team_id.into_inner(), json.into_inner()).await?;
+    Ok(HttpResponse::Created().json(order))
 }
 
 #[utoipa::path(
     delete,
     path = "/api/v1.0/teams/{team_id}/orders/{order_id}",
     responses(
-        (status = 200, description = "Order deleted", body = ErrorResponse),
+        (status = 200, description = "Order deleted", body = DeletedResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 501, description = "Not implemented", body = ErrorResponse),
+        (status = 404, description = "Order not found", body = DeletedResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team"),
@@ -231,46 +234,53 @@ pub async fn create_team_order(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(_state), level = "debug")]
+#[instrument(skip(state), level = "debug")]
 pub async fn delete_team_order(
-    _state: Data<State>,
-    _path: Path<(Uuid, Uuid)>,
+    state: Data<State>,
+    path: Path<(Uuid, Uuid)>,
 ) -> Result<impl Responder, Error> {
-    Ok(HttpResponse::NotImplemented().json(ErrorResponse {
-        error: "Not Implemented".to_string(),
-    }))
+    let (team_id, order_id) = path.into_inner();
+    let client: Client = get_client(state.pool.clone()).await?;
+    let deleted = db::delete_team_order(&client, team_id, order_id).await?;
+    if deleted {
+        Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
+    } else {
+        Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
+    }
 }
 
 #[utoipa::path(
     delete,
     path = "/api/v1.0/teams/{team_id}/orders",
     responses(
-        (status = 200, description = "All orders for team deleted", body = ErrorResponse),
+        (status = 200, description = "All orders for team deleted", body = DeletedResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 501, description = "Not implemented", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team")
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(_state), level = "debug")]
+#[instrument(skip(state), level = "debug")]
 pub async fn delete_team_orders(
-    _state: Data<State>,
-    _team_id: Path<Uuid>,
+    state: Data<State>,
+    team_id: Path<Uuid>,
 ) -> Result<impl Responder, Error> {
-    Ok(HttpResponse::NotImplemented().json(ErrorResponse {
-        error: "Not Implemented".to_string(),
+    let client: Client = get_client(state.pool.clone()).await?;
+    let count = db::delete_team_orders(&client, team_id.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(DeletedResponse {
+        deleted: count > 0,
     }))
 }
 
 #[utoipa::path(
     put,
     path = "/api/v1.0/teams/{team_id}/orders/{order_id}",
+    request_body = UpdateTeamOrderEntry,
     responses(
-        (status = 200, description = "Order updated", body = ErrorResponse),
+        (status = 200, description = "Order updated", body = TeamOrderEntry),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 501, description = "Not implemented", body = ErrorResponse),
+        (status = 404, description = "Order not found", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team"),
@@ -278,12 +288,103 @@ pub async fn delete_team_orders(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(_state), level = "debug")]
+#[instrument(skip(state), level = "debug")]
 pub async fn update_team_order(
-    _state: Data<State>,
-    _path: Path<(Uuid, Uuid)>,
+    state: Data<State>,
+    path: Path<(Uuid, Uuid)>,
+    json: Json<UpdateTeamOrderEntry>,
 ) -> Result<impl Responder, Error> {
-    Ok(HttpResponse::NotImplemented().json(ErrorResponse {
-        error: "Not Implemented".to_string(),
-    }))
+    validate(&json)?;
+    let (team_id, order_id) = path.into_inner();
+    let client: Client = get_client(state.pool.clone()).await?;
+    let order =
+        db::update_team_order(&client, team_id, order_id, json.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(order))
+}
+
+// ── Team member management ──────────────────────────────────────────────────
+
+#[utoipa::path(
+    post,
+    path = "/api/v1.0/teams/{team_id}/users",
+    request_body = AddMemberEntry,
+    responses(
+        (status = 201, description = "Member added to team", body = UsersInTeam),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 409, description = "Member already in team", body = ErrorResponse),
+    ),
+    params(
+        ("team_id", description = "Unique UUID of the Team")
+    ),
+    security(("bearer_auth" = [])),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn add_team_member(
+    state: Data<State>,
+    team_id: Path<Uuid>,
+    json: Json<AddMemberEntry>,
+) -> Result<impl Responder, Error> {
+    let member = json.into_inner();
+    let client: Client = get_client(state.pool.clone()).await?;
+    let result =
+        db::add_team_member(&client, team_id.into_inner(), member.user_id, member.role_id)
+            .await?;
+    Ok(HttpResponse::Created().json(result))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1.0/teams/{team_id}/users/{user_id}",
+    responses(
+        (status = 200, description = "Member removed from team", body = DeletedResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 404, description = "Member not found in team", body = DeletedResponse),
+    ),
+    params(
+        ("team_id", description = "Unique UUID of the Team"),
+        ("user_id", description = "Unique UUID of the User")
+    ),
+    security(("bearer_auth" = [])),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn remove_team_member(
+    state: Data<State>,
+    path: Path<(Uuid, Uuid)>,
+) -> Result<impl Responder, Error> {
+    let (team_id, user_id) = path.into_inner();
+    let client: Client = get_client(state.pool.clone()).await?;
+    let deleted = db::remove_team_member(&client, team_id, user_id).await?;
+    if deleted {
+        Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
+    } else {
+        Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
+    }
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1.0/teams/{team_id}/users/{user_id}",
+    request_body = UpdateMemberRoleEntry,
+    responses(
+        (status = 200, description = "Member role updated", body = UsersInTeam),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 404, description = "Member not found in team", body = ErrorResponse),
+    ),
+    params(
+        ("team_id", description = "Unique UUID of the Team"),
+        ("user_id", description = "Unique UUID of the User")
+    ),
+    security(("bearer_auth" = [])),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn update_member_role(
+    state: Data<State>,
+    path: Path<(Uuid, Uuid)>,
+    json: Json<UpdateMemberRoleEntry>,
+) -> Result<impl Responder, Error> {
+    let (team_id, user_id) = path.into_inner();
+    let client: Client = get_client(state.pool.clone()).await?;
+    let result =
+        db::update_member_role(&client, team_id, user_id, json.into_inner().role_id).await?;
+    Ok(HttpResponse::Ok().json(result))
 }

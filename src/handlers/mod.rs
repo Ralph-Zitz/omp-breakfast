@@ -1,3 +1,4 @@
+pub mod items;
 pub mod roles;
 pub mod teams;
 pub mod users;

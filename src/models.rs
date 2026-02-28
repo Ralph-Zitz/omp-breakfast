@@ -30,6 +30,13 @@ pub struct TokenRequest {
     pub token: String,
 }
 
+/// A cached user entry with a timestamp for TTL-based eviction.
+#[derive(Clone, Debug)]
+pub struct CachedUser {
+    pub user: UpdateUserEntry,
+    pub cached_at: DateTime<Utc>,
+}
+
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct State {
@@ -38,7 +45,7 @@ pub struct State {
     pub jwtsecret: String,
     pub s3_key_id: String,
     pub s3_key_secret: String,
-    pub cache: HashMap<String, UpdateUserEntry>,
+    pub cache: HashMap<String, CachedUser>,
     pub token_blacklist: HashMap<String, bool>,
 }
 
@@ -98,6 +105,37 @@ impl fmt::Debug for UpdateUserEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({}, {})", self.firstname, self.lastname)
     }
+}
+
+/// API request body for updating a user. Password is optional — if omitted,
+/// the existing password is preserved (avoids unnecessary rehashing).
+#[derive(Deserialize, Serialize, Clone, Validate, Debug, ToSchema, IntoParams)]
+pub struct UpdateUserRequest {
+    #[validate(length(
+        min = 2,
+        max = 50,
+        message = "firstname is required and must be between 2 and 50 characters"
+    ))]
+    pub firstname: String,
+    #[validate(length(
+        min = 2,
+        max = 50,
+        message = "lastname is required and must be between 2 and 50 characters"
+    ))]
+    pub lastname: String,
+    #[validate(email)]
+    pub email: String,
+    #[validate(custom(function = "validate_optional_password"))]
+    pub password: Option<String>,
+}
+
+fn validate_optional_password(password: &String) -> Result<(), validator::ValidationError> {
+    if password.len() < 8 {
+        let mut err = validator::ValidationError::new("password");
+        err.message = Some("password must be at least 8 characters".into());
+        return Err(err);
+    }
+    Ok(())
 }
 
 #[derive(Deserialize, Serialize, PostgresMapper, Clone, Validate, Debug, ToSchema, IntoParams)]
@@ -196,4 +234,78 @@ pub struct UpdateRoleEntry {
         message = "title is required and must be at least 1 character"
     ))]
     pub title: String,
+}
+
+// ── Item models ─────────────────────────────────────────────────────────────
+
+#[derive(Serialize, PostgresMapper, ToSchema)]
+#[pg_mapper(table = "items")]
+pub struct ItemEntry {
+    pub item_id: Uuid,
+    pub descr: String,
+    pub price: Option<rust_decimal::Decimal>,
+    pub created: DateTime<Utc>,
+    pub changed: DateTime<Utc>,
+}
+
+#[derive(Deserialize, Serialize, PostgresMapper, Validate, Clone, Debug, ToSchema)]
+#[pg_mapper(table = "items")]
+pub struct CreateItemEntry {
+    #[validate(length(
+        min = 1,
+        message = "descr is required and must be at least 1 character"
+    ))]
+    pub descr: String,
+    pub price: Option<rust_decimal::Decimal>,
+}
+
+#[derive(Deserialize, Serialize, PostgresMapper, Validate, Clone, Debug, ToSchema)]
+#[pg_mapper(table = "items")]
+pub struct UpdateItemEntry {
+    #[validate(length(
+        min = 1,
+        message = "descr is required and must be at least 1 character"
+    ))]
+    pub descr: String,
+    pub price: Option<rust_decimal::Decimal>,
+}
+
+// ── Team order models ───────────────────────────────────────────────────────
+
+#[derive(Serialize, PostgresMapper, ToSchema)]
+#[pg_mapper(table = "teamorders")]
+pub struct TeamOrderEntry {
+    pub teamorders_id: Uuid,
+    pub teamorders_team_id: Uuid,
+    pub teamorders_user_id: Option<Uuid>,
+    pub duedate: Option<chrono::NaiveDate>,
+    pub closed: Option<bool>,
+    pub created: DateTime<Utc>,
+    pub changed: DateTime<Utc>,
+}
+
+#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
+pub struct CreateTeamOrderEntry {
+    pub teamorders_user_id: Option<Uuid>,
+    pub duedate: Option<chrono::NaiveDate>,
+}
+
+#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
+pub struct UpdateTeamOrderEntry {
+    pub teamorders_user_id: Option<Uuid>,
+    pub duedate: Option<chrono::NaiveDate>,
+    pub closed: Option<bool>,
+}
+
+// ── Memberof models ─────────────────────────────────────────────────────────
+
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
+pub struct AddMemberEntry {
+    pub user_id: Uuid,
+    pub role_id: Uuid,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
+pub struct UpdateMemberRoleEntry {
+    pub role_id: Uuid,
 }

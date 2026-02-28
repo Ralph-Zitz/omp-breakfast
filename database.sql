@@ -55,8 +55,7 @@ CREATE TABLE roles (
 CREATE TABLE items (
   item_id uuid DEFAULT uuid_generate_v4 () PRIMARY KEY,
   descr text NOT NULL,
-  price money,
-  --  price numeric(8, 2),
+  price numeric(10, 2),
   created timestamptz DEFAULT CURRENT_TIMESTAMP,
   changed timestamptz DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (descr)
@@ -73,6 +72,10 @@ CREATE TABLE memberof (
   FOREIGN KEY (memberof_user_id) REFERENCES users (user_id) ON DELETE CASCADE,
   FOREIGN KEY (memberof_role_id) REFERENCES roles (role_id) ON DELETE CASCADE
 );
+
+CREATE INDEX idx_memberof_user ON memberof (memberof_user_id);
+
+CREATE INDEX idx_memberof_role ON memberof (memberof_role_id);
 
 /* Team order table */
 CREATE TABLE teamorders (
@@ -122,6 +125,17 @@ LANGUAGE plpgsql;
 /* Create trigger */
 CREATE TRIGGER update_users_created
   BEFORE INSERT OR UPDATE ON users
+  FOR EACH ROW
+  EXECUTE PROCEDURE update_users_timestamp ();
+
+/* Reuse the same function for items and teamorders changed columns */
+CREATE TRIGGER update_items_timestamp
+  BEFORE UPDATE ON items
+  FOR EACH ROW
+  EXECUTE PROCEDURE update_users_timestamp ();
+
+CREATE TRIGGER update_teamorders_timestamp
+  BEFORE UPDATE ON teamorders
   FOR EACH ROW
   EXECUTE PROCEDURE update_users_timestamp ();
 

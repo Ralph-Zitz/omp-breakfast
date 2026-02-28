@@ -732,3 +732,165 @@ async fn test_logout_clears_tokens_and_prevents_session_restore() {
     clear_tokens();
     restore_fetch();
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  8 · Session restore edge cases
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Install a fetch mock that returns 401 for user fetch (simulates expired/invalid token)
+fn install_mock_fetch_user_401() {
+    js_sys::eval(
+        r#"(() => {
+            window.__original_fetch = window.fetch;
+            window.fetch = function(input) {
+                var url = (typeof input === 'string') ? input : input.url;
+                if (url.includes('/api/v1.0/users/')) {
+                    return Promise.resolve(new Response(
+                        JSON.stringify({"error":"Unauthorized"}),
+                        { status: 401, headers: { "Content-Type": "application/json" } }
+                    ));
+                }
+                return Promise.resolve(new Response("Not Found", { status: 404 }));
+            };
+        })()"#,
+    )
+    .expect("install_mock_fetch_user_401 failed");
+}
+
+#[wasm_bindgen_test]
+async fn test_session_restore_with_malformed_token_falls_back_to_login() {
+    let id = "t-malformed-restore";
+    clear_tokens();
+
+    // Store a malformed token (not a valid JWT structure)
+    if let Some(storage) = web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
+    {
+        let _ = storage.set_item("access_token", "not-a-valid-jwt");
+    }
+
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(500).await;
+
+    // Should fall back to login page since the token can't be decoded
+    let html = inner_html(id);
+    assert!(
+        html.contains("Sign In"),
+        "malformed token: should show login page"
+    );
+    assert!(
+        !html.contains("Welcome!"),
+        "malformed token: should not show dashboard"
+    );
+    assert!(
+        has_element(id, "input#username"),
+        "malformed token: username input present"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+}
+
+#[wasm_bindgen_test]
+async fn test_session_restore_with_expired_token_falls_back_to_login() {
+    let id = "t-expired-restore";
+    clear_tokens();
+    install_mock_fetch_user_401();
+
+    // Store a structurally valid token (so it decodes) but the fetch will return 401
+    let token = mock_token("12345678-1234-1234-1234-1234567890ab");
+    if let Some(storage) = web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
+    {
+        let _ = storage.set_item("access_token", &token);
+    }
+
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(500).await;
+
+    // Should fall back to login page since the user fetch returns 401
+    let html = inner_html(id);
+    assert!(
+        html.contains("Sign In"),
+        "expired token: should show login page"
+    );
+    assert!(
+        !html.contains("Welcome!"),
+        "expired token: should not show dashboard"
+    );
+    assert!(
+        has_element(id, "input#username"),
+        "expired token: username input present"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_loading_page_shown_during_session_restore() {
+    let id = "t-loading-page";
+    clear_tokens();
+
+    // Install a slow-responding fetch mock to catch the loading state
+    let token = mock_token("12345678-1234-1234-1234-1234567890ab");
+    let js = format!(
+        r#"(() => {{
+            window.__original_fetch = window.fetch;
+            window.fetch = function(input) {{
+                var url = (typeof input === 'string') ? input : input.url;
+                if (url.includes('/api/v1.0/users/')) {{
+                    return new Promise(function(resolve) {{
+                        setTimeout(function() {{
+                            resolve(new Response(
+                                JSON.stringify({{
+                                    user_id: "12345678-1234-1234-1234-1234567890ab",
+                                    firstname: "John",
+                                    lastname: "Doe",
+                                    email: "john@example.com"
+                                }}),
+                                {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                            ));
+                        }}, 2000);
+                    }});
+                }}
+                return Promise.resolve(new Response("Not Found", {{ status: 404 }}));
+            }};
+        }})()"#,
+    );
+    js_sys::eval(&js).expect("install slow mock failed");
+
+    // Store a valid token so session restore triggers
+    if let Some(storage) = web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
+    {
+        let _ = storage.set_item("access_token", &token);
+    }
+
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    // Check quickly, before the slow fetch resolves
+    flush(100).await;
+
+    let html = inner_html(id);
+    // During loading, should not show login or dashboard
+    assert!(
+        !html.contains("Sign In"),
+        "loading: should not show login form"
+    );
+    // The loading page should show some loading indicator (spinner or text)
+    assert!(
+        html.contains("loading-page") || html.contains("spinner") || html.contains("Loading"),
+        "loading: should show loading indicator"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}

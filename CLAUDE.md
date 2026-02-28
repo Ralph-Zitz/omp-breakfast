@@ -10,12 +10,13 @@ A breakfast ordering application for teams, built in Rust with an actix-web REST
 - **Web framework:** actix-web 4 (with rustls TLS)
 - **Database:** PostgreSQL via `deadpool-postgres` connection pool + `tokio-postgres`
 - **ORM/mapping:** `tokio-pg-mapper` (derive-based row mapping)
-- **Auth:** JWT (access + refresh tokens via `jsonwebtoken`) + Basic Auth (Argon2 password hashing)
+- **Auth:** JWT (access + refresh tokens via `jsonwebtoken`) + Basic Auth (Argon2 password hashing) + RBAC (self-only mutations)
 - **Validation:** `validator` crate with derive macros
 - **Error handling:** `thiserror` for typed error enum, `color-eyre` for colorized panic/error reports
 - **Observability:** `tracing` + `tracing-subscriber` (Bunyan JSON in prod, colorized ANSI in dev), OpenTelemetry spans, `color-eyre` SpanTrace via `tracing-error`
 - **API docs:** `utoipa` + `utoipa-swagger-ui` (Swagger UI at `/explorer`)
 - **TLS:** rustls with local certs (mkcert) for both the web server and DB connections
+- **Decimal:** `rust_decimal` for monetary/price values (numeric(10,2) in DB)
 - **Frontend framework:** Leptos 0.8 (CSR mode, client-side rendered WebAssembly SPA)
 - **WASM bundler:** Trunk (builds frontend to `frontend/dist/`)
 - **Frontend HTTP client:** `gloo-net` 0.6 (wraps `window.fetch`)
@@ -56,9 +57,10 @@ src/
   lib.rs           – Module declarations
   handlers/
     mod.rs         – get_client() utility + health endpoint
-    users.rs       – User CRUD + auth handlers
-    teams.rs       – Team CRUD + order stub handlers (NotImplemented)
+    users.rs       – User CRUD + auth handlers (RBAC: self-only mutations)
+    teams.rs       – Team CRUD + team order + member management handlers
     roles.rs       – Role CRUD handlers
+    items.rs       – Item CRUD handlers (breakfast items with prices)
   middleware/
     auth.rs        – JWT/Basic auth validators, token generation/verification, blacklist
     openapi.rs     – OpenApi derive + Swagger UI endpoint
@@ -91,6 +93,9 @@ tests/
 - Validation uses `validate(&json)?` before any DB call
 - JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation
 - Token revocation uses an in-memory `flurry::HashMap` blacklist (not persisted)
+- Auth cache uses TTL (5min) and max-size (1000 entries) with LRU-style eviction
+- RBAC: JWT claims are stored in request extensions; user mutation handlers (update_user, delete_user) check `claims.sub` matches target user_id
+- Production safety: server panics at startup if JWT secret is still the default value when `ENV=production`
 - Error responses are JSON `{"error": "..."}` via `ErrorResponse` struct
 - 4xx errors log with `warn!()`, 5xx errors log with `error!()` for color-coded severity
 - Config is layered: default.yml → environment.yml → env vars (separator: `_`)
@@ -100,11 +105,13 @@ tests/
 
 The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via Trunk. It runs entirely in the browser (CSR mode).
 
-- **Component hierarchy:** `App` → `LoginPage` / `DashboardPage`
+- **Component hierarchy:** `App` → `LoginPage` / `LoadingPage` / `DashboardPage`
   - `LoginPage` uses: `LoginHeader`, `LoginForm`, `ErrorAlert`, `UsernameField`, `PasswordField`, `SubmitButton`
+  - `LoadingPage`: Displayed during session restoration from stored JWT token
   - `DashboardPage` uses: `SuccessBadge`, `UserCard`
-- **Page routing:** Manual via `Page` enum (`Login` / `Dashboard`) + Leptos signals (no router crate)
+- **Page routing:** Manual via `Page` enum (`Login` / `Loading` / `Dashboard`) + Leptos signals (no router crate)
 - **Auth flow:** Basic Auth POST to `/auth` → receive JWT tokens → store `access_token` in `localStorage` → decode JWT payload for `user_id` → GET `/api/v1.0/users/{id}` for user details → render dashboard
+- **Session restore:** On startup, checks `localStorage` for existing `access_token` → shows `LoadingPage` → validates token via user fetch → restores dashboard or falls back to login
 - **Client-side validation:** Both username and password required before form submission
 - **Error display:** HTTP 401 → "Invalid username or password"; network failure → "Unable to reach the server"
 - **Dev proxying:** Trunk proxies `/auth`, `/api`, `/health` to `https://127.0.0.1:8080` (configured in `Trunk.toml`)
@@ -171,12 +178,10 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ## Unfinished Work
 
-- Team order endpoints in `handlers/teams.rs` are stubs returning `NotImplemented`
-- The `items` and `teamorders` and `orders` tables exist in `database.sql` but have no corresponding models, db functions, or handlers in Rust code
-- No `items` CRUD endpoints exist
+- The `orders` table exists in `database.sql` but has no corresponding model, db functions, or handlers (individual user orders within a team order)
 - Frontend only has login + dashboard pages; no order management UI yet
 - No client-side routing library (manual signal-based page switching)
-- Frontend does not yet consume the team, role, or order APIs
+- Frontend does not yet consume the team, role, item, or order APIs
 
 ## Testing
 
@@ -191,7 +196,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Frontend
 
-- 16 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
+- 21 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
 - Test categories:
   - JWT decode (4 tests): valid token, missing segments, bad base64, invalid JSON
   - Login page rendering (3 tests): brand/form elements, email attributes, password attributes
@@ -199,6 +204,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
   - Login flow with mocked HTTP (3 tests): success → dashboard, 401 → error, network error → message
   - Dashboard & logout (2 tests): user card structure, logout returns to login
   - Full end-to-end cycle (1 test): login → validation → success → dashboard → logout
+  - Session persistence (2 tests): session persists across refresh, logout clears tokens
+  - Session restore edge cases (3 tests): malformed token fallback, expired token fallback, loading page display
 - Mocking strategy: overrides `window.fetch` via `js_sys::eval` to intercept `gloo-net` HTTP calls
 - Run frontend tests: `make test-frontend` or `cd frontend && wasm-pack test --headless --chrome`
 - Note: ChromeDriver version must match installed Chrome version
