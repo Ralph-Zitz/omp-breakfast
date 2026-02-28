@@ -16,7 +16,7 @@ A breakfast ordering application for teams, built in Rust with an actix-web REST
 - **Observability:** `tracing` + `tracing-subscriber` (Bunyan JSON in prod, colorized ANSI in dev), OpenTelemetry spans, `color-eyre` SpanTrace via `tracing-error`
 - **API docs:** `utoipa` + `utoipa-swagger-ui` (Swagger UI at `/explorer`)
 - **TLS:** rustls with local certs (mkcert) for both the web server and DB connections
-- **Frontend framework:** Leptos 0.7 (CSR mode, client-side rendered WebAssembly SPA)
+- **Frontend framework:** Leptos 0.8 (CSR mode, client-side rendered WebAssembly SPA)
 - **WASM bundler:** Trunk (builds frontend to `frontend/dist/`)
 - **Frontend HTTP client:** `gloo-net` 0.6 (wraps `window.fetch`)
 - **Static file serving:** `actix-files` (serves `frontend/dist/` at `/`)
