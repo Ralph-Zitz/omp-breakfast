@@ -72,7 +72,7 @@ pub async fn create_user(client: &Client, user: CreateUserEntry) -> Result<UserE
     let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default()
         .hash_password(user.password.as_bytes(), &salt)
-        .map_err(|err| Error::Argonautica(err.to_string()))?
+        .map_err(|err| Error::Argon2(err.to_string()))?
         .to_string();
     client
         .query_one(
@@ -106,7 +106,7 @@ pub async fn update_user(
             let salt = SaltString::generate(&mut OsRng);
             let hash = Argon2::default()
                 .hash_password(password.as_bytes(), &salt)
-                .map_err(|err| Error::Argonautica(err.to_string()))?
+                .map_err(|err| Error::Argon2(err.to_string()))?
                 .to_string();
 
             client
@@ -176,11 +176,11 @@ pub async fn get_user_teams(client: &Client, uid: Uuid) -> Result<Vec<UserInTeam
         .prepare(
             r#"
                 select tname, title, firstname, lastname
-                from users, teams, memberof, roles
+                from memberof
+                join users on users.user_id = memberof.memberof_user_id
+                join teams on teams.team_id = memberof.memberof_team_id
+                join roles on roles.role_id = memberof.memberof_role_id
                 where users.user_id = $1
-                  and users.user_id = memberof.memberof_user_id
-                  and memberof.memberof_team_id = teams.team_id
-                  and memberof.memberof_role_id = roles.role_id
             "#,
         )
         .await
@@ -208,7 +208,7 @@ pub async fn get_user_teams(client: &Client, uid: Uuid) -> Result<Vec<UserInTeam
 
 pub async fn get_teams(client: &Client) -> Result<Vec<TeamEntry>, Error> {
     let statement = client
-        .prepare("select team_id, tname, descr from teams order by tname asc")
+        .prepare("select team_id, tname, descr, created, changed from teams order by tname asc")
         .await
         .map_err(Error::Db)?;
 
@@ -225,7 +225,9 @@ pub async fn get_teams(client: &Client) -> Result<Vec<TeamEntry>, Error> {
 
 pub async fn get_team(client: &Client, team_id: Uuid) -> Result<TeamEntry, Error> {
     let statement = client
-        .prepare("select team_id, tname, descr from teams where team_id = $1 limit 1")
+        .prepare(
+            "select team_id, tname, descr, created, changed from teams where team_id = $1 limit 1",
+        )
         .await
         .map_err(Error::Db)?;
 
@@ -238,7 +240,7 @@ pub async fn get_team(client: &Client, team_id: Uuid) -> Result<TeamEntry, Error
 
 pub async fn create_team(client: &Client, team: CreateTeamEntry) -> Result<TeamEntry, Error> {
     let statement = client
-        .prepare("insert into teams (tname, descr) values ($1, $2) returning team_id, tname, descr")
+        .prepare("insert into teams (tname, descr) values ($1, $2) returning team_id, tname, descr, created, changed")
         .await
         .map_err(Error::Db)?;
 
@@ -273,7 +275,7 @@ pub async fn update_team(
             r#"
                update teams set tname = $1, descr = $2
                where team_id = $3
-               returning team_id, tname, descr
+               returning team_id, tname, descr, created, changed
             "#,
         )
         .await
@@ -291,11 +293,11 @@ pub async fn get_team_users(client: &Client, tid: Uuid) -> Result<Vec<UsersInTea
         .prepare(
             r#"
                 select user_id, firstname, lastname, email, title
-                from users, teams, memberof, roles
+                from memberof
+                join users on users.user_id = memberof.memberof_user_id
+                join teams on teams.team_id = memberof.memberof_team_id
+                join roles on roles.role_id = memberof.memberof_role_id
                 where teams.team_id = $1
-                  and teams.team_id = memberof.memberof_team_id
-                  and users.user_id = memberof.memberof_user_id
-                  and memberof.memberof_role_id = roles.role_id
             "#,
         )
         .await
@@ -324,7 +326,7 @@ pub async fn get_team_users(client: &Client, tid: Uuid) -> Result<Vec<UsersInTea
 
 pub async fn get_roles(client: &Client) -> Result<Vec<RoleEntry>, Error> {
     let statement = client
-        .prepare("select role_id, title from roles order by title asc")
+        .prepare("select role_id, title, created, changed from roles order by title asc")
         .await
         .map_err(Error::Db)?;
 
@@ -341,7 +343,7 @@ pub async fn get_roles(client: &Client) -> Result<Vec<RoleEntry>, Error> {
 
 pub async fn get_role(client: &Client, role_id: Uuid) -> Result<RoleEntry, Error> {
     let statement = client
-        .prepare("select role_id, title from roles where role_id = $1 limit 1")
+        .prepare("select role_id, title, created, changed from roles where role_id = $1 limit 1")
         .await
         .map_err(Error::Db)?;
 
@@ -354,7 +356,7 @@ pub async fn get_role(client: &Client, role_id: Uuid) -> Result<RoleEntry, Error
 
 pub async fn create_role(client: &Client, role: CreateRoleEntry) -> Result<RoleEntry, Error> {
     let statement = client
-        .prepare("insert into roles (title) values ($1) returning role_id, title")
+        .prepare("insert into roles (title) values ($1) returning role_id, title, created, changed")
         .await
         .map_err(Error::Db)?;
 
@@ -389,7 +391,7 @@ pub async fn update_role(
             r#"
                update roles set title = $1
                where role_id = $2
-               returning role_id, title
+               returning role_id, title, created, changed
             "#,
         )
         .await
@@ -715,11 +717,11 @@ pub async fn add_team_member(
         .prepare(
             r#"
                 select user_id, firstname, lastname, email, title
-                from users, roles, memberof
+                from memberof
+                join users on users.user_id = memberof.memberof_user_id
+                join roles on roles.role_id = memberof.memberof_role_id
                 where memberof_team_id = $1
                   and memberof_user_id = $2
-                  and users.user_id = memberof_user_id
-                  and roles.role_id = memberof_role_id
             "#,
         )
         .await
@@ -787,11 +789,11 @@ pub async fn update_member_role(
         .prepare(
             r#"
                 select user_id, firstname, lastname, email, title
-                from users, roles, memberof
+                from memberof
+                join users on users.user_id = memberof.memberof_user_id
+                join roles on roles.role_id = memberof.memberof_role_id
                 where memberof_team_id = $1
                   and memberof_user_id = $2
-                  and users.user_id = memberof_user_id
-                  and roles.role_id = memberof_role_id
             "#,
         )
         .await

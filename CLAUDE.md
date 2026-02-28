@@ -95,7 +95,7 @@ tests/
 - Validation uses `validate(&json)?` before any DB call
 - JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation
 - Token revocation uses an in-memory `flurry::HashMap` blacklist (not persisted)
-- Auth cache uses TTL (5min) and max-size (1000 entries) with LRU-style eviction
+- Auth cache uses TTL (5min) and max-size (1000 entries) with FIFO eviction
 - RBAC: JWT claims are stored in request extensions; user mutation handlers (update_user, delete_user, delete_user_by_email) check `claims.sub` matches target user
 - Global Admin RBAC: `require_admin` helper in `handlers/mod.rs` checks if the user holds the "Admin" role in any team (via `db::is_admin`); gates team create/update/delete
 - Team RBAC: `require_team_member` and `require_team_admin` helpers in `handlers/mod.rs` gate team-scoped mutations
@@ -230,7 +230,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### Backend
 
 - 35 unit tests across `errors`, `middleware::auth`, and `validate` modules
-- 26 integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 32 integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - No tests for `db.rs` functions (they require a live DB connection)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs ignored tests, then tears down)

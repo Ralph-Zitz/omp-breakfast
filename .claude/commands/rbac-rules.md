@@ -9,16 +9,16 @@ Audit the codebase against the RBAC (Role-Based Access Control) policy defined b
 
 ## RBAC Policy Table
 
-| Resource       | Action                        | Required Role           | Enforced By           |
-| -------------- | ----------------------------- | ----------------------- | --------------------- |
-| Team           | Create, Update, Delete        | Admin (global)          | `require_admin`       |
-| Team Orders    | Delete All                    | Team Admin              | `require_team_admin`  |
-| Team Orders    | Create, Update, Delete Single | Team Member             | `require_team_member` |
-| Team Members   | Add, Remove, Update Role      | Team Admin              | `require_team_admin`  |
-| User           | Update, Delete (by ID/email)  | Self only               | `claims.sub` check    |
-| Items          | Create, Update, Delete        | Any authenticated user  | JWT auth middleware    |
-| Roles          | Create, Update, Delete        | Any authenticated user  | JWT auth middleware    |
-| All read-only  | GET endpoints                 | Any authenticated user  | JWT auth middleware    |
+| Resource       | Action                        | Required Role          | Enforced By           |
+| -------------- | ----------------------------- | ---------------------- | --------------------- |
+| Team           | Create, Update, Delete        | Admin (global)         | `require_admin`       |
+| Team Orders    | Delete All                    | Team Admin             | `require_team_admin`  |
+| Team Orders    | Create, Update, Delete Single | Team Member            | `require_team_member` |
+| Team Members   | Add, Remove, Update Role      | Team Admin             | `require_team_admin`  |
+| User           | Update, Delete (by ID/email)  | Self only              | `claims.sub` check    |
+| Items          | Create, Update, Delete        | Any authenticated user | JWT auth middleware   |
+| Roles          | Create, Update, Delete        | Any authenticated user | JWT auth middleware   |
+| All read-only  | GET endpoints                 | Any authenticated user | JWT auth middleware   |
 
 ## Role Definitions
 

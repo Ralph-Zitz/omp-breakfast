@@ -96,7 +96,6 @@ impl Modify for SecurityAddon {
         TokenRequest,
         UserEntry,
         UserInTeams,
-        UpdateUserEntry,
         UpdateUserRequest,
         DeletedResponse,
         CreateUserEntry,

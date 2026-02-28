@@ -13,6 +13,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use breakfast::{models::*, routes::routes};
 use serde_json::{json, Value};
 use std::net::SocketAddr;
+use uuid::Uuid;
 
 /// Fake peer address for test requests (required by actix-governor's PeerIpKeyExtractor).
 const PEER: SocketAddr = SocketAddr::new(
@@ -848,4 +849,153 @@ async fn create_item_with_empty_descr_returns_422() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 422, "empty description should be rejected");
+}
+
+// ---------------------------------------------------------------------------
+// 404 responses for non-existent resources
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn get_nonexistent_user_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    let fake_id = Uuid::new_v4();
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/users/{}", fake_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "non-existent user should return 404");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn get_nonexistent_team_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    let fake_id = Uuid::new_v4();
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/teams/{}", fake_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "non-existent team should return 404");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn get_nonexistent_item_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    let fake_id = Uuid::new_v4();
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/items/{}", fake_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "non-existent item should return 404");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn get_nonexistent_role_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    let fake_id = Uuid::new_v4();
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/roles/{}", fake_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "non-existent role should return 404");
+}
+
+// ---------------------------------------------------------------------------
+// 409 conflict responses for duplicate creation
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn create_duplicate_item_returns_409() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Create an item
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"descr": "duplicate-test-item", "price": "1.00"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // Try to create a second item with the same description → 409
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"descr": "duplicate-test-item", "price": "2.00"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        409,
+        "duplicate item description should return 409"
+    );
+
+    // Clean up: delete the item
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let items: Vec<Value> = test::read_body_json(resp).await;
+    if let Some(item) = items
+        .iter()
+        .find(|i| i["descr"].as_str() == Some("duplicate-test-item"))
+    {
+        let item_id = item["item_id"].as_str().unwrap();
+        let req = test::TestRequest::delete()
+            .uri(&format!("/api/v1.0/items/{}", item_id))
+            .insert_header(("Authorization", format!("Bearer {}", token)))
+            .to_request();
+        test::call_service(&app, req).await;
+    }
+}
+
+#[actix_web::test]
+#[ignore]
+async fn create_duplicate_user_returns_409() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Try to create a user with the same email as the seed admin → 409
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({
+            "firstname": "Duplicate",
+            "lastname": "Admin",
+            "email": "admin@admin.com",
+            "password": "securepassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        409,
+        "duplicate email should return 409"
+    );
 }

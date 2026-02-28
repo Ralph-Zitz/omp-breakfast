@@ -39,6 +39,8 @@ CREATE TABLE teams (
   team_id uuid DEFAULT uuid_generate_v4 () PRIMARY KEY,
   tname text NOT NULL,
   descr text,
+  created timestamptz DEFAULT CURRENT_TIMESTAMP,
+  changed timestamptz DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (tname)
 );
 
@@ -48,6 +50,8 @@ CREATE INDEX idx_teams_name ON teams (tname);
 CREATE TABLE roles (
   role_id uuid DEFAULT uuid_generate_v4 () PRIMARY KEY,
   title text NOT NULL,
+  created timestamptz DEFAULT CURRENT_TIMESTAMP,
+  changed timestamptz DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (title)
 );
 
@@ -108,9 +112,9 @@ CREATE TABLE orders (
 CREATE INDEX idx_orders_tid ON orders (orders_teamorders_id);
 
 /* Create on-update/change function */
-CREATE OR REPLACE FUNCTION update_users_timestamp ()
+CREATE OR REPLACE FUNCTION update_changed_timestamp ()
   RETURNS TRIGGER
-  AS $update_users_timestamp$
+  AS $update_changed_timestamp$
 BEGIN
   IF ROW (NEW.*) IS DISTINCT FROM ROW (OLD.*) THEN
     NEW.changed = now();
@@ -119,25 +123,34 @@ BEGIN
     RETURN old;
   END IF;
 END;
-$update_users_timestamp$
+$update_changed_timestamp$
 LANGUAGE plpgsql;
 
-/* Create trigger */
-CREATE TRIGGER update_users_created
+/* Create triggers */
+CREATE TRIGGER update_users_changed_at
   BEFORE INSERT OR UPDATE ON users
   FOR EACH ROW
-  EXECUTE PROCEDURE update_users_timestamp ();
+  EXECUTE PROCEDURE update_changed_timestamp ();
 
-/* Reuse the same function for items and teamorders changed columns */
-CREATE TRIGGER update_items_timestamp
+CREATE TRIGGER update_teams_changed_at
+  BEFORE UPDATE ON teams
+  FOR EACH ROW
+  EXECUTE PROCEDURE update_changed_timestamp ();
+
+CREATE TRIGGER update_roles_changed_at
+  BEFORE UPDATE ON roles
+  FOR EACH ROW
+  EXECUTE PROCEDURE update_changed_timestamp ();
+
+CREATE TRIGGER update_items_changed_at
   BEFORE UPDATE ON items
   FOR EACH ROW
-  EXECUTE PROCEDURE update_users_timestamp ();
+  EXECUTE PROCEDURE update_changed_timestamp ();
 
-CREATE TRIGGER update_teamorders_timestamp
+CREATE TRIGGER update_teamorders_changed_at
   BEFORE UPDATE ON teamorders
   FOR EACH ROW
-  EXECUTE PROCEDURE update_users_timestamp ();
+  EXECUTE PROCEDURE update_changed_timestamp ();
 
 INSERT INTO teams (tname, descr)
   VALUES ('League of Cool Coders', 'LEGO LPAF Team');

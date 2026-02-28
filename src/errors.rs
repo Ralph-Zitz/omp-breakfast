@@ -36,7 +36,7 @@ pub enum Error {
     #[error("{0}")]
     NotFound(String),
     #[error("{0}")]
-    Argonautica(String),
+    Argon2(String),
     #[error("{0}")]
     Utoipa(String),
     #[error("{0}")]
@@ -170,7 +170,7 @@ impl ResponseError for Error {
                     error: e.to_string(),
                 })
             }
-            Error::Argonautica(e) => {
+            Error::Argon2(e) => {
                 error!(error = %e, "Password hashing error");
                 HttpResponse::InternalServerError().json(ErrorResponse {
                     error: "Internal server error".to_string(),
@@ -239,8 +239,8 @@ mod tests {
     }
 
     #[test]
-    fn argonautica_error_returns_500() {
-        let err = Error::Argonautica("hash failure".into());
+    fn argon2_error_returns_500() {
+        let err = Error::Argon2("hash failure".into());
         let resp = err.error_response();
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -334,7 +334,7 @@ mod tests {
     #[test]
     fn error_responses_do_not_leak_internal_details() {
         // 5xx errors should return generic "Internal server error" to clients
-        let err = Error::Argonautica("secret hash details".into());
+        let err = Error::Argon2("secret hash details".into());
         let resp = err.error_response();
         // We can't easily read the body in a sync test, but we verify the status
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);

@@ -179,6 +179,8 @@ pub struct TeamEntry {
     pub team_id: Uuid,
     pub tname: String,
     pub descr: Option<String>,
+    pub created: DateTime<Utc>,
+    pub changed: DateTime<Utc>,
 }
 
 #[derive(Deserialize, Serialize, PostgresMapper, Clone, Validate, Debug, ToSchema)]
@@ -216,6 +218,8 @@ pub struct UserInTeams {
 pub struct RoleEntry {
     pub role_id: Uuid,
     pub title: String,
+    pub created: DateTime<Utc>,
+    pub changed: DateTime<Utc>,
 }
 
 #[derive(Deserialize, Serialize, PostgresMapper, Validate, Clone, Debug, ToSchema)]
