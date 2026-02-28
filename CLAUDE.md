@@ -73,6 +73,18 @@ tests/
 - 4xx errors log with `warn!()`, 5xx errors log with `error!()` for color-coded severity
 - Config is layered: default.yml → environment.yml → env vars (separator: `_`)
 
+## Markdown Style Rules
+
+When creating or editing `.md` files, follow these rules to avoid markdownlint warnings:
+
+- Every file must start with a top-level heading (`# Title`)
+- Leave a blank line after every heading before content
+- Leave a blank line before and after lists
+- Leave a blank line before and after fenced code blocks
+- Always specify a language on fenced code blocks (e.g. ` ```rust `, ` ```text `, ` ```bash `)
+- Leave a blank line before and after tables
+- Align table separator pipes with header pipes (use ` --- ` padding, not ragged dashes)
+
 ## Unfinished Work
 
 - Team order endpoints in `handlers/teams.rs` are stubs returning `NotImplemented`

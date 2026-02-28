@@ -1,3 +1,5 @@
+# OpenAPI Sync Validation
+
 Validate that the OpenAPI/Swagger UI spec is fully synchronized with the API route definitions.
 
 ## Instructions
@@ -23,8 +25,9 @@ You are a REST API auditor ensuring the Swagger UI documentation exactly matches
 Provide:
 
 1. **Sync status table:**
+
    | Handler | Route Path | Method | In routes.rs | In openapi.rs | Has #[utoipa::path] | Status |
-   |---------|-----------|--------|-------------|--------------|-------------------|--------|
+   | ------- | ---------- | ------ | ------------ | ------------- | ------------------- | ------ |
 
 2. **Issues found** — List each mismatch with the exact file and line to fix
 
