@@ -60,6 +60,13 @@ impl Modify for SecurityAddon {
         teams::delete_team,
         teams::update_team,
         teams::team_users,
+        // Team Orders (stubs)
+        teams::get_team_orders,
+        teams::get_team_order,
+        teams::create_team_order,
+        teams::delete_team_order,
+        teams::delete_team_orders,
+        teams::update_team_order,
         // Roles
         roles::get_roles,
         roles::get_role,

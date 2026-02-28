@@ -147,6 +147,19 @@ pub async fn team_users(state: Data<State>, path: Path<Uuid>) -> Result<impl Res
     Ok(HttpResponse::Ok().json(users))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1.0/teams/{team_id}/orders",
+    responses(
+        (status = 200, description = "List of orders for the team", body = [ErrorResponse]),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 501, description = "Not implemented", body = ErrorResponse),
+    ),
+    params(
+        ("team_id", description = "Unique UUID of the Team")
+    ),
+    security(("bearer_auth" = [])),
+)]
 #[instrument(skip(_state), level = "debug")]
 pub async fn get_team_orders(
     _state: Data<State>,
@@ -157,6 +170,20 @@ pub async fn get_team_orders(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1.0/teams/{team_id}/orders/{order_id}",
+    responses(
+        (status = 200, description = "Order found", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 501, description = "Not implemented", body = ErrorResponse),
+    ),
+    params(
+        ("team_id", description = "Unique UUID of the Team"),
+        ("order_id", description = "Unique UUID of the Order")
+    ),
+    security(("bearer_auth" = [])),
+)]
 #[instrument(skip(_state), level = "debug")]
 pub async fn get_team_order(
     _state: Data<State>,
@@ -167,6 +194,19 @@ pub async fn get_team_order(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1.0/teams/{team_id}/orders",
+    responses(
+        (status = 201, description = "Order created", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 501, description = "Not implemented", body = ErrorResponse),
+    ),
+    params(
+        ("team_id", description = "Unique UUID of the Team")
+    ),
+    security(("bearer_auth" = [])),
+)]
 #[instrument(skip(_state), level = "debug")]
 pub async fn create_team_order(
     _state: Data<State>,
@@ -177,6 +217,20 @@ pub async fn create_team_order(
     }))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/v1.0/teams/{team_id}/orders/{order_id}",
+    responses(
+        (status = 200, description = "Order deleted", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 501, description = "Not implemented", body = ErrorResponse),
+    ),
+    params(
+        ("team_id", description = "Unique UUID of the Team"),
+        ("order_id", description = "Unique UUID of the Order")
+    ),
+    security(("bearer_auth" = [])),
+)]
 #[instrument(skip(_state), level = "debug")]
 pub async fn delete_team_order(
     _state: Data<State>,
@@ -187,6 +241,19 @@ pub async fn delete_team_order(
     }))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/v1.0/teams/{team_id}/orders",
+    responses(
+        (status = 200, description = "All orders for team deleted", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 501, description = "Not implemented", body = ErrorResponse),
+    ),
+    params(
+        ("team_id", description = "Unique UUID of the Team")
+    ),
+    security(("bearer_auth" = [])),
+)]
 #[instrument(skip(_state), level = "debug")]
 pub async fn delete_team_orders(
     _state: Data<State>,
@@ -197,6 +264,20 @@ pub async fn delete_team_orders(
     }))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/v1.0/teams/{team_id}/orders/{order_id}",
+    responses(
+        (status = 200, description = "Order updated", body = ErrorResponse),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 501, description = "Not implemented", body = ErrorResponse),
+    ),
+    params(
+        ("team_id", description = "Unique UUID of the Team"),
+        ("order_id", description = "Unique UUID of the Order")
+    ),
+    security(("bearer_auth" = [])),
+)]
 #[instrument(skip(_state), level = "debug")]
 pub async fn update_team_order(
     _state: Data<State>,
