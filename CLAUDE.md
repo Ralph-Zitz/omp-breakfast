@@ -216,3 +216,12 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### All Tests
 
 - Run everything: `make test-all` (backend unit + integration + frontend WASM)
+
+## Required Test Runs
+
+Before committing any backend changes, **both** unit tests and integration tests must pass:
+
+1. Run `cargo test` (unit tests — must show 0 failures)
+2. Run `make test-integration` (integration tests — must show 0 failures)
+
+Do not commit if either test suite fails. If only frontend code changed, `make test-frontend` may be substituted for step 2.
