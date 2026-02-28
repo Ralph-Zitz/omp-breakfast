@@ -163,14 +163,11 @@ pub async fn create_user(
     validate(&json)?;
     let client: Client = get_client(state.pool.clone()).await?;
     let user = db::create_user(&client, json.into_inner()).await?;
-    Ok(HttpResponse::Created()
-        .append_header((
-            header::LOCATION,
-            req.url_for("/users/user_id", [user.user_id.to_string()])
-                .unwrap()
-                .as_str(),
-        ))
-        .json(user))
+    let mut response = HttpResponse::Created();
+    if let Ok(url) = req.url_for("/users/user_id", [user.user_id.to_string()]) {
+        response.append_header((header::LOCATION, url.as_str().to_owned()));
+    }
+    Ok(response.json(user))
 }
 
 #[utoipa::path(
@@ -231,13 +228,28 @@ pub async fn delete_user(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn delete_user_by_email(
     state: Data<State>,
     path: Path<String>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
+    let email = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
-    let deleted = db::delete_user_by_email(&client, &path.into_inner()).await?;
+
+    // RBAC: only the user themselves can delete their account
+    let requesting_sub = req.extensions().get::<Claims>().map(|c| c.sub);
+    if let Some(sub) = requesting_sub {
+        if let Ok(user) = db::get_user_by_email(&client, &email).await {
+            if sub != user.user_id {
+                return Ok(HttpResponse::Forbidden().json(ErrorResponse {
+                    error: "You can only delete your own account".to_string(),
+                }));
+            }
+        }
+    }
+
+    let deleted = db::delete_user_by_email(&client, &email).await?;
     if deleted {
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
     } else {

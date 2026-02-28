@@ -427,3 +427,313 @@ async fn full_lifecycle() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 401);
 }
+
+// ---------------------------------------------------------------------------
+// Helper: authenticate a seed user by email
+// ---------------------------------------------------------------------------
+
+async fn login_user(
+    app: &impl actix_web::dev::Service<
+        actix_http::Request,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+    >,
+    email: &str,
+) -> Auth {
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .insert_header((
+            "Authorization",
+            format!("Basic {}", STANDARD.encode(format!("{}:Very Secret", email))),
+        ))
+        .to_request();
+    let resp = test::call_service(app, req).await;
+    assert_eq!(resp.status(), 200, "login should succeed for {}", email);
+    test::read_body_json(resp).await
+}
+
+// ---------------------------------------------------------------------------
+// Items CRUD
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn get_items_returns_seed_data() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(body.as_array().unwrap().len() >= 4, "seed data has 4 items");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn create_update_delete_item() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Create
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"descr": "test croissant", "price": "3.50"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let item: Value = test::read_body_json(resp).await;
+    let item_id = item["item_id"].as_str().unwrap();
+
+    // Update
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"descr": "updated croissant", "price": "4.00"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let updated: Value = test::read_body_json(resp).await;
+    assert_eq!(updated["descr"], "updated croissant");
+
+    // Get
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Delete
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
+
+// ---------------------------------------------------------------------------
+// RBAC enforcement
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn delete_other_user_returns_forbidden() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    // Get list of users to find another user's ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+
+    // Find a user that is not the admin
+    let other_user = users
+        .iter()
+        .find(|u| u["email"].as_str() != Some("admin@admin.com"))
+        .unwrap();
+    let other_id = other_user["user_id"].as_str().unwrap();
+
+    // Try to delete the other user → should be 403
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", other_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "should not be able to delete another user"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn update_other_user_returns_forbidden() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    // Get list of users to find another user's ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+
+    let other_user = users
+        .iter()
+        .find(|u| u["email"].as_str() != Some("admin@admin.com"))
+        .unwrap();
+    let other_id = other_user["user_id"].as_str().unwrap();
+
+    // Try to update the other user → should be 403
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}", other_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .set_json(json!({
+            "firstname": "Hacked",
+            "lastname": "Name",
+            "email": "hacked@example.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "should not be able to update another user"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Team orders CRUD (requires team membership)
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn create_and_list_team_orders() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // Login as U4_F who is Admin of "League of Cool Coders"
+    let auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let token = &auth.access_token;
+
+    // Get teams to find the team ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a new team order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2026-03-15"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // List orders — should include the new one
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let orders: Vec<Value> = test::read_body_json(resp).await;
+    assert!(orders
+        .iter()
+        .any(|o| o["teamorders_id"].as_str() == Some(&order_id)));
+
+    // Delete the order
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
+
+// ---------------------------------------------------------------------------
+// Team RBAC: non-member cannot mutate team
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn non_member_cannot_create_team_order() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // admin is not a member of any team
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Get teams
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let team_id = teams[0]["team_id"].as_str().unwrap();
+
+    // Try to create order → should be 403 (not a member)
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2026-03-15"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "non-member should not create team orders"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Validation rejection
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn create_user_with_invalid_email_returns_422() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .set_json(json!({
+            "firstname": "Test",
+            "lastname": "User",
+            "email": "not-an-email",
+            "password": "securepassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 422, "invalid email should be rejected");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn create_item_with_empty_descr_returns_422() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .set_json(json!({"descr": "", "price": "1.00"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 422, "empty description should be rejected");
+}

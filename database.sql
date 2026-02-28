@@ -155,7 +155,7 @@ INSERT INTO roles (title)
   VALUES ('Guest');
 
 INSERT INTO users (firstname, lastname, email, PASSWORD)
-  VALUES ('admin', 'root', 'admin', '$argon2id$v=19$m=19456,t=2,p=1$VmVyeSBTZWNyZXQ$BT6JB0Qi7yrvPmQXFxNS8CeegXoTZQ1x6yEDplbjR7A');
+  VALUES ('admin', 'root', 'admin@admin.com', '$argon2id$v=19$m=19456,t=2,p=1$VmVyeSBTZWNyZXQ$BT6JB0Qi7yrvPmQXFxNS8CeegXoTZQ1x6yEDplbjR7A');
 
 INSERT INTO users (firstname, lastname, email, PASSWORD)
   VALUES ('U1_F', 'U1_L', 'U1_F.U1_L@LEGO.com', '$argon2id$v=19$m=19456,t=2,p=1$VmVyeSBTZWNyZXQ$BT6JB0Qi7yrvPmQXFxNS8CeegXoTZQ1x6yEDplbjR7A');

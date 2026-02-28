@@ -640,6 +640,31 @@ pub async fn delete_team_orders(client: &Client, team_id: Uuid) -> Result<u64, E
 
 // ── Memberof management ────────────────────────────────────────────────────
 
+pub async fn get_member_role(
+    client: &Client,
+    team_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<String>, Error> {
+    let statement = client
+        .prepare(
+            r#"
+                SELECT r.title
+                FROM memberof m
+                JOIN roles r ON r.role_id = m.memberof_role_id
+                WHERE m.memberof_team_id = $1 AND m.memberof_user_id = $2
+            "#,
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    let rows = client
+        .query(&statement, &[&team_id, &user_id])
+        .await
+        .map_err(Error::Db)?;
+
+    Ok(rows.first().map(|r| r.get("title")))
+}
+
 pub async fn add_team_member(
     client: &Client,
     team_id: Uuid,
@@ -760,4 +785,116 @@ pub async fn update_member_role(
         email: row.get("email"),
         title: row.get("title"),
     })
+}
+
+// ── Order CRUD (items within a team order) ──────────────────────────────────
+
+pub async fn get_order_items(
+    client: &Client,
+    teamorder_id: Uuid,
+) -> Result<Vec<OrderEntry>, Error> {
+    let statement = client
+        .prepare(
+            "select orders_teamorders_id, orders_item_id, orders_team_id, amt from orders where orders_teamorders_id = $1 order by orders_item_id",
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    let items = client
+        .query(&statement, &[&teamorder_id])
+        .await
+        .map_err(Error::Db)?
+        .iter()
+        .filter_map(|row| OrderEntry::from_row_ref(row).ok())
+        .collect();
+
+    Ok(items)
+}
+
+pub async fn get_order_item(
+    client: &Client,
+    teamorder_id: Uuid,
+    item_id: Uuid,
+) -> Result<OrderEntry, Error> {
+    let statement = client
+        .prepare(
+            "select orders_teamorders_id, orders_item_id, orders_team_id, amt from orders where orders_teamorders_id = $1 and orders_item_id = $2 limit 1",
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    client
+        .query_one(&statement, &[&teamorder_id, &item_id])
+        .await
+        .map(OrderEntry::from_row)?
+        .map_err(Error::DbMapper)
+}
+
+pub async fn create_order_item(
+    client: &Client,
+    teamorder_id: Uuid,
+    team_id: Uuid,
+    order: CreateOrderEntry,
+) -> Result<OrderEntry, Error> {
+    let statement = client
+        .prepare(
+            r#"
+               insert into orders (orders_teamorders_id, orders_item_id, orders_team_id, amt)
+               values ($1, $2, $3, $4)
+               returning orders_teamorders_id, orders_item_id, orders_team_id, amt
+            "#,
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    client
+        .query_one(
+            &statement,
+            &[&teamorder_id, &order.orders_item_id, &team_id, &order.amt],
+        )
+        .await
+        .map(OrderEntry::from_row)?
+        .map_err(Error::DbMapper)
+}
+
+pub async fn update_order_item(
+    client: &Client,
+    teamorder_id: Uuid,
+    item_id: Uuid,
+    order: UpdateOrderEntry,
+) -> Result<OrderEntry, Error> {
+    let statement = client
+        .prepare(
+            r#"
+               update orders set amt = $1
+               where orders_teamorders_id = $2 and orders_item_id = $3
+               returning orders_teamorders_id, orders_item_id, orders_team_id, amt
+            "#,
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    client
+        .query_one(&statement, &[&order.amt, &teamorder_id, &item_id])
+        .await
+        .map(OrderEntry::from_row)?
+        .map_err(Error::DbMapper)
+}
+
+pub async fn delete_order_item(
+    client: &Client,
+    teamorder_id: Uuid,
+    item_id: Uuid,
+) -> Result<bool, Error> {
+    let statement = client
+        .prepare("delete from orders where orders_teamorders_id = $1 and orders_item_id = $2")
+        .await
+        .map_err(Error::Db)?;
+
+    let result = client
+        .execute(&statement, &[&teamorder_id, &item_id])
+        .await
+        .map_err(Error::Db)?;
+
+    Ok(result == 1)
 }

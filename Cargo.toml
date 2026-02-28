@@ -1,6 +1,6 @@
 [package]
 name = "breakfast"
-version = "0.5.3"
+version = "0.5.4"
 authors = ["Ralph Zitz <Ralph.Zitz@LEGO.com>"]
 edition = "2021"
 readme = "README.md"
@@ -13,6 +13,7 @@ keywords = ["fabulab"]
 flurry = "0.5.2"
 actix-web = { version = "4.13.0", features = ["rustls-0_23", "secure-cookies"] }
 actix-web-httpauth = { version = "0.8.2" }
+actix-governor = "0.8"
 utoipa = { version = "5.4.0", features = ["actix_extras", "chrono", "uuid", "decimal"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"] }
 serde = { version = "1.0.228", features = ["derive"] }

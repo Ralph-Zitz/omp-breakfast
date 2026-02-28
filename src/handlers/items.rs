@@ -67,14 +67,11 @@ pub async fn create_item(
     validate(&json)?;
     let client: Client = get_client(state.pool.clone()).await?;
     let item = db::create_item(&client, json.into_inner()).await?;
-    Ok(HttpResponse::Created()
-        .append_header((
-            header::LOCATION,
-            req.url_for("/items/item_id", [item.item_id.to_string()])
-                .unwrap()
-                .as_str(),
-        ))
-        .json(item))
+    let mut response = HttpResponse::Created();
+    if let Ok(url) = req.url_for("/items/item_id", [item.item_id.to_string()]) {
+        response.append_header((header::LOCATION, url.as_str().to_owned()));
+    }
+    Ok(response.json(item))
 }
 
 #[utoipa::path(

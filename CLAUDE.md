@@ -10,7 +10,8 @@ A breakfast ordering application for teams, built in Rust with an actix-web REST
 - **Web framework:** actix-web 4 (with rustls TLS)
 - **Database:** PostgreSQL via `deadpool-postgres` connection pool + `tokio-postgres`
 - **ORM/mapping:** `tokio-pg-mapper` (derive-based row mapping)
-- **Auth:** JWT (access + refresh tokens via `jsonwebtoken`) + Basic Auth (Argon2 password hashing) + RBAC (self-only mutations)
+- **Auth:** JWT (access + refresh tokens via `jsonwebtoken`) + Basic Auth (Argon2 password hashing) + RBAC (self-only mutations, team-scoped admin/member checks)
+- **Rate limiting:** `actix-governor` on auth endpoints (6s per request, burst size 10)
 - **Validation:** `validator` crate with derive macros
 - **Error handling:** `thiserror` for typed error enum, `color-eyre` for colorized panic/error reports
 - **Observability:** `tracing` + `tracing-subscriber` (Bunyan JSON in prod, colorized ANSI in dev), OpenTelemetry spans, `color-eyre` SpanTrace via `tracing-error`
@@ -56,11 +57,12 @@ src/
   routes.rs        – All route definitions with auth middleware wiring
   lib.rs           – Module declarations
   handlers/
-    mod.rs         – get_client() utility + health endpoint
+    mod.rs         – get_client() utility, health endpoint, team RBAC helpers
     users.rs       – User CRUD + auth handlers (RBAC: self-only mutations)
-    teams.rs       – Team CRUD + team order + member management handlers
+    teams.rs       – Team CRUD + team order + member management handlers (team RBAC)
     roles.rs       – Role CRUD handlers
     items.rs       – Item CRUD handlers (breakfast items with prices)
+    orders.rs      – Order item CRUD handlers (items within team orders, member-gated)
   middleware/
     auth.rs        – JWT/Basic auth validators, token generation/verification, blacklist
     openapi.rs     – OpenApi derive + Swagger UI endpoint
@@ -75,7 +77,7 @@ frontend/
   style/
     main.css       – Modern CSS (custom properties, responsive, animations)
   tests/
-    ui_tests.rs    – 16 WASM integration tests (headless Chrome)
+    ui_tests.rs    – 21 WASM integration tests (headless Chrome)
 config/
   default.yml      – Base config
   development.yml  – Dev overrides (local DB)
@@ -94,7 +96,9 @@ tests/
 - JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation
 - Token revocation uses an in-memory `flurry::HashMap` blacklist (not persisted)
 - Auth cache uses TTL (5min) and max-size (1000 entries) with LRU-style eviction
-- RBAC: JWT claims are stored in request extensions; user mutation handlers (update_user, delete_user) check `claims.sub` matches target user_id
+- RBAC: JWT claims are stored in request extensions; user mutation handlers (update_user, delete_user, delete_user_by_email) check `claims.sub` matches target user
+- Team RBAC: `require_team_member` and `require_team_admin` helpers in `handlers/mod.rs` gate team-scoped mutations
+- `Error::Forbidden` variant maps to HTTP 403 for authorization failures
 - Production safety: server panics at startup if JWT secret is still the default value when `ENV=production`
 - Error responses are JSON `{"error": "..."}` via `ErrorResponse` struct
 - 4xx errors log with `warn!()`, 5xx errors log with `error!()` for color-coded severity
@@ -178,7 +182,6 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ## Unfinished Work
 
-- The `orders` table exists in `database.sql` but has no corresponding model, db functions, or handlers (individual user orders within a team order)
 - Frontend only has login + dashboard pages; no order management UI yet
 - No client-side routing library (manual signal-based page switching)
 - Frontend does not yet consume the team, role, item, or order APIs
@@ -187,8 +190,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 34 unit tests across `errors`, `middleware::auth`, and `validate` modules
-- 15 integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 35 unit tests across `errors`, `middleware::auth`, and `validate` modules
+- 23 integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - No tests for `db.rs` functions (they require a live DB connection)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs ignored tests, then tears down)

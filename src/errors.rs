@@ -39,6 +39,8 @@ pub enum Error {
     Argonautica(String),
     #[error("{0}")]
     Utoipa(String),
+    #[error("{0}")]
+    Forbidden(String),
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
@@ -206,6 +208,12 @@ impl ResponseError for Error {
                     error: e.to_string(),
                 })
             }
+            Error::Forbidden(e) => {
+                warn!(error = %e, "Forbidden");
+                HttpResponse::Forbidden().json(ErrorResponse {
+                    error: e.to_string(),
+                })
+            }
         }
     }
 }
@@ -314,6 +322,13 @@ mod tests {
         let err = Error::Eyre(eyre_err);
         let resp = err.error_response();
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn forbidden_error_returns_403() {
+        let err = Error::Forbidden("not allowed".into());
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
     #[test]

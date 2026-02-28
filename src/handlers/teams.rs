@@ -67,14 +67,11 @@ pub async fn create_team(
     validate(&json)?;
     let client: Client = get_client(state.pool.clone()).await?;
     let team = db::create_team(&client, json.into_inner()).await?;
-    Ok(HttpResponse::Created()
-        .append_header((
-            header::LOCATION,
-            req.url_for("/teams/team_id", [team.team_id.to_string()])
-                .unwrap()
-                .as_str(),
-        ))
-        .json(team))
+    let mut response = HttpResponse::Created();
+    if let Ok(url) = req.url_for("/teams/team_id", [team.team_id.to_string()]) {
+        response.append_header((header::LOCATION, url.as_str().to_owned()));
+    }
+    Ok(response.json(team))
 }
 
 #[utoipa::path(
@@ -90,10 +87,12 @@ pub async fn create_team(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
-pub async fn delete_team(state: Data<State>, tid: Path<Uuid>) -> Result<impl Responder, Error> {
+#[instrument(skip(state, req), level = "debug")]
+pub async fn delete_team(state: Data<State>, tid: Path<Uuid>, req: HttpRequest) -> Result<impl Responder, Error> {
+    let team_id = tid.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
-    let deleted = db::delete_team(&client, tid.into_inner()).await?;
+    require_team_admin(&client, &req, team_id).await?;
+    let deleted = db::delete_team(&client, team_id).await?;
     if deleted {
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
     } else {
@@ -115,15 +114,18 @@ pub async fn delete_team(state: Data<State>, tid: Path<Uuid>) -> Result<impl Res
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn update_team(
     state: Data<State>,
     path: Path<Uuid>,
     json: Json<UpdateTeamEntry>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
+    let team_id = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
-    let team = db::update_team(&client, path.into_inner(), json.into_inner()).await?;
+    require_team_admin(&client, &req, team_id).await?;
+    let team = db::update_team(&client, team_id, json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(team))
 }
 
@@ -207,16 +209,19 @@ pub async fn get_team_order(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn create_team_order(
     state: Data<State>,
     team_id: Path<Uuid>,
     json: Json<CreateTeamOrderEntry>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
+    let tid = team_id.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
+    require_team_member(&client, &req, tid).await?;
     let order =
-        db::create_team_order(&client, team_id.into_inner(), json.into_inner()).await?;
+        db::create_team_order(&client, tid, json.into_inner()).await?;
     Ok(HttpResponse::Created().json(order))
 }
 
@@ -234,13 +239,15 @@ pub async fn create_team_order(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn delete_team_order(
     state: Data<State>,
     path: Path<(Uuid, Uuid)>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let (team_id, order_id) = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
+    require_team_member(&client, &req, team_id).await?;
     let deleted = db::delete_team_order(&client, team_id, order_id).await?;
     if deleted {
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
@@ -261,13 +268,16 @@ pub async fn delete_team_order(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn delete_team_orders(
     state: Data<State>,
     team_id: Path<Uuid>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
+    let tid = team_id.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
-    let count = db::delete_team_orders(&client, team_id.into_inner()).await?;
+    require_team_admin(&client, &req, tid).await?;
+    let count = db::delete_team_orders(&client, tid).await?;
     Ok(HttpResponse::Ok().json(DeletedResponse {
         deleted: count > 0,
     }))
@@ -288,15 +298,17 @@ pub async fn delete_team_orders(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn update_team_order(
     state: Data<State>,
     path: Path<(Uuid, Uuid)>,
     json: Json<UpdateTeamOrderEntry>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
     let (team_id, order_id) = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
+    require_team_member(&client, &req, team_id).await?;
     let order =
         db::update_team_order(&client, team_id, order_id, json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(order))
@@ -318,16 +330,19 @@ pub async fn update_team_order(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn add_team_member(
     state: Data<State>,
     team_id: Path<Uuid>,
     json: Json<AddMemberEntry>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
+    let tid = team_id.into_inner();
     let member = json.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
+    require_team_admin(&client, &req, tid).await?;
     let result =
-        db::add_team_member(&client, team_id.into_inner(), member.user_id, member.role_id)
+        db::add_team_member(&client, tid, member.user_id, member.role_id)
             .await?;
     Ok(HttpResponse::Created().json(result))
 }
@@ -346,13 +361,15 @@ pub async fn add_team_member(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn remove_team_member(
     state: Data<State>,
     path: Path<(Uuid, Uuid)>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let (team_id, user_id) = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
+    require_team_admin(&client, &req, team_id).await?;
     let deleted = db::remove_team_member(&client, team_id, user_id).await?;
     if deleted {
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
@@ -376,14 +393,16 @@ pub async fn remove_team_member(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn update_member_role(
     state: Data<State>,
     path: Path<(Uuid, Uuid)>,
     json: Json<UpdateMemberRoleEntry>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let (team_id, user_id) = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
+    require_team_admin(&client, &req, team_id).await?;
     let result =
         db::update_member_role(&client, team_id, user_id, json.into_inner().role_id).await?;
     Ok(HttpResponse::Ok().json(result))

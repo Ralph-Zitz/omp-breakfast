@@ -1,7 +1,8 @@
 use crate::errors::{json_error_handler, path_error_handler};
-use crate::handlers::{items::*, roles::*, teams::*, users::*, *};
+use crate::handlers::{items::*, orders::*, roles::*, teams::*, users::*, *};
 use crate::middleware::auth::{basic_validator, jwt_validator, refresh_validator};
 use crate::middleware::openapi::*;
+use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{
     middleware::Compat, web::delete, web::get, web::post, web::put, web::resource, web::scope,
     web::JsonConfig, web::PathConfig, web::ServiceConfig,
@@ -14,6 +15,13 @@ pub fn routes(cfg: &mut ServiceConfig) {
     let jwt_auth_revoke = HttpAuthentication::bearer(jwt_validator);
     let refresh_auth = HttpAuthentication::bearer(refresh_validator);
 
+    // Rate limiter for auth endpoints: 10 requests per minute burst, sustained 1 per 6s
+    let auth_rate_limit = GovernorConfigBuilder::default()
+        .seconds_per_request(6)
+        .burst_size(10)
+        .finish()
+        .unwrap();
+
     cfg
         /* Status Endpoint: Is server running and connected to DB? */
         .route("/health", get().to(get_health))
@@ -21,12 +29,14 @@ pub fn routes(cfg: &mut ServiceConfig) {
         .service(
             resource("/auth")
                 .name("auth")
+                .wrap(Governor::new(&auth_rate_limit))
                 .wrap(Compat::new(basic_auth))
                 .route(post().to(auth_user)),
         )
         .service(
             resource("/auth/refresh")
                 .name("auth_refresh")
+                .wrap(Governor::new(&auth_rate_limit))
                 .wrap(Compat::new(refresh_auth))
                 .route(post().to(refresh_token)),
         )
@@ -107,6 +117,19 @@ pub fn routes(cfg: &mut ServiceConfig) {
                                 .name("/teams/team_id/users/user_id")
                                 .route(delete().to(remove_team_member))
                                 .route(put().to(update_member_role)),
+                        )
+                        .service(
+                            resource("/{team_id}/orders/{order_id}/items")
+                                .name("/teams/team_id/orders/order_id/items")
+                                .route(get().to(get_order_items))
+                                .route(post().to(create_order_item)),
+                        )
+                        .service(
+                            resource("/{team_id}/orders/{order_id}/items/{item_id}")
+                                .name("/teams/team_id/orders/order_id/items/item_id")
+                                .route(get().to(get_order_item))
+                                .route(delete().to(delete_order_item))
+                                .route(put().to(update_order_item)),
                         ),
                 )
                 .service(

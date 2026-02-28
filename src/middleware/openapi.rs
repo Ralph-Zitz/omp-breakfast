@@ -77,6 +77,12 @@ impl Modify for SecurityAddon {
         items::create_item,
         items::delete_item,
         items::update_item,
+        // Order Items
+        orders::get_order_items,
+        orders::get_order_item,
+        orders::create_order_item,
+        orders::update_order_item,
+        orders::delete_order_item,
         // Roles
         roles::get_roles,
         roles::get_role,
@@ -110,6 +116,9 @@ impl Modify for SecurityAddon {
         UpdateTeamOrderEntry,
         AddMemberEntry,
         UpdateMemberRoleEntry,
+        OrderEntry,
+        CreateOrderEntry,
+        UpdateOrderEntry,
     ))
 )]
 pub(crate) struct ApiDoc;

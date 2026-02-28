@@ -311,3 +311,25 @@ pub struct AddMemberEntry {
 pub struct UpdateMemberRoleEntry {
     pub role_id: Uuid,
 }
+
+// ── Order models (individual items within a team order) ─────────────────────
+
+#[derive(Serialize, PostgresMapper, ToSchema)]
+#[pg_mapper(table = "orders")]
+pub struct OrderEntry {
+    pub orders_teamorders_id: Uuid,
+    pub orders_item_id: Uuid,
+    pub orders_team_id: Uuid,
+    pub amt: Option<i32>,
+}
+
+#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
+pub struct CreateOrderEntry {
+    pub orders_item_id: Uuid,
+    pub amt: Option<i32>,
+}
+
+#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
+pub struct UpdateOrderEntry {
+    pub amt: Option<i32>,
+}
