@@ -130,6 +130,45 @@ When creating or editing `.md` files (including `.claude/commands/*.md`), follow
 - Align table separator pipes with header pipes (use ` --- ` padding, not ragged dashes)
 - Use sequential ordered list numbering (`1.`, `2.`, `3.`) — do not continue numbering across separate sections
 
+## Version Bumping
+
+When asked to bump the project version, **all** of the following steps **must** be performed:
+
+1. Determine the bump type — `major`, `minor`, or `patch` — following semantic versioning (semver):
+   - **major** (`X.0.0`): incompatible API or breaking changes
+   - **minor** (`x.Y.0`): new functionality, backwards-compatible
+   - **patch** (`x.y.Z`): backwards-compatible bug fixes
+2. Update the `version` field in the root `Cargo.toml`
+3. Update the `version` field in `frontend/Cargo.toml` to match
+4. Commit the version change (message: `chore: bump version to vX.Y.Z`)
+5. Create an annotated git tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`
+6. Push the commit **and** the tag to upstream: `git push && git push --tags`
+
+If the bump type is not specified, ask before proceeding. Never skip the git tag or the push of tags.
+
+## Project Assessment
+
+When asked to **assess the project** (or "project assessment"), perform the following:
+
+1. Run every command defined in `.claude/commands/` against the current codebase:
+   - `api-completeness` — compare DB schema vs implemented endpoints and frontend consumption
+   - `db-review` — review schema design, indexing, constraints, and query patterns
+   - `dependency-check` — analyze Cargo dependencies for freshness, redundancy, and compatibility
+   - `openapi-sync` — validate OpenAPI spec against routes and frontend API usage
+   - `practices-audit` — audit code against conventions documented in this file
+   - `review` — full code review (idioms, error handling, duplication, dead code)
+   - `security-audit` — JWT/auth, input validation, secrets, TLS, Docker, frontend security
+   - `test-gaps` — identify missing test coverage and suggest specific new tests
+2. Collect all findings that indicate actionable changes (bugs, missing implementations, convention violations, security issues, stale dependencies, etc.)
+3. Present a single consolidated plan grouped by category, listing each proposed change with:
+   - Which command surfaced it
+   - What needs to change and where
+   - Severity (critical / important / minor / informational)
+4. **Do not apply any changes** — only present the plan for approval
+5. If no actionable findings are discovered, state that the project is in good shape
+
+This assessment must consider **all** commands in `.claude/commands/` at the time it is run, including any added after this rule was written.
+
 ## Unfinished Work
 
 - Team order endpoints in `handlers/teams.rs` are stubs returning `NotImplemented`

@@ -54,6 +54,7 @@ fn local_storage() -> Option<web_sys::Storage> {
 
 #[derive(Clone, Debug)]
 enum Page {
+    Loading,
     Login,
     Dashboard { name: String, email: String },
 }
@@ -62,12 +63,22 @@ enum Page {
 
 #[component]
 pub fn App() -> impl IntoView {
-    let (page, set_page) = signal(Page::Login);
+    let (page, set_page) = signal(Page::Loading);
+
+    // Attempt to restore session from stored JWT on mount
+    let set_page_restore = set_page;
+    wasm_bindgen_futures::spawn_local(async move {
+        let resolved = restore_session().await;
+        set_page_restore.set(resolved);
+    });
 
     view! {
         <div class="app">
             {move || {
                 match page.get() {
+                    Page::Loading => {
+                        view! { <LoadingPage /> }.into_any()
+                    }
                     Page::Login => {
                         view! { <LoginPage set_page /> }.into_any()
                     }
@@ -83,6 +94,68 @@ pub fn App() -> impl IntoView {
                     }
                 }
             }}
+        </div>
+    }
+}
+
+/// Attempt to restore a session from a stored JWT in localStorage.
+/// Returns the appropriate page to navigate to.
+async fn restore_session() -> Page {
+    let token = match local_storage()
+        .and_then(|s| s.get_item("access_token").ok())
+        .flatten()
+    {
+        Some(t) if !t.is_empty() => t,
+        _ => return Page::Login,
+    };
+
+    let payload = match decode_jwt_payload(&token) {
+        Some(p) => p,
+        None => {
+            // Token is malformed — clear it and show login
+            if let Some(storage) = local_storage() {
+                let _ = storage.remove_item("access_token");
+                let _ = storage.remove_item("refresh_token");
+            }
+            return Page::Login;
+        }
+    };
+
+    // Validate token by fetching user details (backend checks expiry)
+    let resp = Request::get(&format!("/api/v1.0/users/{}", payload.sub))
+        .header("Authorization", &format!("Bearer {}", token))
+        .send()
+        .await;
+
+    match resp {
+        Ok(r) if r.ok() => match r.json::<UserEntry>().await {
+            Ok(user) => Page::Dashboard {
+                name: format!("{} {}", user.firstname, user.lastname),
+                email: user.email,
+            },
+            Err(_) => Page::Login,
+        },
+        _ => {
+            // Token expired or invalid — clear stored tokens
+            if let Some(storage) = local_storage() {
+                let _ = storage.remove_item("access_token");
+                let _ = storage.remove_item("refresh_token");
+            }
+            Page::Login
+        }
+    }
+}
+
+// ── Loading page (shown during session restore) ─────────────────────────────
+
+#[component]
+fn LoadingPage() -> impl IntoView {
+    view! {
+        <div class="page loading-page">
+            <div class="card loading-card">
+                <div class="loading-spinner"></div>
+                <p class="loading-text">"Loading…"</p>
+            </div>
         </div>
     }
 }

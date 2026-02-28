@@ -103,14 +103,24 @@ async fn flush(ms: i32) {
     wasm_bindgen_futures::JsFuture::from(promise).await.unwrap();
 }
 
+/// Clear any stored tokens from localStorage to ensure a clean test state.
+fn clear_tokens() {
+    if let Some(storage) = web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
+    {
+        let _ = storage.remove_item("access_token");
+        let _ = storage.remove_item("refresh_token");
+    }
+}
+
 /// Build a minimal JWT with the given `sub` claim that
 /// `decode_jwt_payload` can parse.
 fn mock_token(sub: &str) -> String {
     use base64::Engine;
     let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
     let payload_json = format!(r#"{{"sub":"{}"}}"#, sub);
-    let payload =
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload_json.as_bytes());
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload_json.as_bytes());
     format!("{}.{}.nosig", header, payload)
 }
 
@@ -227,8 +237,7 @@ fn test_decode_jwt_invalid_base64() {
 #[wasm_bindgen_test]
 fn test_decode_jwt_invalid_json() {
     use base64::Engine;
-    let not_json =
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"this is not json");
+    let not_json = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"this is not json");
     let token = format!("header.{}.sig", not_json);
     assert!(app::decode_jwt_payload(&token).is_none());
 }
@@ -240,18 +249,16 @@ fn test_decode_jwt_invalid_json() {
 #[wasm_bindgen_test]
 async fn test_login_page_renders_brand_and_form() {
     let id = "t-login-render";
+    clear_tokens();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
-    flush(50).await;
+    flush(100).await;
 
     assert!(contains_text(id, "OMP Breakfast"), "brand title");
     assert!(contains_text(id, "Sign in to continue"), "subtitle");
     assert!(has_element(id, "input#username"), "username input");
     assert!(has_element(id, "input#password"), "password input");
-    assert!(
-        has_element(id, "button[type=\"submit\"]"),
-        "submit button"
-    );
+    assert!(has_element(id, "button[type=\"submit\"]"), "submit button");
     assert!(contains_text(id, "Sign In"), "button label");
 
     remove_test_container(id);
@@ -260,9 +267,10 @@ async fn test_login_page_renders_brand_and_form() {
 #[wasm_bindgen_test]
 async fn test_email_input_attributes() {
     let id = "t-email-attrs";
+    clear_tokens();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
-    flush(50).await;
+    flush(100).await;
 
     let username: web_sys::HtmlInputElement = document()
         .get_element_by_id(id)
@@ -282,9 +290,10 @@ async fn test_email_input_attributes() {
 #[wasm_bindgen_test]
 async fn test_password_input_attributes() {
     let id = "t-pwd-attrs";
+    clear_tokens();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
-    flush(50).await;
+    flush(100).await;
 
     let pwd: web_sys::HtmlInputElement = document()
         .get_element_by_id(id)
@@ -308,9 +317,10 @@ async fn test_password_input_attributes() {
 #[wasm_bindgen_test]
 async fn test_empty_form_shows_validation_error() {
     let id = "t-empty-form";
+    clear_tokens();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
-    flush(50).await;
+    flush(100).await;
 
     submit_form(id);
     flush(50).await;
@@ -326,9 +336,10 @@ async fn test_empty_form_shows_validation_error() {
 #[wasm_bindgen_test]
 async fn test_email_only_shows_validation_error() {
     let id = "t-email-only";
+    clear_tokens();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
-    flush(50).await;
+    flush(100).await;
 
     set_input(id, "input#username", "user@example.com");
     flush(50).await;
@@ -346,9 +357,10 @@ async fn test_email_only_shows_validation_error() {
 #[wasm_bindgen_test]
 async fn test_password_only_shows_validation_error() {
     let id = "t-pwd-only";
+    clear_tokens();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
-    flush(50).await;
+    flush(100).await;
 
     set_input(id, "input#password", "password123");
     flush(50).await;
@@ -370,10 +382,11 @@ async fn test_password_only_shows_validation_error() {
 #[wasm_bindgen_test]
 async fn test_successful_login_shows_dashboard() {
     let id = "t-login-ok";
+    clear_tokens();
     install_mock_fetch_success();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
-    flush(50).await;
+    flush(100).await;
 
     set_input(id, "input#username", "john@example.com");
     set_input(id, "input#password", "password123");
@@ -404,10 +417,11 @@ async fn test_successful_login_shows_dashboard() {
 #[wasm_bindgen_test]
 async fn test_failed_login_shows_error_and_stays_on_login() {
     let id = "t-login-fail";
+    clear_tokens();
     install_mock_fetch_failure();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
-    flush(50).await;
+    flush(100).await;
 
     set_input(id, "input#username", "wrong@example.com");
     set_input(id, "input#password", "badpassword");
@@ -423,7 +437,10 @@ async fn test_failed_login_shows_error_and_stays_on_login() {
     );
     assert!(html.contains("OMP Breakfast"), "still on login page");
     assert!(html.contains("Sign In"), "Sign In still visible");
-    assert!(has_element(id, "input#username"), "username input still there");
+    assert!(
+        has_element(id, "input#username"),
+        "username input still there"
+    );
     assert!(!html.contains("Welcome!"), "no dashboard");
 
     remove_test_container(id);
@@ -433,10 +450,11 @@ async fn test_failed_login_shows_error_and_stays_on_login() {
 #[wasm_bindgen_test]
 async fn test_network_error_shows_connection_message() {
     let id = "t-net-err";
+    clear_tokens();
     install_mock_fetch_network_error();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
-    flush(50).await;
+    flush(100).await;
 
     set_input(id, "input#username", "user@example.com");
     set_input(id, "input#password", "password123");
@@ -463,10 +481,11 @@ async fn test_network_error_shows_connection_message() {
 #[wasm_bindgen_test]
 async fn test_dashboard_user_card_structure() {
     let id = "t-user-card";
+    clear_tokens();
     install_mock_fetch_success();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
-    flush(50).await;
+    flush(100).await;
 
     set_input(id, "input#username", "john@example.com");
     set_input(id, "input#password", "password123");
@@ -487,10 +506,11 @@ async fn test_dashboard_user_card_structure() {
 #[wasm_bindgen_test]
 async fn test_logout_returns_to_login_page() {
     let id = "t-logout";
+    clear_tokens();
     install_mock_fetch_success();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
-    flush(50).await;
+    flush(100).await;
 
     // Log in
     set_input(id, "input#username", "john@example.com");
@@ -521,17 +541,15 @@ async fn test_logout_returns_to_login_page() {
 #[wasm_bindgen_test]
 async fn test_full_login_validate_logout_cycle() {
     let id = "t-full-cycle";
+    clear_tokens();
     install_mock_fetch_success();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
-    flush(50).await;
+    flush(100).await;
 
     // 1. Verify initial login page
     assert!(contains_text(id, "OMP Breakfast"), "step 1: brand");
-    assert!(
-        contains_text(id, "Sign in to continue"),
-        "step 1: subtitle"
-    );
+    assert!(contains_text(id, "Sign in to continue"), "step 1: subtitle");
 
     // 2. Empty submit → validation error
     submit_form(id);
@@ -567,12 +585,150 @@ async fn test_full_login_validate_logout_cycle() {
         contains_text(id, "OMP Breakfast"),
         "step 4: brand after logout"
     );
-    assert!(
-        contains_text(id, "Sign In"),
-        "step 4: Sign In after logout"
-    );
+    assert!(contains_text(id, "Sign In"), "step 4: Sign In after logout");
     assert!(!contains_text(id, "Welcome!"), "step 4: dashboard gone");
 
     remove_test_container(id);
+    restore_fetch();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  7 · Session persistence tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Helper to read a value from localStorage.
+fn get_storage_item(key: &str) -> Option<String> {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
+        .and_then(|s| s.get_item(key).ok())
+        .flatten()
+}
+
+#[wasm_bindgen_test]
+async fn test_session_persists_across_page_refresh() {
+    // Phase 1: Log in and verify tokens are stored
+    let id = "t-session-persist";
+    clear_tokens();
+    install_mock_fetch_success();
+    let container = create_test_container(id);
+    let handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    // Log in
+    set_input(id, "input#username", "john@example.com");
+    set_input(id, "input#password", "password123");
+    flush(50).await;
+    submit_form(id);
+    flush(500).await;
+
+    // Verify we're on the dashboard
+    assert!(contains_text(id, "Welcome!"), "phase 1: on dashboard");
+    assert!(contains_text(id, "John Doe"), "phase 1: user name shown");
+
+    // Verify token was stored in localStorage
+    let stored_token = get_storage_item("access_token");
+    assert!(stored_token.is_some(), "phase 1: access_token stored");
+    assert!(
+        !stored_token.as_ref().unwrap().is_empty(),
+        "phase 1: token not empty"
+    );
+
+    // Phase 2: Simulate page refresh by unmounting and re-mounting
+    drop(handle);
+    remove_test_container(id);
+
+    let container2 = create_test_container(id);
+    let _handle2 = leptos::mount::mount_to(container2.clone(), app::App);
+    flush(500).await;
+
+    // Should restore directly to dashboard without showing login
+    let html = inner_html(id);
+    assert!(
+        html.contains("Welcome!"),
+        "phase 2: session restored to dashboard"
+    );
+    assert!(html.contains("John Doe"), "phase 2: user name restored");
+    assert!(html.contains("john@example.com"), "phase 2: email restored");
+    assert!(!html.contains("Sign In"), "phase 2: login form not shown");
+    assert!(
+        !has_element(id, "input#username"),
+        "phase 2: no username input"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_logout_clears_tokens_and_prevents_session_restore() {
+    // Phase 1: Log in
+    let id = "t-logout-tokens";
+    clear_tokens();
+    install_mock_fetch_success();
+    let container = create_test_container(id);
+    let handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    set_input(id, "input#username", "john@example.com");
+    set_input(id, "input#password", "password123");
+    flush(50).await;
+    submit_form(id);
+    flush(500).await;
+
+    assert!(contains_text(id, "Welcome!"), "phase 1: on dashboard");
+
+    // Verify tokens exist
+    assert!(
+        get_storage_item("access_token").is_some(),
+        "phase 1: access_token exists"
+    );
+    assert!(
+        get_storage_item("refresh_token").is_some(),
+        "phase 1: refresh_token exists"
+    );
+
+    // Phase 2: Log out
+    click_button(id, ".btn-outline");
+    flush(100).await;
+
+    // Verify login page is shown
+    assert!(contains_text(id, "Sign In"), "phase 2: back to login");
+    assert!(!contains_text(id, "Welcome!"), "phase 2: dashboard gone");
+
+    // Verify tokens are cleared from localStorage
+    assert!(
+        get_storage_item("access_token").is_none(),
+        "phase 2: access_token cleared"
+    );
+    assert!(
+        get_storage_item("refresh_token").is_none(),
+        "phase 2: refresh_token cleared"
+    );
+
+    // Phase 3: Simulate page refresh after logout - should NOT restore session
+    drop(handle);
+    remove_test_container(id);
+
+    let container2 = create_test_container(id);
+    let _handle2 = leptos::mount::mount_to(container2.clone(), app::App);
+    flush(500).await;
+
+    // Should show login page, not dashboard
+    let html = inner_html(id);
+    assert!(html.contains("OMP Breakfast"), "phase 3: brand shown");
+    assert!(html.contains("Sign In"), "phase 3: login page shown");
+    assert!(
+        !html.contains("Welcome!"),
+        "phase 3: no dashboard after logout+refresh"
+    );
+    assert!(
+        has_element(id, "input#username"),
+        "phase 3: username input present"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
     restore_fetch();
 }
