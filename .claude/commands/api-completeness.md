@@ -1,3 +1,5 @@
+# API Completeness
+
 Analyze API completeness by comparing the database schema against implemented endpoints, and cross-reference with frontend consumption.
 
 ## Instructions

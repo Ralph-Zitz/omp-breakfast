@@ -1,3 +1,5 @@
+# Security Audit
+
 Perform a security audit of the codebase focusing on authentication, data handling, and common web vulnerabilities.
 
 ## Instructions
@@ -42,33 +44,33 @@ You are a security engineer reviewing a Rust web API with a Leptos WebAssembly f
 
 ### Areas to audit — Frontend (`frontend/src/`)
 
-8. **Token storage**
+1. **Token storage**
    - Is `localStorage` the right choice for JWT storage? (vs. `sessionStorage`, HttpOnly cookies, or in-memory only)
    - Is the token cleared on logout? On tab close? On session expiry?
    - Could an XSS attack read the token from `localStorage`?
 
-9. **Cross-Site Scripting (XSS)**
+2. **Cross-Site Scripting (XSS)**
    - Are user-supplied values (usernames, team names) rendered safely or is raw HTML insertion used?
    - Does Leptos's `view!` macro auto-escape output? Are there any uses of `inner_html` or similar?
    - Are error messages from the server displayed without sanitization?
 
-10. **Client-side auth security**
-    - Is the JWT decoded without signature verification on the client? (Expected for display purposes, but must not be trusted for authorization decisions)
-    - Are auth headers sent only over HTTPS?
-    - Is the `Authorization` header sent to the correct origin only? (Could leaked Trunk proxying send credentials to wrong host?)
+3. **Client-side auth security**
+   - Is the JWT decoded without signature verification on the client? (Expected for display purposes, but must not be trusted for authorization decisions)
+   - Are auth headers sent only over HTTPS?
+   - Is the `Authorization` header sent to the correct origin only? (Could leaked Trunk proxying send credentials to wrong host?)
 
-11. **CORS & API origin**
-    - Is the backend configured with appropriate CORS headers?
-    - Could the frontend inadvertently send requests to a different origin?
-    - Are fetch requests using `credentials: "same-origin"` or `"include"` appropriately?
+4. **CORS & API origin**
+   - Is the backend configured with appropriate CORS headers?
+   - Could the frontend inadvertently send requests to a different origin?
+   - Are fetch requests using `credentials: "same-origin"` or `"include"` appropriately?
 
-12. **Input sanitization**
-    - Is client-side validation sufficient, or could a user bypass it (e.g., via browser devtools)?
-    - Are there length limits on frontend form inputs to prevent abuse?
+5. **Input sanitization**
+   - Is client-side validation sufficient, or could a user bypass it (e.g., via browser devtools)?
+   - Are there length limits on frontend form inputs to prevent abuse?
 
-13. **Dependency supply chain (frontend)**
-    - Are `wasm-bindgen`, `gloo-net`, `web-sys` versions up to date?
-    - Could WASM binary be tampered with in transit? (Subresource Integrity / CSP headers)
+6. **Dependency supply chain (frontend)**
+   - Are `wasm-bindgen`, `gloo-net`, `web-sys` versions up to date?
+   - Could WASM binary be tampered with in transit? (Subresource Integrity / CSP headers)
 
 ### Output format
 

@@ -1,3 +1,5 @@
+# Code Review
+
 Review the Rust codebase for quality, idioms, and improvements.
 
 ## Instructions
@@ -28,6 +30,7 @@ You are a senior Rust developer performing a code review. Analyze the entire `sr
 ### Output format
 
 For each finding, report:
+
 - **File and line(s)**
 - **Severity:** Critical / Warning / Suggestion
 - **Description:** What the issue is

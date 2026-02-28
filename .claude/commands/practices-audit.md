@@ -1,3 +1,5 @@
+# Practices Audit
+
 Audit the project against its own documented practices and conventions to ensure everything is consistent and current.
 
 ## Instructions

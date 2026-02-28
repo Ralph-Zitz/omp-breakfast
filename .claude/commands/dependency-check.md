@@ -1,3 +1,5 @@
+# Dependency Check
+
 Analyze project dependencies for health, freshness, and optimization opportunities.
 
 ## Instructions

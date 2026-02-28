@@ -119,7 +119,7 @@ The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via 
 
 ## Markdown Style Rules
 
-When creating or editing `.md` files, follow these rules to avoid markdownlint warnings:
+When creating or editing `.md` files (including `.claude/commands/*.md`), follow these rules to avoid markdownlint warnings:
 
 - Every file must start with a top-level heading (`# Title`)
 - Leave a blank line after every heading before content
@@ -128,6 +128,7 @@ When creating or editing `.md` files, follow these rules to avoid markdownlint w
 - Always specify a language on fenced code blocks (e.g. ` ```rust `, ` ```text `, ` ```bash `)
 - Leave a blank line before and after tables
 - Align table separator pipes with header pipes (use ` --- ` padding, not ragged dashes)
+- Use sequential ordered list numbering (`1.`, `2.`, `3.`) — do not continue numbering across separate sections
 
 ## Unfinished Work
 

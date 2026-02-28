@@ -1,3 +1,5 @@
+# Database Review
+
 Review all database queries, schema design, and data access patterns for correctness and performance.
 
 ## Instructions
@@ -26,12 +28,14 @@ You are a database engineer reviewing a PostgreSQL-backed Rust application. Anal
 ### Output format
 
 For each finding:
+
 - **Location:** File and line(s), or table/column name
 - **Severity:** Critical / Warning / Suggestion
 - **Description:** The issue
 - **Recommendation:** How to fix it, with SQL or Rust code
 
 End with:
+
 1. **Schema improvement script** — SQL ALTER statements for recommended changes
 2. **Query optimization list** — Prioritized changes to `db.rs`
 3. **Missing functionality** — DB functions needed for incomplete features
