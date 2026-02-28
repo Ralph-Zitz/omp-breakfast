@@ -1,0 +1,25 @@
+[build]
+# Output directory for the built frontend assets
+dist = "dist"
+
+[watch]
+# Files to watch for changes during development
+watch = ["src", "index.html", "style"]
+
+# Proxy API requests to the backend during development
+# Trunk dev server runs on http://127.0.0.1:8081
+# Backend runs on https://0.0.0.0:8080
+[[proxy]]
+rewrite = "/auth"
+backend = "https://127.0.0.1:8080"
+insecure = true
+
+[[proxy]]
+rewrite = "/api"
+backend = "https://127.0.0.1:8080"
+insecure = true
+
+[[proxy]]
+rewrite = "/health"
+backend = "https://127.0.0.1:8080"
+insecure = true

@@ -1,8 +1,8 @@
-Analyze API completeness by comparing the database schema against implemented endpoints.
+Analyze API completeness by comparing the database schema against implemented endpoints, and cross-reference with frontend consumption.
 
 ## Instructions
 
-You are an API architect reviewing a REST API for completeness. Compare `database.sql` (the full schema) against the implemented handlers, routes, models, and DB functions to identify missing functionality.
+You are an API architect reviewing a REST API for completeness. Compare `database.sql` (the full schema) against the implemented handlers, routes, models, and DB functions to identify missing functionality. Also check which endpoints the frontend actually consumes.
 
 ### Analysis steps
 
@@ -17,17 +17,31 @@ You are an API architect reviewing a REST API for completeness. Compare `databas
 4. **Stub audit** — Identify all handlers returning `NotImplemented` and map them to the DB tables they should operate on
 5. **Relationship coverage** — Are join queries (memberof, team orders) fully exposed via the API?
 6. **Missing endpoints** — Suggest endpoints that should exist based on the schema but don't
+7. **Frontend consumption** — Read `frontend/src/app.rs` and list every API call the frontend makes:
+   - Which endpoints does the frontend call? (e.g., `POST /auth`, `GET /api/v1.0/users/{id}`)
+   - Which endpoints exist in the backend but are NOT consumed by the frontend yet?
+   - Are there frontend features waiting on unimplemented backend endpoints?
+   - Does the frontend expect response shapes that match what the backend returns?
 
 ### Output format
 
 Provide:
+
 1. **Schema-to-API mapping table:**
+
    | Table | Model | DB Functions | Handlers | Routes | OpenAPI | Status |
-   |-------|-------|-------------|----------|--------|---------|--------|
-2. **Stub endpoints** — List of `NotImplemented` handlers with what they need to become functional
-3. **Missing endpoints** — New endpoints to add (with suggested path, method, and handler name)
-4. **Implementation plan** — Prioritized order for completing the API, considering foreign key dependencies
+   | ----- | ----- | ------------ | -------- | ------ | ------- | ------ |
+
+2. **Frontend API consumption table:**
+
+   | Frontend Action | HTTP Method | Endpoint | Backend Status | Notes |
+   | --------------- | ----------- | -------- | -------------- | ----- |
+
+3. **Stub endpoints** — List of `NotImplemented` handlers with what they need to become functional
+4. **Missing endpoints** — New endpoints to add (with suggested path, method, and handler name)
+5. **Frontend integration gaps** — Endpoints the frontend will need as new UI features are built (e.g., order management, team views)
+6. **Implementation plan** — Prioritized order for completing the API, considering both foreign key dependencies and frontend needs
 
 ### Scope
 
-Read `database.sql`, `src/models.rs`, `src/db.rs`, `src/handlers/`, `src/routes.rs`, and `src/middleware/openapi.rs`. Do NOT modify any files — this is analysis only.
+Read `database.sql`, `src/models.rs`, `src/db.rs`, `src/handlers/`, `src/routes.rs`, `src/middleware/openapi.rs`, and `frontend/src/app.rs`. Do NOT modify any files — this is analysis only.

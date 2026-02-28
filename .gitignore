@@ -9,3 +9,5 @@ localhost_root.pem
 localhost_key.pem
 localhost_ca.pem
 *.session.sql
+frontend/dist/
+frontend/target/

@@ -1,4 +1,5 @@
 use crate::{config::Settings, models::State, routes::routes};
+use actix_files::Files;
 use actix_web::{web::Data, App, HttpServer};
 use deadpool_postgres::Runtime;
 use flurry::HashMap;
@@ -140,6 +141,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
             .app_data(state.clone())
             .app_data(swagger_config.clone())
             .configure(routes)
+            .service(Files::new("/", "frontend/dist").index_file("index.html"))
     })
     .bind_rustls_0_23(format!("{}:{}", host, port), ssl_config)?
     .run()

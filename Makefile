@@ -1,11 +1,25 @@
-.PHONY: build check fmt test test-unit test-integration test-all db-up db-down db-wait
+.PHONY: build check fmt test test-unit test-integration test-frontend test-all db-up db-down db-wait \
+       frontend frontend-build frontend-dev frontend-clean
 
 COMPOSE_TEST = docker compose -f docker-compose.yml -f docker-compose.test.yml
 TEST_DB_PORT ?= 5433
 
 ## Build & Check
-build:
+build: frontend-build
 	cargo build
+
+## Frontend (Leptos WASM via Trunk)
+frontend-build:
+	@echo "Building frontend..."
+	cd frontend && trunk build --release
+
+frontend-dev:
+	@echo "Starting Trunk dev server (http://127.0.0.1:8081)..."
+	cd frontend && trunk serve --port 8081
+
+frontend-clean:
+	@echo "Cleaning frontend build artifacts..."
+	rm -rf frontend/dist
 
 check:
 	cargo check
@@ -26,7 +40,11 @@ test-integration: db-up db-wait
 	$(MAKE) db-down; \
 	exit $$EXIT_CODE
 
-test-all: test-unit test-integration
+test-frontend:
+	@echo "Running frontend WASM tests (headless Chrome)..."
+	cd frontend && wasm-pack test --headless --chrome
+
+test-all: test-unit test-integration test-frontend
 
 ## Database lifecycle (test)
 db-up:

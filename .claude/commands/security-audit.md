@@ -2,9 +2,9 @@ Perform a security audit of the codebase focusing on authentication, data handli
 
 ## Instructions
 
-You are a security engineer reviewing a Rust web API. Examine the entire `src/` directory, `config/` files, `database.sql`, `docker-compose.yml`, and `Dockerfile.*` for security issues.
+You are a security engineer reviewing a Rust web API with a Leptos WebAssembly frontend. Examine the entire `src/` directory, `frontend/src/` directory, `config/` files, `database.sql`, `docker-compose.yml`, and `Dockerfile.*` for security issues.
 
-### Areas to audit
+### Areas to audit — Backend
 
 1. **Authentication & Authorization**
    - JWT implementation: algorithm choice, secret strength validation, token lifetime, refresh token rotation
@@ -40,17 +40,48 @@ You are a security engineer reviewing a Rust web API. Examine the entire `src/` 
    - Does the container run as root?
    - Are secrets passed via environment variables or baked into images?
 
+### Areas to audit — Frontend (`frontend/src/`)
+
+8. **Token storage**
+   - Is `localStorage` the right choice for JWT storage? (vs. `sessionStorage`, HttpOnly cookies, or in-memory only)
+   - Is the token cleared on logout? On tab close? On session expiry?
+   - Could an XSS attack read the token from `localStorage`?
+
+9. **Cross-Site Scripting (XSS)**
+   - Are user-supplied values (usernames, team names) rendered safely or is raw HTML insertion used?
+   - Does Leptos's `view!` macro auto-escape output? Are there any uses of `inner_html` or similar?
+   - Are error messages from the server displayed without sanitization?
+
+10. **Client-side auth security**
+    - Is the JWT decoded without signature verification on the client? (Expected for display purposes, but must not be trusted for authorization decisions)
+    - Are auth headers sent only over HTTPS?
+    - Is the `Authorization` header sent to the correct origin only? (Could leaked Trunk proxying send credentials to wrong host?)
+
+11. **CORS & API origin**
+    - Is the backend configured with appropriate CORS headers?
+    - Could the frontend inadvertently send requests to a different origin?
+    - Are fetch requests using `credentials: "same-origin"` or `"include"` appropriately?
+
+12. **Input sanitization**
+    - Is client-side validation sufficient, or could a user bypass it (e.g., via browser devtools)?
+    - Are there length limits on frontend form inputs to prevent abuse?
+
+13. **Dependency supply chain (frontend)**
+    - Are `wasm-bindgen`, `gloo-net`, `web-sys` versions up to date?
+    - Could WASM binary be tampered with in transit? (Subresource Integrity / CSP headers)
+
 ### Output format
 
 For each finding:
+
 - **Severity:** Critical / High / Medium / Low / Informational
 - **Location:** File and line(s)
 - **Description:** The vulnerability or concern
 - **Impact:** What could go wrong
 - **Remediation:** Specific fix with code if applicable
 
-End with a risk summary and top 5 fixes to prioritize.
+Group findings into **Backend** and **Frontend** sections. End with a risk summary and top 5 fixes to prioritize.
 
 ### Scope
 
-Read all project files. Do NOT modify any files — this is analysis only.
+Read all project files including `frontend/src/`, `frontend/Trunk.toml`, and `frontend/index.html`. Do NOT modify any files — this is analysis only.

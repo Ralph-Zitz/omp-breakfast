@@ -1,10 +1,10 @@
 # OpenAPI Sync Validation
 
-Validate that the OpenAPI/Swagger UI spec is fully synchronized with the API route definitions.
+Validate that the OpenAPI/Swagger UI spec is fully synchronized with the API route definitions and matches what the frontend consumes.
 
 ## Instructions
 
-You are a REST API auditor ensuring the Swagger UI documentation exactly matches the implemented routes. Compare `src/routes.rs`, `src/middleware/openapi.rs`, and all handler files to find any discrepancies.
+You are a REST API auditor ensuring the Swagger UI documentation exactly matches the implemented routes and that the frontend's API usage is consistent. Compare `src/routes.rs`, `src/middleware/openapi.rs`, all handler files, and `frontend/src/app.rs` to find any discrepancies.
 
 ### Analysis steps
 
@@ -19,6 +19,10 @@ You are a REST API auditor ensuring the Swagger UI documentation exactly matches
    - **Method mismatches** — `#[utoipa::path(get/post/...)]` that don't match the HTTP method in `routes.rs`
 5. **Schema coverage** — Check that all request/response types used in handlers are listed in `components(schemas(...))` in `openapi.rs`
 6. **Security annotations** — Verify that endpoints behind auth middleware have matching `security(...)` in their utoipa annotations
+7. **Frontend alignment** — Read `frontend/src/app.rs` and check:
+   - Are all API endpoints called by the frontend documented in the OpenAPI spec?
+   - Do the request/response shapes the frontend expects match the OpenAPI schemas?
+   - Are there endpoints the frontend needs that are missing from both routes and OpenAPI?
 
 ### Output format
 
@@ -26,11 +30,13 @@ Provide:
 
 1. **Sync status table:**
 
-   | Handler | Route Path | Method | In routes.rs | In openapi.rs | Has #[utoipa::path] | Status |
-   | ------- | ---------- | ------ | ------------ | ------------- | ------------------- | ------ |
+   | Handler | Route Path | Method | In routes.rs | In openapi.rs | Has #[utoipa::path] | Used by Frontend | Status |
+   | ------- | ---------- | ------ | ------------ | ------------- | ------------------- | ---------------- | ------ |
 
 2. **Issues found** — List each mismatch with the exact file and line to fix
 
 3. **Missing schemas** — Any request/response types not in `components(schemas(...))`
 
-4. **Recommended fixes** — Specific code changes to bring everything into sync
+4. **Frontend API alignment** — Endpoints the frontend calls that are undocumented or missing
+
+5. **Recommended fixes** — Specific code changes to bring everything into sync
