@@ -6,11 +6,11 @@ use actix_web::HttpMessage;
 use actix_web::{dev::ServiceRequest, web::Data};
 use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
 use argon2::{
-    password_hash::{PasswordHash, PasswordVerifier},
     Argon2,
+    password_hash::{PasswordHash, PasswordVerifier},
 };
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode};
 use serde_json::json;
 use tracing::{instrument, warn};
 use uuid::Uuid;
@@ -222,9 +222,10 @@ pub async fn basic_validator(
     if user.is_none() {
         let guard = cache.pin();
         if let Some(cached) = guard.get(&credentials.user_id().to_string())
-            && (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS {
-                guard.remove(&credentials.user_id().to_string());
-            }
+            && (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS
+        {
+            guard.remove(&credentials.user_id().to_string());
+        }
     }
     let user = match user {
         Some(u) => u,
@@ -301,7 +302,7 @@ pub async fn basic_validator(
 mod tests {
     use super::*;
     use actix_web::web::Data;
-    use jsonwebtoken::{decode, DecodingKey, Validation};
+    use jsonwebtoken::{DecodingKey, Validation, decode};
 
     const TEST_SECRET: &str = "test-jwt-secret";
 

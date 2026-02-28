@@ -9,8 +9,8 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    http::header, web::Data, web::Json, web::Path, HttpMessage, HttpRequest, HttpResponse,
-    Responder,
+    HttpMessage, HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json,
+    web::Path,
 };
 use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
 use deadpool_postgres::Client;
@@ -193,11 +193,12 @@ pub async fn delete_user(
 
     // RBAC: only the user themselves can delete their account
     if let Some(claims) = req.extensions().get::<Claims>()
-        && claims.sub != uid {
-            return Ok(HttpResponse::Forbidden().json(ErrorResponse {
-                error: "You can only delete your own account".to_string(),
-            }));
-        }
+        && claims.sub != uid
+    {
+        return Ok(HttpResponse::Forbidden().json(ErrorResponse {
+            error: "You can only delete your own account".to_string(),
+        }));
+    }
 
     let client: Client = get_client(state.pool.clone()).await?;
 
@@ -240,11 +241,12 @@ pub async fn delete_user_by_email(
     let requesting_sub = req.extensions().get::<Claims>().map(|c| c.sub);
     if let Some(sub) = requesting_sub
         && let Ok(user) = db::get_user_by_email(&client, &email).await
-            && sub != user.user_id {
-                return Ok(HttpResponse::Forbidden().json(ErrorResponse {
-                    error: "You can only delete your own account".to_string(),
-                }));
-            }
+        && sub != user.user_id
+    {
+        return Ok(HttpResponse::Forbidden().json(ErrorResponse {
+            error: "You can only delete your own account".to_string(),
+        }));
+    }
 
     let deleted = db::delete_user_by_email(&client, &email).await?;
     if deleted {
@@ -280,11 +282,12 @@ pub async fn update_user(
 
     // RBAC: only the user themselves can update their account
     if let Some(claims) = req.extensions().get::<Claims>()
-        && claims.sub != uid {
-            return Ok(HttpResponse::Forbidden().json(ErrorResponse {
-                error: "You can only update your own account".to_string(),
-            }));
-        }
+        && claims.sub != uid
+    {
+        return Ok(HttpResponse::Forbidden().json(ErrorResponse {
+            error: "You can only update your own account".to_string(),
+        }));
+    }
 
     validate(&json)?;
     let client: Client = get_client(state.pool.clone()).await?;
