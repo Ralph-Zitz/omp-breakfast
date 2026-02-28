@@ -10,9 +10,9 @@ use opentelemetry_stdout as stdout;
 use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use rustls_pki_types::PrivateKeyDer;
-use std::{env, fs::File, io::BufReader};
+use std::{env, fs::File, io::BufReader, path::Path};
 use tokio_postgres_rustls::MakeRustlsConnect;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_actix_web::TracingLogger;
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_error::ErrorLayer;
@@ -20,33 +20,55 @@ use tracing_log::LogTracer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
 use utoipa_swagger_ui::Config as SwaggerConfig;
 
+const FRONTEND_DIR: &str = "frontend/dist";
+
 fn tls_config() -> ServerConfig {
-    let cert_file = &mut BufReader::new(File::open("localhost.pem").unwrap());
-    let key_file = &mut BufReader::new(File::open("localhost_key.pem").unwrap());
+    let cert_path = "localhost.pem";
+    let key_path = "localhost_key.pem";
+
+    let cert_file = &mut BufReader::new(File::open(cert_path).unwrap_or_else(|e| {
+        panic!("Failed to open TLS certificate file '{}': {}", cert_path, e);
+    }));
+    let key_file = &mut BufReader::new(File::open(key_path).unwrap_or_else(|e| {
+        panic!("Failed to open TLS private key file '{}': {}", key_path, e);
+    }));
+
     let cert_chain = certs(cert_file).map(|f| f.unwrap()).collect();
+    info!("TLS certificate loaded successfully from '{}'", cert_path);
+
     let keys = pkcs8_private_keys(key_file).next().unwrap().unwrap();
+    info!("TLS private key loaded successfully from '{}'", key_path);
+
     let mut config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(cert_chain, PrivateKeyDer::Pkcs8(keys))
         .unwrap();
     config.alpn_protocols.push(b"http/1.1".to_vec());
     config.alpn_protocols.push(b"h2".to_vec());
+
+    info!("TLS configuration initialized successfully");
     config
 }
 
 fn db_tls_connector(settings: &Settings) -> MakeRustlsConnect {
     let mut root_store = rustls::RootCertStore::empty();
     if let Some(ca_cert_path) = &settings.db_ca_cert {
-        let ca_file =
-            &mut BufReader::new(File::open(ca_cert_path).expect("CA cert file not found"));
+        let ca_file = &mut BufReader::new(File::open(ca_cert_path).unwrap_or_else(|e| {
+            panic!("Failed to open DB CA certificate '{}': {}", ca_cert_path, e);
+        }));
         let ca_certs: Vec<_> = certs(ca_file)
             .map(|c| c.expect("invalid CA cert"))
             .collect();
         for cert in ca_certs {
             root_store.add(cert).expect("failed to add CA cert");
         }
+        info!(
+            "Database CA certificate loaded successfully from '{}'",
+            ca_cert_path
+        );
     } else {
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        info!("Using default webpki root certificates for database TLS");
     }
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(root_store)
@@ -133,6 +155,31 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     // TLS
     let ssl_config = tls_config();
 
+    // Verify frontend assets
+    let frontend_path = Path::new(FRONTEND_DIR);
+    if frontend_path.is_dir() {
+        let index_path = frontend_path.join("index.html");
+        if index_path.exists() {
+            let file_count = std::fs::read_dir(frontend_path)
+                .map(|entries| entries.count())
+                .unwrap_or(0);
+            info!(
+                "Frontend assets loaded successfully from '{}' ({} files)",
+                FRONTEND_DIR, file_count
+            );
+        } else {
+            warn!(
+                "Frontend directory '{}' exists but index.html is missing",
+                FRONTEND_DIR
+            );
+        }
+    } else {
+        warn!(
+            "Frontend directory '{}' not found — UI will be unavailable",
+            FRONTEND_DIR
+        );
+    }
+
     info!("Starting server at https://{}:{}", host, port);
 
     HttpServer::new(move || {
@@ -141,7 +188,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
             .app_data(state.clone())
             .app_data(swagger_config.clone())
             .configure(routes)
-            .service(Files::new("/", "frontend/dist").index_file("index.html"))
+            .service(Files::new("/", FRONTEND_DIR).index_file("index.html"))
     })
     .bind_rustls_0_23(format!("{}:{}", host, port), ssl_config)?
     .run()

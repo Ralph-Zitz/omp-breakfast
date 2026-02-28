@@ -51,21 +51,20 @@ RUN trunk build --release
 
 # Stage 5 - Copy binary, frontend, and settings to final container
 FROM gcr.io/distroless/cc-debian13
-WORKDIR /app
-COPY --from=builder --chown=web:web /app/target/release/breakfast /usr/local/bin/breakfast
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+COPY --chown=web:web localhost.pem localhost.pem
+COPY --chown=web:web localhost_key.pem localhost_key.pem
+COPY --chown=web:web localhost_ca.pem localhost_ca.pem
+COPY localhost_ca.pem /etc/ssl/certs/
+COPY --chown=web:web rds-ca-2019-root.pem rds-ca-2019-root.pem
+COPY rds-ca-2019-root.pem /etc/ssl/certs/
+COPY --from=builder --chown=web:web /app/target/release/breakfast /breakfast
 COPY --chown=web:web config/default.yml /config/default.yml
 COPY --chown=web:web config/development.yml /config/development.yml
-COPY --chown=web:web config/production.yml /config/production.yml
-COPY --chown=web:web localhost.pem /localhost.pem
-COPY --chown=web:web localhost_key.pem /localhost_key.pem
-COPY --chown=web:web localhost_ca.pem /localhost_ca.pem
-COPY localhost_ca.pem /etc/ssl/certs/
-COPY --chown=web:web rds-ca-2019-root.pem /rds-ca-2019-root.pem
-COPY rds-ca-2019-root.pem /etc/ssl/certs/
+COPY --chown=web:web config/production.yml config/production.yml
 # Copy built frontend assets
-COPY --from=frontend-builder --chown=web:web /frontend/dist /app/frontend/dist
+COPY --from=frontend-builder --chown=web:web /frontend/dist /frontend/dist
 USER web:web
-CMD ["breakfast"]
+CMD ["/breakfast"]
