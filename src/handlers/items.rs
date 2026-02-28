@@ -6,7 +6,7 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    http::header, web::Data, web::Json, web::Path, HttpRequest, HttpResponse, Responder,
+    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -54,11 +54,12 @@ pub async fn get_item(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
     responses(
         (status = 201, description = "Item created", body = ItemEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 409, description = "Item already exists", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn create_item(
     state: Data<State>,
     json: Json<CreateItemEntry>,
@@ -66,6 +67,7 @@ pub async fn create_item(
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
     let client: Client = get_client(state.pool.clone()).await?;
+    require_admin(&client, &req).await?;
     let item = db::create_item(&client, json.into_inner()).await?;
     let mut response = HttpResponse::Created();
     if let Ok(url) = req.url_for("/items/item_id", [item.item_id.to_string()]) {
@@ -80,6 +82,7 @@ pub async fn create_item(
     responses(
         (status = 200, description = "Item deleted successfully", body = DeletedResponse),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 404, description = "Item not deleted", body = DeletedResponse),
     ),
     params(
@@ -87,9 +90,14 @@ pub async fn create_item(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
-pub async fn delete_item(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
+#[instrument(skip(state, req), level = "debug")]
+pub async fn delete_item(
+    state: Data<State>,
+    path: Path<Uuid>,
+    req: HttpRequest,
+) -> Result<impl Responder, Error> {
     let client: Client = get_client(state.pool.clone()).await?;
+    require_admin(&client, &req).await?;
     let deleted = db::delete_item(&client, path.into_inner()).await?;
     if deleted {
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
@@ -105,6 +113,7 @@ pub async fn delete_item(state: Data<State>, path: Path<Uuid>) -> Result<impl Re
     responses(
         (status = 200, description = "Item updated successfully", body = ItemEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 404, description = "Item not updated", body = ErrorResponse),
     ),
     params(
@@ -112,14 +121,16 @@ pub async fn delete_item(state: Data<State>, path: Path<Uuid>) -> Result<impl Re
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn update_item(
     state: Data<State>,
     path: Path<Uuid>,
     json: Json<UpdateItemEntry>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
     let client: Client = get_client(state.pool.clone()).await?;
+    require_admin(&client, &req).await?;
     let item = db::update_item(&client, path.into_inner(), json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(item))
 }

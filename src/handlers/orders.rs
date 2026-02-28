@@ -66,6 +66,7 @@ pub async fn get_order_item(
     responses(
         (status = 201, description = "Order item created", body = OrderEntry),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
         (status = 409, description = "Item already in order", body = ErrorResponse),
     ),
     params(
@@ -96,6 +97,7 @@ pub async fn create_order_item(
     responses(
         (status = 200, description = "Order item updated", body = OrderEntry),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
         (status = 404, description = "Order item not found", body = ErrorResponse),
     ),
     params(
@@ -126,6 +128,7 @@ pub async fn update_order_item(
     responses(
         (status = 200, description = "Order item deleted", body = DeletedResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
         (status = 404, description = "Order item not found", body = DeletedResponse),
     ),
     params(

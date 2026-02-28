@@ -162,6 +162,9 @@ INSERT INTO roles (title)
   VALUES ('Admin');
 
 INSERT INTO roles (title)
+  VALUES ('Team Admin');
+
+INSERT INTO roles (title)
   VALUES ('Member');
 
 INSERT INTO roles (title)
@@ -262,7 +265,7 @@ FROM
 WHERE
   firstname = 'U4_F'
   AND teams.tname = 'League of Cool Coders'
-  AND roles.title = 'Admin';
+  AND roles.title = 'Team Admin';
 
 INSERT INTO memberof (memberof_team_id, memberof_user_id, memberof_role_id)
 SELECT

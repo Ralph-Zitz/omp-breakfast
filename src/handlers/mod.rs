@@ -24,6 +24,7 @@ pub fn requesting_user_id(req: &HttpRequest) -> Option<Uuid> {
 }
 
 /// Require the requesting user to be a member of the specified team (any role).
+/// Global admins bypass this check.
 pub async fn require_team_member(
     client: &Client,
     req: &HttpRequest,
@@ -31,6 +32,10 @@ pub async fn require_team_member(
 ) -> Result<(), Error> {
     let user_id = requesting_user_id(req)
         .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+    // Global admin bypass
+    if db::is_admin(client, user_id).await? {
+        return Ok(());
+    }
     match db::get_member_role(client, team_id, user_id).await? {
         Some(_) => Ok(()),
         None => Err(Error::Forbidden("Team membership required".to_string())),
@@ -48,7 +53,8 @@ pub async fn require_admin(client: &Client, req: &HttpRequest) -> Result<(), Err
     }
 }
 
-/// Require the requesting user to be an admin of the specified team.
+/// Require the requesting user to be a Team Admin of the specified team,
+/// or a global Admin. Global admins bypass the team-scoped check.
 pub async fn require_team_admin(
     client: &Client,
     req: &HttpRequest,
@@ -56,11 +62,34 @@ pub async fn require_team_admin(
 ) -> Result<(), Error> {
     let user_id = requesting_user_id(req)
         .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+    // Global admin bypass
+    if db::is_admin(client, user_id).await? {
+        return Ok(());
+    }
     match db::get_member_role(client, team_id, user_id).await? {
-        Some(role) if role == "Admin" => Ok(()),
+        Some(role) if role == "Team Admin" => Ok(()),
         Some(_) => Err(Error::Forbidden("Team admin role required".to_string())),
         None => Err(Error::Forbidden("Team membership required".to_string())),
     }
+}
+
+/// Require the requesting user to be the target user themselves, or a global Admin.
+pub async fn require_self_or_admin(
+    client: &Client,
+    req: &HttpRequest,
+    target_user_id: Uuid,
+) -> Result<(), Error> {
+    let user_id = requesting_user_id(req)
+        .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+    if user_id == target_user_id {
+        return Ok(());
+    }
+    if db::is_admin(client, user_id).await? {
+        return Ok(());
+    }
+    Err(Error::Forbidden(
+        "You can only modify your own account".to_string(),
+    ))
 }
 
 // API Health endpoint

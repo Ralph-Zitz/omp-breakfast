@@ -10,7 +10,7 @@ A breakfast ordering application for teams, built in Rust with an actix-web REST
 - **Web framework:** actix-web 4 (with rustls TLS)
 - **Database:** PostgreSQL via `deadpool-postgres` connection pool + `tokio-postgres`
 - **ORM/mapping:** `tokio-pg-mapper` (derive-based row mapping)
-- **Auth:** JWT (access + refresh tokens via `jsonwebtoken`) + Basic Auth (Argon2 password hashing) + RBAC (self-only mutations, team-scoped admin/member checks)
+- **Auth:** JWT (access + refresh tokens via `jsonwebtoken`) + Basic Auth (Argon2 password hashing) + RBAC (Admin/Team Admin/Member/Guest roles, admin bypass)
 - **Rate limiting:** `actix-governor` on auth endpoints (6s per request, burst size 10)
 - **Validation:** `validator` crate with derive macros
 - **Error handling:** `thiserror` for typed error enum, `color-eyre` for colorized panic/error reports
@@ -57,11 +57,11 @@ src/
   routes.rs        – All route definitions with auth middleware wiring
   lib.rs           – Module declarations
   handlers/
-    mod.rs         – get_client() utility, health endpoint, team RBAC helpers
-    users.rs       – User CRUD + auth handlers (RBAC: self-only mutations)
+    mod.rs         – get_client() utility, health endpoint, RBAC helpers (require_admin, require_team_admin, require_team_member, require_self_or_admin)
+    users.rs       – User CRUD + auth handlers (RBAC: self or admin)
     teams.rs       – Team CRUD + team order + member management handlers (team RBAC)
-    roles.rs       – Role CRUD handlers
-    items.rs       – Item CRUD handlers (breakfast items with prices)
+    roles.rs       – Role CRUD handlers (admin-gated CUD)
+    items.rs       – Item CRUD handlers (breakfast items with prices, admin-gated CUD)
     orders.rs      – Order item CRUD handlers (items within team orders, member-gated)
   middleware/
     auth.rs        – JWT/Basic auth validators, token generation/verification, blacklist
@@ -96,9 +96,10 @@ tests/
 - JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation
 - Token revocation uses an in-memory `flurry::HashMap` blacklist (not persisted)
 - Auth cache uses TTL (5min) and max-size (1000 entries) with FIFO eviction
-- RBAC: JWT claims are stored in request extensions; user mutation handlers (update_user, delete_user, delete_user_by_email) check `claims.sub` matches target user
-- Global Admin RBAC: `require_admin` helper in `handlers/mod.rs` checks if the user holds the "Admin" role in any team (via `db::is_admin`); gates team create/update/delete
-- Team RBAC: `require_team_member` and `require_team_admin` helpers in `handlers/mod.rs` gate team-scoped mutations
+- RBAC: Four roles — Admin (global superuser), Team Admin (team-scoped), Member, Guest. JWT claims stored in request extensions.
+- Global Admin RBAC: `require_admin` helper checks if user holds "Admin" role in any team (via `db::is_admin`); gates team CUD, items CUD, roles CUD. Admin bypasses all team-scoped and self-only checks.
+- Team RBAC: `require_team_member` and `require_team_admin` helpers gate team-scoped mutations; both allow global Admin bypass. `require_team_admin` checks for "Team Admin" role in the specific team.
+- Self-or-Admin RBAC: `require_self_or_admin` helper gates user mutations (update, delete); allows the user themselves or a global Admin.
 - `Error::Forbidden` variant maps to HTTP 403 for authorization failures
 - Production safety: server panics at startup if JWT secret is still the default value when `ENV=production`
 - Error responses are JSON `{"error": "..."}` via `ErrorResponse` struct
@@ -230,7 +231,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### Backend
 
 - 35 unit tests across `errors`, `middleware::auth`, and `validate` modules
-- 32 integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 44 integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - No tests for `db.rs` functions (they require a live DB connection)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs ignored tests, then tears down)

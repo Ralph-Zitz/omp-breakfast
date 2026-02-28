@@ -9,8 +9,7 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    HttpMessage, HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json,
-    web::Path,
+    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
 };
 use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
 use deadpool_postgres::Client;
@@ -176,6 +175,7 @@ pub async fn create_user(
     responses(
         (status = 200, description = "User deleted successfully", body = DeletedResponse),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 403, description = "Forbidden - can only delete own account or requires admin", body = ErrorResponse),
         (status = 404, description = "User not deleted", body = DeletedResponse),
     ),
     params(
@@ -190,17 +190,10 @@ pub async fn delete_user(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let uid = path.into_inner();
-
-    // RBAC: only the user themselves can delete their account
-    if let Some(claims) = req.extensions().get::<Claims>()
-        && claims.sub != uid
-    {
-        return Ok(HttpResponse::Forbidden().json(ErrorResponse {
-            error: "You can only delete your own account".to_string(),
-        }));
-    }
-
     let client: Client = get_client(state.pool.clone()).await?;
+
+    // RBAC: self or global admin
+    require_self_or_admin(&client, &req, uid).await?;
 
     // Fetch user email before deletion to invalidate the auth cache
     if let Ok(user) = db::get_user(&client, uid).await {
@@ -221,6 +214,7 @@ pub async fn delete_user(
     responses(
         (status = 200, description = "User deleted successfully", body = DeletedResponse),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 403, description = "Forbidden - can only delete own account or requires admin", body = ErrorResponse),
         (status = 404, description = "User not deleted", body = DeletedResponse),
     ),
     params(
@@ -237,15 +231,9 @@ pub async fn delete_user_by_email(
     let email = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
 
-    // RBAC: only the user themselves can delete their account
-    let requesting_sub = req.extensions().get::<Claims>().map(|c| c.sub);
-    if let Some(sub) = requesting_sub
-        && let Ok(user) = db::get_user_by_email(&client, &email).await
-        && sub != user.user_id
-    {
-        return Ok(HttpResponse::Forbidden().json(ErrorResponse {
-            error: "You can only delete your own account".to_string(),
-        }));
+    // RBAC: self or global admin — look up user_id from email first
+    if let Ok(user) = db::get_user_by_email(&client, &email).await {
+        require_self_or_admin(&client, &req, user.user_id).await?;
     }
 
     let deleted = db::delete_user_by_email(&client, &email).await?;
@@ -263,6 +251,7 @@ pub async fn delete_user_by_email(
     responses(
         (status = 200, description = "User updated successfully", body = UserEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 403, description = "Forbidden - can only update own account or requires admin", body = ErrorResponse),
         (status = 404, description = "User not updated", body = ErrorResponse),
     ),
     params(
@@ -279,18 +268,12 @@ pub async fn update_user(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let uid = path.into_inner();
+    let client: Client = get_client(state.pool.clone()).await?;
 
-    // RBAC: only the user themselves can update their account
-    if let Some(claims) = req.extensions().get::<Claims>()
-        && claims.sub != uid
-    {
-        return Ok(HttpResponse::Forbidden().json(ErrorResponse {
-            error: "You can only update your own account".to_string(),
-        }));
-    }
+    // RBAC: self or global admin
+    require_self_or_admin(&client, &req, uid).await?;
 
     validate(&json)?;
-    let client: Client = get_client(state.pool.clone()).await?;
     let user = db::update_user(&client, uid, json.into_inner()).await?;
     invalidate_cache(state, &user.email);
     Ok(HttpResponse::Ok().json(user))
