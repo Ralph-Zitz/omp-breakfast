@@ -192,13 +192,12 @@ pub async fn delete_user(
     let uid = path.into_inner();
 
     // RBAC: only the user themselves can delete their account
-    if let Some(claims) = req.extensions().get::<Claims>() {
-        if claims.sub != uid {
+    if let Some(claims) = req.extensions().get::<Claims>()
+        && claims.sub != uid {
             return Ok(HttpResponse::Forbidden().json(ErrorResponse {
                 error: "You can only delete your own account".to_string(),
             }));
         }
-    }
 
     let client: Client = get_client(state.pool.clone()).await?;
 
@@ -239,15 +238,13 @@ pub async fn delete_user_by_email(
 
     // RBAC: only the user themselves can delete their account
     let requesting_sub = req.extensions().get::<Claims>().map(|c| c.sub);
-    if let Some(sub) = requesting_sub {
-        if let Ok(user) = db::get_user_by_email(&client, &email).await {
-            if sub != user.user_id {
+    if let Some(sub) = requesting_sub
+        && let Ok(user) = db::get_user_by_email(&client, &email).await
+            && sub != user.user_id {
                 return Ok(HttpResponse::Forbidden().json(ErrorResponse {
                     error: "You can only delete your own account".to_string(),
                 }));
             }
-        }
-    }
 
     let deleted = db::delete_user_by_email(&client, &email).await?;
     if deleted {
@@ -282,13 +279,12 @@ pub async fn update_user(
     let uid = path.into_inner();
 
     // RBAC: only the user themselves can update their account
-    if let Some(claims) = req.extensions().get::<Claims>() {
-        if claims.sub != uid {
+    if let Some(claims) = req.extensions().get::<Claims>()
+        && claims.sub != uid {
             return Ok(HttpResponse::Forbidden().json(ErrorResponse {
                 error: "You can only update your own account".to_string(),
             }));
         }
-    }
 
     validate(&json)?;
     let client: Client = get_client(state.pool.clone()).await?;

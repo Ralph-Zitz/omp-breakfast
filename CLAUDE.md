@@ -6,7 +6,7 @@ A breakfast ordering application for teams, built in Rust with an actix-web REST
 
 ## Tech Stack
 
-- **Language:** Rust 2021 edition
+- **Language:** Rust 2024 edition
 - **Web framework:** actix-web 4 (with rustls TLS)
 - **Database:** PostgreSQL via `deadpool-postgres` connection pool + `tokio-postgres`
 - **ORM/mapping:** `tokio-pg-mapper` (derive-based row mapping)

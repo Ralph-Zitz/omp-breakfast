@@ -221,11 +221,10 @@ pub async fn basic_validator(
     // Evict expired entry if TTL expired
     if user.is_none() {
         let guard = cache.pin();
-        if let Some(cached) = guard.get(&credentials.user_id().to_string()) {
-            if (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS {
+        if let Some(cached) = guard.get(&credentials.user_id().to_string())
+            && (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS {
                 guard.remove(&credentials.user_id().to_string());
             }
-        }
     }
     let user = match user {
         Some(u) => u,

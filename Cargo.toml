@@ -2,7 +2,7 @@
 name = "breakfast"
 version = "0.5.4"
 authors = ["Ralph Zitz <Ralph.Zitz@LEGO.com>"]
-edition = "2021"
+edition = "2024"
 readme = "README.md"
 repository = "https://github.com/LEGO/omp-breakfast"
 keywords = ["fabulab"]
