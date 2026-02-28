@@ -17,8 +17,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      - PG_HOST=postgres
-      - DATABASE_URL=postgres://actix:actix@postgres/actix
+      - BREAKFAST_PG_HOST=postgres
       - ENV=development
   postgres-setup:
     image: postgres:18.3
