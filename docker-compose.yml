@@ -1,0 +1,59 @@
+services:
+  breakfast:
+    build:
+      dockerfile: Dockerfile.breakfast
+    ports:
+      - 8080:8080
+    links:
+      - postgres
+    hostname: localhost
+    restart: always
+    healthcheck:
+      test: curl -f https://localhost:8080/health
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - PG_HOST=postgres
+      - DATABASE_URL=postgres://actix:actix@postgres/actix
+      - ENV=development
+  postgres-setup:
+    image: postgres:18.3
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    links:
+      - postgres
+    entrypoint: ["bash", "-c", "PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /database.sql"]
+    volumes:
+      - ./database.sql:/database.sql
+  postgres:
+    build:
+      dockerfile: Dockerfile.postgres
+    hostname: localhost
+    command: >
+      -c ssl=on
+      -c ssl_ca_file=/var/lib/postgresql/ca-cert.crt
+      -c ssl_cert_file=/var/lib/postgresql/server.crt
+      -c ssl_key_file=/var/lib/postgresql/server.key
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    environment:
+      POSTGRES_PASSWORD: actix
+      POSTGRES_USER: actix
+      POSTGRES_DB: actix
+    ports:
+      - 5432:5432
+    deploy:
+      resources:
+        limits:
+          memory: '512M'
+          cpus: '1'

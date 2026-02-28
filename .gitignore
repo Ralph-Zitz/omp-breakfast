@@ -1,0 +1,11 @@
+/target
+*.code-workspace
+Cargo.lock
+.DS_Store
+.cargo/*
+.idea/*
+localhost.pem
+localhost_root.pem
+localhost_key.pem
+localhost_ca.pem
+*.session.sql

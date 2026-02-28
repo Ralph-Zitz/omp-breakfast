@@ -1,0 +1,59 @@
+# Stage 1 - generate recipe file
+FROM rust:1.93.1 AS planner
+WORKDIR /app
+RUN cargo install cargo-chef
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Stage 2 - build dependencies
+FROM rust:1.93.1 AS cacher
+RUN apt-get update && apt-get install -y cmake clang llvm-dev libclang-dev
+WORKDIR /app
+RUN cargo install cargo-chef
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# Stage 3 - build app with dependencies
+FROM rust:1.93.1 AS builder
+ENV PKG_CONFIG_ALLOW_CROSS=1
+ENV USER=web
+ENV UID=1001
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/nonexistent" \
+    --shell "/sbin/nologin" \
+    --no-create-home \
+    --uid "${UID}" \
+    "${USER}"
+COPY rds-ca-2019-root.pem /usr/local/share/ca-certificates/
+COPY localhost_ca.pem /usr/local/share/ca-certificates/
+RUN update-ca-certificates
+COPY . /app
+COPY .git/ ./.git/
+WORKDIR /app
+# Install build OS dependencies
+# Copy in dependencies
+COPY --from=cacher /app/target target
+COPY --from=cacher /usr/local/cargo /usr/local/cargo
+# Build for release
+RUN cargo build --release
+RUN strip -s /app/target/release/breakfast
+
+# Stage 4 - Copy binary and settings to final container
+FROM gcr.io/distroless/cc-debian13
+COPY --from=builder --chown=web:web /app/target/release/breakfast /usr/local/bin/breakfast
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+COPY --chown=web:web config/default.yml /config/default.yml
+COPY --chown=web:web config/development.yml /config/development.yml
+COPY --chown=web:web config/production.yml /config/production.yml
+COPY --chown=web:web localhost.pem /localhost.pem
+COPY --chown=web:web localhost_key.pem /localhost_key.pem
+COPY --chown=web:web localhost_ca.pem /localhost_ca.pem
+COPY localhost_ca.pem /etc/ssl/certs/
+COPY --chown=web:web rds-ca-2019-root.pem /rds-ca-2019-root.pem
+COPY rds-ca-2019-root.pem /etc/ssl/certs/
+USER web:web
+CMD ["breakfast"]

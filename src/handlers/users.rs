@@ -1,0 +1,270 @@
+use crate::{
+    db,
+    errors::{Error, ErrorResponse},
+    handlers::*,
+    middleware::auth::{
+        generate_token_pair, invalidate_cache, is_token_revoked, revoke_token, verify_jwt,
+    },
+    models::*,
+    validate::validate,
+};
+use actix_web::{
+    http::header, web::Data, web::Json, web::Path, HttpRequest, HttpResponse, Responder,
+};
+use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
+use deadpool_postgres::Client;
+use tracing::instrument;
+use uuid::Uuid;
+
+#[utoipa::path(
+    get,
+    path = "/api/v1.0/users",
+    responses(
+        (status = 200, description = "List of Users", body = [UserEntry]),
+        (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn get_users(state: Data<State>) -> Result<impl Responder, Error> {
+    let client: Client = get_client(state.pool.clone()).await?;
+    let users = db::get_users(&client).await?;
+    Ok(HttpResponse::Ok().json(users))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1.0/users/{id}",
+    responses(
+        (status = 200, description = "User found", body = UserEntry),
+        (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 404, description = "User not found", body = ErrorResponse),
+    ),
+    params(
+        ("id", description = "Unique UUID of User")
+    ),
+    security(("bearer_auth" = [])),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn get_user(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
+    let client: Client = get_client(state.pool.clone()).await?;
+    let user = db::get_user(&client, path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(user))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth",
+    responses(
+        (status = 200, description = "Authentication successful", body = Auth),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("basic_auth" = [])),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Responder, Error> {
+    let cache = &state.cache;
+    if let Some(user) = cache.pin().get(&basic.user_id().to_string()) {
+        let auth = generate_token_pair(user.user_id, state.jwtsecret.clone()).await?;
+        Ok(HttpResponse::Ok().json(auth))
+    } else {
+        Ok(HttpResponse::Unauthorized().json("Unauthorized"))
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/refresh",
+    responses(
+        (status = 200, description = "Token refreshed successfully", body = Auth),
+        (status = 401, description = "Invalid or expired refresh token", body = ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn refresh_token(
+    credentials: BearerAuth,
+    state: Data<State>,
+) -> Result<impl Responder, Error> {
+    let jwt_secret = state.jwtsecret.clone();
+    let claims = verify_jwt(credentials.token().to_string(), jwt_secret.clone()).await?;
+
+    // Verify it's a refresh token
+    if claims.claims.token_type != "refresh" {
+        return Ok(HttpResponse::Unauthorized().json(ErrorResponse {
+            error: "Invalid token type, refresh token required".to_string(),
+        }));
+    }
+
+    // Check if revoked
+    if is_token_revoked(&state, &claims.claims.jti.to_string()) {
+        return Ok(HttpResponse::Unauthorized().json(ErrorResponse {
+            error: "Token has been revoked".to_string(),
+        }));
+    }
+
+    // Verify that the user still exists
+    let client: Client = get_client(state.pool.clone()).await?;
+    db::get_user(&client, claims.claims.sub).await?;
+
+    // Revoke the old refresh token (rotation)
+    revoke_token(&state, &claims.claims.jti.to_string());
+
+    // Issue a new token pair
+    let auth = generate_token_pair(claims.claims.sub, jwt_secret).await?;
+    Ok(HttpResponse::Ok().json(auth))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/revoke",
+    request_body = TokenRequest,
+    responses(
+        (status = 200, description = "Token revoked successfully", body = StatusResponse),
+        (status = 400, description = "Invalid token", body = ErrorResponse),
+    ),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn revoke_user_token(
+    state: Data<State>,
+    json: Json<TokenRequest>,
+) -> Result<impl Responder, Error> {
+    let jwt_secret = state.jwtsecret.clone();
+    let token_data = verify_jwt(json.into_inner().token, jwt_secret).await?;
+
+    // Revoke by jti
+    revoke_token(&state, &token_data.claims.jti.to_string());
+
+    Ok(HttpResponse::Ok().json(StatusResponse { up: true }))
+}
+
+#[utoipa::path(
+    post,
+    request_body = CreateUserEntry,
+    path = "/api/v1.0/users",
+    params(
+        CreateUserEntry
+    ),
+    responses(
+        (status = 201, description = "User created", body = UserEntry),
+        (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 404, description = "User not created", body = ErrorResponse),
+    ),
+    security(("bearer_auth" = [])),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn create_user(
+    state: Data<State>,
+    json: Json<CreateUserEntry>,
+    req: HttpRequest,
+) -> Result<impl Responder, Error> {
+    validate(&json)?;
+    let client: Client = get_client(state.pool.clone()).await?;
+    let user = db::create_user(&client, json.into_inner(), state.secret.clone()).await?;
+    Ok(HttpResponse::Created()
+        .append_header((
+            header::LOCATION,
+            req.url_for("/users/user_id", [user.user_id.to_string()])
+                .unwrap()
+                .as_str(),
+        ))
+        .json(user))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1.0/users/{id}",
+    responses(
+        (status = 200, description = "User deleted successfully", body = DeletedResponse),
+        (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 404, description = "User not deleted", body = DeletedResponse),
+    ),
+    params(
+        ("id", description = "Unique UUID of the User")
+    ),
+    security(("bearer_auth" = [])),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn delete_user(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
+    let client: Client = get_client(state.pool.clone()).await?;
+    let deleted = db::delete_user(&client, path.into_inner()).await?;
+    if deleted {
+        Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
+    } else {
+        Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
+    }
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1.0/users/email/{email}",
+    responses(
+        (status = 200, description = "User deleted successfully", body = DeletedResponse),
+        (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 404, description = "User not deleted", body = DeletedResponse),
+    ),
+    params(
+        ("email", description = "Email of the User")
+    ),
+    security(("bearer_auth" = [])),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn delete_user_by_email(
+    state: Data<State>,
+    path: Path<String>,
+) -> Result<impl Responder, Error> {
+    let client: Client = get_client(state.pool.clone()).await?;
+    let deleted = db::delete_user_by_email(&client, &path.into_inner()).await?;
+    if deleted {
+        Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
+    } else {
+        Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
+    }
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1.0/users/{id}",
+    request_body = UpdateUserEntry,
+    responses(
+        (status = 200, description = "User updated successfully", body = UserEntry),
+        (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 404, description = "User not updated", body = ErrorResponse),
+    ),
+    params(
+        ("id", description = "Unique UUID of the User"),
+        UpdateUserEntry
+    ),
+    security(("bearer_auth" = [])),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn update_user(
+    state: Data<State>,
+    path: Path<Uuid>,
+    json: Json<UpdateUserEntry>,
+) -> Result<impl Responder, Error> {
+    validate(&json)?;
+    let client: Client = get_client(state.pool.clone()).await?;
+    let user = db::update_user(&client, path.into_inner(), json.into_inner()).await?;
+    invalidate_cache(state, &user.email);
+    Ok(HttpResponse::Ok().json(user))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1.0/users/{id}/teams",
+    responses(
+        (status = 200, description = "List of Teams the User is a member of", body = [UserInTeams]),
+        (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+    ),
+    params(
+        ("id", description = "Unique UUID of the User")
+    ),
+    security(("bearer_auth" = [])),
+)]
+#[instrument(skip(state), level = "debug")]
+pub async fn user_teams(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
+    let client: Client = get_client(state.pool.clone()).await?;
+    let teams = db::get_user_teams(&client, path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(teams))
+}

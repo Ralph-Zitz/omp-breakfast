@@ -1,0 +1,60 @@
+[package]
+name = "breakfast"
+version = "0.3.0"
+authors = ["Ralph Zitz <Ralph.Zitz@LEGO.com>"]
+edition = "2021"
+readme = "README.md"
+repository = "https://github.com/LEGO/omp-breakfast"
+keywords = ["fabulab"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+#snmalloc-rs = { version = "0.2.24", features = ["native-cpu"] }
+flurry = "0.5.2"
+actix-web = { version = "4.13.0", features = ["rustls-0_23", "secure-cookies"] }
+actix-web-httpauth = { version = "0.8.2" }
+utoipa = { version = "5.4.0", features = ["actix_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149" }
+chrono = { version = "0.4.44", features = ["serde"] }
+uuid = { version = "1.21.0", features = ["serde", "v7"] }
+thiserror = "2.0.18"
+config = "0.15.19"
+tokio-pg-mapper = { version = "0.2.0", features = ["derive"] }
+deadpool-postgres = { version = "0.14.1", features = ["serde"] }
+tokio-postgres = { version = "0.7.16", features = ["with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
+tokio-postgres-rustls = "0.13.0"
+validator = { version = "0.20.0", features = ["derive"] }
+argon2 = { version = "0.5.3", features = ["default"] }
+git-version = "0.3.9"
+eyre = "0.6.12"
+color-eyre = "0.6.5"
+tracing = "0.1.44"
+tracing-error = "0.2.1"
+tracing-log = { version = "0.2.0" }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry"] }
+tracing-appender = "0.2.4"
+tracing-actix-web = { version = "0.7.21", features = ["opentelemetry_0_31", "uuid_v7"] }
+tracing-bunyan-formatter = "0.3.10"
+opentelemetry = { version = "0.31.0", features = ["default"] }
+opentelemetry-stdout = { version = "0.31.0", features = ["trace"] }
+opentelemetry_sdk = { version = "0.31.0", features = ["default", "rt-tokio-current-thread"] }
+tracing-opentelemetry = { version = "0.32.1" }
+jsonwebtoken = { version = "10.3.0", features = ["aws_lc_rs"] }
+#simd-json = "0.13.10"
+#simd-json-derive = "0.13.0"
+webpki-roots = "1.0.6"
+rustls = "0.23.37"
+rustls-pemfile = "2.2.0"
+rustls-pki-types = { version = "1.14.0" }
+
+[dev-dependencies]
+base64 = "0.22"
+actix-http = "3"
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1

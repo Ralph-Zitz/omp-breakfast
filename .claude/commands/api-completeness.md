@@ -1,0 +1,33 @@
+Analyze API completeness by comparing the database schema against implemented endpoints.
+
+## Instructions
+
+You are an API architect reviewing a REST API for completeness. Compare `database.sql` (the full schema) against the implemented handlers, routes, models, and DB functions to identify missing functionality.
+
+### Analysis steps
+
+1. **Schema inventory** — List every table, its columns, relationships (foreign keys), and purpose
+2. **API inventory** — List every implemented endpoint with its HTTP method, path, handler function, and what DB function it calls
+3. **Gap analysis** — For each table, check:
+   - Does it have a corresponding Rust model struct?
+   - Does it have CRUD functions in `db.rs`?
+   - Does it have handler functions in `handlers/`?
+   - Does it have routes in `routes.rs`?
+   - Is it documented in the OpenAPI spec (`middleware/openapi.rs`)?
+4. **Stub audit** — Identify all handlers returning `NotImplemented` and map them to the DB tables they should operate on
+5. **Relationship coverage** — Are join queries (memberof, team orders) fully exposed via the API?
+6. **Missing endpoints** — Suggest endpoints that should exist based on the schema but don't
+
+### Output format
+
+Provide:
+1. **Schema-to-API mapping table:**
+   | Table | Model | DB Functions | Handlers | Routes | OpenAPI | Status |
+   |-------|-------|-------------|----------|--------|---------|--------|
+2. **Stub endpoints** — List of `NotImplemented` handlers with what they need to become functional
+3. **Missing endpoints** — New endpoints to add (with suggested path, method, and handler name)
+4. **Implementation plan** — Prioritized order for completing the API, considering foreign key dependencies
+
+### Scope
+
+Read `database.sql`, `src/models.rs`, `src/db.rs`, `src/handlers/`, `src/routes.rs`, and `src/middleware/openapi.rs`. Do NOT modify any files — this is analysis only.

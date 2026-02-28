@@ -1,0 +1,5 @@
+# Test-specific overrides: isolate test DB on a different port
+services:
+  postgres:
+    ports:
+      - "5433:5432"

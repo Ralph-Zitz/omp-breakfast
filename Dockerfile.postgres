@@ -1,0 +1,6 @@
+# Build postgres with certificates owned by postgres
+FROM postgres:18.3
+
+COPY --chown=postgres:postgres localhost.pem /var/lib/postgresql/server.crt
+COPY --chown=postgres:postgres localhost_key.pem /var/lib/postgresql/server.key
+COPY --chown=postgres:postgres localhost_ca.pem /var/lib/postgresql/ca-cert.crt
