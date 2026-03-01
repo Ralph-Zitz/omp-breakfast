@@ -509,8 +509,6 @@ fn SubmitButton(loading: ReadSignal<bool>) -> impl IntoView {
     }
 }
 
-/// Fetch user details from the API after authentication.
-/// Uses `authed_get` for automatic token refresh on 401.
 /// Fetch user details using an authenticated GET request.
 ///
 /// Returns `Some((name, email))` on success, or `None` when the request

@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-01 (updated — #77/#78 new; all prior open items verified)
+Last assessed: 2026-03-01 (re-assessed — no new findings; #77, #79, #80, #81, #82 completed earlier this session)
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -25,7 +25,7 @@ _No important items remaining._
 ### Code Quality — Dead S3 Config Fields
 
 - [ ] **#59 — `s3_key_id` and `s3_key_secret` are loaded and stored but never used**
-  - Files: `src/models.rs` lines 46–47 (`State` struct), `src/config.rs` lines 13–14 (`ServerConfig` struct), `src/server.rs` lines 224–225 (state construction), `config/default.yml` lines 6–7, `config/development.yml` lines 5–6, `config/production.yml` lines 6–7
+  - Files: `src/models.rs` lines 46–47 (`State` struct), `src/config.rs` lines 13–14 (`ServerConfig` struct), `src/server.rs` lines 340–341 (state construction), `config/default.yml` lines 6–7, `config/development.yml` lines 5–6, `config/production.yml` lines 6–7
   - Problem: The `s3_key_id` and `s3_key_secret` fields are defined in `ServerConfig`, loaded from config files, stored in `State`, and propagated through all test helpers (`routes.rs`, `server.rs`, `middleware/auth.rs`), but no handler, middleware, or DB function ever reads them. They add confusion and unnecessary config surface area.
   - Fix: Either remove the fields entirely from `ServerConfig`, `State`, all config files, and all test helpers — or, if S3 integration is planned, document the intent in CLAUDE.md's Unfinished Work section.
   - Source commands: `review`, `practices-audit`
@@ -41,23 +41,23 @@ _No important items remaining._
 ### Database — UUID Version Mismatch Between Schema and Application
 
 - [ ] **#69 — Schema defaults to UUID v4 but Rust code generates UUID v7**
-  - Files: `database.sql` lines 25, 41, 53, 62, 88 (`uuid_generate_v4()`), `src/handlers/mod.rs` line 151 and test helpers (`Uuid::now_v7()`)
-  - Problem: The `database.sql` schema sets `DEFAULT uuid_generate_v4()` (random UUIDs) on all primary key columns, but the Rust application generates `Uuid::now_v7()` (time-ordered UUIDs). Since server-generated IDs are passed via `INSERT ... VALUES` and returned via `RETURNING`, the DB default is never triggered in practice. However, the inconsistency is confusing and would cause mixed UUID versions if rows were ever inserted directly via SQL.
-  - Fix: Update `database.sql` to use `uuid_generate_v7()` (available in PostgreSQL 17+) or `gen_random_uuid()` as the default — or document the intentional mismatch. If using PostgreSQL < 17, keep `uuid_generate_v4()` and add a comment noting that the application overrides it with v7.
+  - Files: `migrations/V1__initial_schema.sql` lines 13, 29, 38, 47, 78 (`uuid_generate_v4()`), `src/handlers/mod.rs` line 155 and test helpers (`Uuid::now_v7()`)
+  - Problem: The migration schema sets `DEFAULT uuid_generate_v4()` (random UUIDs) on all primary key columns, but the Rust application generates `Uuid::now_v7()` (time-ordered UUIDs). Since server-generated IDs are passed via `INSERT ... VALUES` and returned via `RETURNING`, the DB default is never triggered in practice. However, the inconsistency is confusing and would cause mixed UUID versions if rows were ever inserted directly via SQL.
+  - Fix: Update `migrations/V1__initial_schema.sql` to use `uuid_generate_v7()` (available in PostgreSQL 17+) or `gen_random_uuid()` as the default — or document the intentional mismatch. If using PostgreSQL < 17, keep `uuid_generate_v4()` and add a comment noting that the application overrides it with v7. Would require a V2 migration.
   - Source commands: `db-review`, `review`
 
 ### Security — Seed Data Uses Hardcoded Argon2 Salt
 
 - [ ] **#70 — All seed users share the same Argon2 hash with a hardcoded salt**
-  - File: `database.sql` lines 215–227 (INSERT statements for 5 seed users)
+  - File: `database_seed.sql` lines 41–57 (INSERT statements for 5 seed users); also `database.sql` (deprecated copy)
   - Problem: All 5 seed users have identical Argon2id password hashes using the salt `dGVzdHNhbHQxMjM0NTY` (base64 for `testsalt123456`). The password for all users (including admin) is `"Very Secret"` — the same as the default JWT secret in `config/default.yml`. While documented as dev-only and mitigated by the production startup panic check on secrets, this creates risk if the seed script is accidentally run against a production database.
-  - Fix: Add a prominent `-- WARNING: DO NOT RUN IN PRODUCTION` comment at the top of the seed data section. Consider generating unique hashes with random salts for each seed user. Alternatively, separate seed data into a `database-seed.sql` file that is explicitly excluded from production deployment scripts.
+  - Fix: Add a prominent `-- WARNING: DO NOT RUN IN PRODUCTION` comment at the top of `database_seed.sql`. Consider generating unique hashes with random salts for each seed user.
   - Source commands: `security-audit`, `db-review`
 
 ### Frontend — All Components in Single `app.rs` File
 
-- [ ] **#71 — Frontend `app.rs` is a 597-line monolith**
-  - File: `frontend/src/app.rs` (597 lines — all components, auth logic, API calls, types)
+- [ ] **#71 — Frontend `app.rs` is a 607-line monolith**
+  - File: `frontend/src/app.rs` (607 lines — all components, auth logic, API calls, types)
   - Problem: The entire frontend — all components (`App`, `LoginPage`, `DashboardPage`, `LoadingPage`, and 6 sub-components), auth helpers (`try_refresh_token`, `authed_get`, `revoke_token_server_side`), JWT decoding, and type definitions — lives in a single file. As the 6 planned pages (Team Management, Orders, Items, Profile, Admin, Roles) are built, this file will become unmanageable.
   - Fix: When building the next frontend page, split into a module structure: `app/mod.rs` (App + router), `app/auth.rs` (token logic), `app/types.rs` (shared types), `app/pages/login.rs`, `app/pages/dashboard.rs`, `app/pages/loading.rs`, `app/components/` (reusable sub-components). This is tracked as part of the Frontend Roadmap in CLAUDE.md.
   - Source commands: `review`, `practices-audit`
@@ -65,7 +65,7 @@ _No important items remaining._
 ### Security — No Account Lockout After Failed Auth Attempts
 
 - [ ] **#73 — Failed authentication is rate-limited but no lockout policy exists**
-  - Files: `src/routes.rs` (rate limiter config on `/auth`), `src/handlers/users.rs` (`auth_user` handler)
+  - Files: `src/routes.rs` lines 19–23 (rate limiter config on `/auth`), `src/handlers/users.rs` (`auth_user` handler)
   - Problem: The `/auth` endpoint has rate limiting (6s per request, burst 10) via `actix-governor`, but there is no account-level lockout after N consecutive failures. An attacker can continue brute-forcing at the rate limit's pace indefinitely. For an internal app this is low-risk, but it's a gap against password spraying.
   - Fix: Track failed login attempts per email in the database or in-memory cache. Lock the account (or add exponential backoff) after a threshold (e.g., 5 failures in 15 minutes). Add an admin endpoint or background task to unlock accounts.
   - Source commands: `security-audit`
@@ -78,13 +78,7 @@ _No important items remaining._
   - Fix: Add a startup check in `server.rs` (similar to the existing secret-validation panic) that verifies `pg.host` is not `pick.a.proper.hostname` when `ENV=production`. Alternatively, remove the placeholder and require the env var to be set.
   - Source commands: `practices-audit`, `review`
 
-### Documentation — CLAUDE.md Test Count Breakdowns Are Stale
 
-- [ ] **#77 — Test count breakdowns in CLAUDE.md and assessment-findings.md are incorrect**
-  - Files: `CLAUDE.md` lines 256–264 (Testing section), `.claude/assessment-findings.md` Notes section
-  - Problem: The `from_row` test count is listed as 11 but the actual count is 10 (verified by enumerating `#[test]` attributes in `src/from_row.rs` lines 315–425). This causes the per-module breakdown to sum to 137, contradicting the stated total of 136. Additionally, the WASM test count is listed as 22 but the actual count is 23 — the `test_authed_get_double_failure_falls_back_to_login` test added in completed item #74 was not reflected in the count.
-  - Fix: Update `CLAUDE.md` Testing section: change `from_row` from 11 to 10 in the breakdown, and change "22 WASM tests" to 23. Update the Notes section of this findings file to match. The backend total of 136 is correct.
-  - Source commands: `practices-audit`
 
 ## Informational Items
 
@@ -98,7 +92,7 @@ _No important items remaining._
 ### Documentation — Test Count Maintenance Burden
 
 - [ ] **#54 — Test counts in CLAUDE.md will drift as tests are added**
-  - File: `CLAUDE.md` lines 256–258, 264
+  - File: `CLAUDE.md` lines 268, 277
   - Problem: CLAUDE.md hard-codes specific test counts (136 unit, 65 API integration, 86 DB, 23 WASM). These go stale every time a test is added or removed. The counts were verified as of 2026-03-01, but they will drift again with the next code change that adds tests.
   - Source command: `practices-audit`
   - Action: No code change needed. This is an inherent maintenance cost of documenting exact counts. The assessment process updates them each time it runs.
@@ -121,6 +115,41 @@ _No important items remaining._
 ## Completed Items
 
 Items moved here after being resolved:
+
+### Documentation — CLAUDE.md Test Counts and References Are Stale
+
+- [x] **#77 — Multiple stale references in CLAUDE.md**
+  - Files: `CLAUDE.md` (Project Structure and Testing sections)
+  - Resolution: Updated WASM test count from 22 to 23 in both the Project Structure tree (`ui_tests.rs` description, line 94) and the Frontend Testing section (line 284). The `from_row` count in the per-module breakdown was already correct at 10. All counts now match actual test output (verified: 136 unit, 65 API, 86 DB, 23 WASM).
+  - Source commands: `practices-audit`
+
+### Documentation — CLAUDE.md `flurry` Reference Is Stale
+
+- [x] **#79 — Key Conventions still references `flurry::HashMap` instead of `dashmap::DashMap`**
+  - File: `CLAUDE.md` line 117 (Key Conventions section)
+  - Resolution: Changed `flurry::HashMap` to `dashmap::DashMap` in the token revocation bullet. Updated the description to note that the background task also evicts expired entries from the in-memory map via `DashMap::retain()`.
+  - Source commands: `practices-audit`
+
+### Documentation — CLAUDE.md Project Structure Missing New Files
+
+- [x] **#80 — Project Structure tree omits files added since last documentation update**
+  - File: `CLAUDE.md` lines 48–110 (Project Structure section)
+  - Resolution: Added all missing files to the Project Structure tree: `src/from_row.rs` (custom FromRow trait), `src/db/migrate.rs` (Refinery migration runner), `migrations/V1__initial_schema.sql`, `database_seed.sql`, `init_dev_db.sh`, `MIGRATION_FIX_SUMMARY.md`. Updated the `database.sql` description to note it is deprecated (kept for manual dev resets only; seed data moved to `database_seed.sql`).
+  - Source commands: `practices-audit`
+
+### Documentation — `api-completeness.md` References Deprecated Schema File
+
+- [x] **#81 — `api-completeness.md` still references `database.sql` as the schema source**
+  - File: `.claude/commands/api-completeness.md` lines 7 and 49 (Instructions and Scope sections)
+  - Resolution: Updated line 7 to reference `migrations/V1__initial_schema.sql` as the authoritative schema source. Updated the Scope section (line 49) to list `migrations/V1__initial_schema.sql` and `database_seed.sql` instead of `database.sql`.
+  - Source commands: `practices-audit`
+
+### Code Quality — Duplicate Doc Comment on `fetch_user_details`
+
+- [x] **#82 — `fetch_user_details` has a duplicate doc comment block**
+  - File: `frontend/src/app.rs` lines 511–518 (`fetch_user_details` function)
+  - Resolution: Removed the two redundant old doc comment lines ("Fetch user details from the API after authentication." / "Uses `authed_get` for automatic token refresh on 401.") that preceded the expanded doc comment block. The remaining doc comment (lines 511–516) fully describes the function's behavior and return type.
+  - Source commands: `review`
 
 ### Deployment — Database Migration Tool Adopted
 
@@ -290,7 +319,7 @@ Items moved here after being resolved:
 ### Documentation — CLAUDE.md `handlers/mod.rs` Description Incomplete
 
 - [x] **#51 — `handlers/mod.rs` description in CLAUDE.md omits newer RBAC helpers**
-  - File: `CLAUDE.md` line 62
+  - File: `CLAUDE.md` line 77
   - Resolution: Updated the Project Structure description to list all current RBAC helpers: `require_admin, require_admin_or_team_admin, require_team_admin, require_team_member, require_self_or_admin, require_self_or_admin_or_team_admin, requesting_user_id`.
   - Source command: `practices-audit`
 
@@ -362,22 +391,26 @@ Items moved here after being resolved:
 
 ## Notes
 
-- All 136 backend unit tests pass (114 lib + 22 healthcheck); 65 API integration tests pass; 86 DB integration tests pass; 23 WASM tests pass.
-- Clippy is clean on both backend and frontend.
+- All 136 backend unit tests pass (114 lib + 22 healthcheck); 65 API integration tests pass; 86 DB integration tests pass; 23 WASM tests pass. Total: 310 tests, 0 failures.
+- Clippy is clean on both backend and frontend (including `--tests` and `-W clippy::all`).
+- `cargo fmt --check` is clean on both crates.
 - `cargo-audit` reports 1 unfixable vulnerability (`rsa` 0.9.10 via `jsonwebtoken`, RUSTSEC-2023-0071) and 0 warnings. All other advisories resolved via `cargo update` and the `rustls-pemfile` → `rustls-pki-types` migration.
 - `actix-files` CVE (GHSA-8v2v-wjwg-vx6r, GHSA-gcqf-3g44-vc9p) verified patched — `Cargo.lock` resolves to 0.6.10 (fixed version).
 - No direct dependency CVEs found via CVE validation of all 24 direct dependencies.
 - CSP white-screen bug fixed in commit `5ae1f07`: added `'unsafe-inline'` to `script-src` so Trunk's inline WASM bootstrap script is not blocked by Chrome.
-- All 34 completed items (#1, #6, #7, #15, #16, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, #56, #57, #58, #60, #62, #63, #64, #65, #66, #67, #72, #74, #78) confirmed in place. No regressions.
-- Open items summary: 0 critical, 0 important, 7 minor (#59, #68, #69, #70, #71, #73, #75, #77), 4 informational (#54, #55, #61, #76).
-- All 10 assessment commands verified: `api-completeness`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment`.
+- All 39 completed items (#1, #6, #7, #15, #16, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, #56, #57, #58, #60, #62, #63, #64, #65, #66, #67, #72, #74, #77, #78, #79, #80, #81, #82) confirmed in place. No regressions found during re-assessment.
+- Open items summary: 0 critical, 0 important, 7 minor (#59, #68, #69, #70, #71, #73, #75), 4 informational (#54, #55, #61, #76). No new items surfaced.
+- All 10 assessment commands run: `api-completeness`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment`.
 - RBAC enforcement is correct across all handlers per the policy table in `rbac-rules.md`.
-- OpenAPI spec (`middleware/openapi.rs`) is fully synchronized with `routes.rs` — all 41 handler paths present, all request/response schemas registered.
+- OpenAPI spec (`middleware/openapi.rs`) is fully synchronized with `routes.rs` — all 41 handler paths present, all 27 request/response schemas registered.
 - CLAUDE.md conventions are followed consistently: error handling pattern, `#[instrument]` annotations, validation before DB calls, logging severity levels.
 - CSP header documented in CLAUDE.md Key Conventions (completed item #57) and enforced in `server.rs` (completed item #48).
-- Test counts verified on 2026-03-01: 136 backend unit (config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, healthcheck: 22), 65 API integration, 86 DB integration, 23 WASM.
+- Test counts re-verified on 2026-03-01: 136 backend unit (config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, healthcheck: 22), 65 API integration, 86 DB integration, 23 WASM. All match CLAUDE.md and actual `cargo test` output.
 - `flurry` replaced with `dashmap` 6.1.0 (#65) — all `.pin()` patterns removed, DashMap uses direct method calls.
 - `src/db.rs` split into `src/db/` module with 9 domain files (#64) — all call sites unchanged via `pub use` re-exports in `mod.rs`.
 - Command files (`db-review.md`, `api-completeness.md`, `test-gaps.md`) updated to reference `src/db/` module directory (#78).
 - `refinery` 0.8 adopted for database migrations (#66). Initial migration `V1__initial_schema.sql` created. Migrations run at server startup. `database.sql` retained for dev/test with warning header.
 - In-memory token blacklist now stores `DateTime<Utc>` expiry times (#67). `spawn_token_cleanup_task` evicts expired entries via `DashMap::retain()` every hour.
+- Docker-compose DB initialization separated: `init_dev_db.sh` runs the V1 migration SQL, creates the Refinery tracking table, marks V1 as applied, and loads seed data from `database_seed.sql`. This replaces the previous `database.sql` direct execution.
+- Frontend `fetch_user_details` now returns `Option<(String, String)>` to distinguish auth failure from success. Login handler falls back to login page with error message when post-login user fetch fails due to double auth failure.
+- Re-assessment on 2026-03-01 confirmed: clippy clean (backend + frontend), fmt clean, all tests passing, RBAC correct, OpenAPI in sync, no new vulnerabilities, CLAUDE.md accurate. `cargo update --dry-run` shows only 2 minor semver-compatible updates behind latest.

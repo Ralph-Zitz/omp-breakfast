@@ -52,9 +52,11 @@ src/
   bin/
     healthcheck.rs – Minimal TLS healthcheck binary for distroless Docker containers
   config.rs        – Settings loaded from config/*.yml + env vars
+  from_row.rs      – Custom FromRow trait and FromRowError enum (manual row mapping)
   models.rs        – All data structs (User, Team, Role, Order, Claims, State)
   db/
     mod.rs         – Module declarations + re-exports of all public DB functions
+    migrate.rs     – Refinery migration runner (embed_migrations! + run_migrations)
     health.rs      – Database health check (check_db)
     users.rs       – User CRUD (get_users, get_user, get_user_by_email, create_user, update_user, delete_user, delete_user_by_email)
     teams.rs       – Team CRUD + user-team queries (get_teams, get_team, create_team, update_team, delete_team, get_user_teams, get_team_users)
@@ -89,12 +91,17 @@ frontend/
   style/
     main.css       – Modern CSS (custom properties, responsive, animations)
   tests/
-    ui_tests.rs    – 22 WASM integration tests (headless Chrome)
+    ui_tests.rs    – 23 WASM integration tests (headless Chrome)
 config/
   default.yml      – Base config
   development.yml  – Dev overrides (local DB)
   production.yml   – Prod overrides
-database.sql       – Full schema + seed data
+database.sql       – Full schema (deprecated — kept for manual dev resets only; seed data moved to database_seed.sql)
+database_seed.sql  – Seed data for development/testing
+init_dev_db.sh     – Docker development database initialization script
+migrations/
+  V1__initial_schema.sql – Refinery migration for the database schema
+MIGRATION_FIX_SUMMARY.md – Documents the migration architecture change
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
   db_tests.rs      – DB function integration tests (ignored without running DB)
@@ -108,7 +115,7 @@ tests/
 - All handlers are instrumented with `#[instrument(skip(state), level = "debug")]`
 - Validation uses `validate(&json)?` before any DB call
 - JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation
-- Token revocation uses a DB-backed `token_blacklist` table (persisted across restarts) with an in-memory `flurry::HashMap` cache for fast-path lookups. A background task runs every hour to clean up expired entries via `db::cleanup_expired_tokens`.
+- Token revocation uses a DB-backed `token_blacklist` table (persisted across restarts) with an in-memory `dashmap::DashMap` cache for fast-path lookups. A background task runs every hour to clean up expired entries from both the database (via `db::cleanup_expired_tokens`) and the in-memory map (via `DashMap::retain()`).
 - Auth cache uses TTL (5min) and max-size (1000 entries) with FIFO eviction
 - RBAC: Four roles — Admin (global superuser), Team Admin (team-scoped), Member, Guest. JWT claims stored in request extensions.
 - Global Admin RBAC: `require_admin` helper checks if user holds "Admin" role in any team (via `db::is_admin`); gates team CUD, items CUD, roles CUD. Admin bypasses all team-scoped and self-only checks.
@@ -274,7 +281,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Frontend
 
-- 22 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
+- 23 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
 - Test categories:
   - JWT decode (4 tests): valid token, missing segments, bad base64, invalid JSON
   - Login page rendering (3 tests): brand/form elements, email attributes, password attributes

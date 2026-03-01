@@ -4,7 +4,7 @@ Analyze API completeness by comparing the database schema against implemented en
 
 ## Instructions
 
-You are an API architect reviewing a REST API for completeness. Compare `database.sql` (the full schema) against the implemented handlers, routes, models, and DB functions to identify missing functionality. Also check which endpoints the frontend actually consumes.
+You are an API architect reviewing a REST API for completeness. Compare `migrations/V1__initial_schema.sql` (the authoritative schema) against the implemented handlers, routes, models, and DB functions to identify missing functionality. Also check which endpoints the frontend actually consumes.
 
 ### Analysis steps
 
@@ -46,4 +46,4 @@ Provide:
 
 ### Scope
 
-Read `database.sql`, `src/models.rs`, `src/db/`, `src/handlers/`, `src/routes.rs`, `src/middleware/openapi.rs`, and `frontend/src/app.rs`. Do NOT modify any files — this is analysis only.
+Read `migrations/V1__initial_schema.sql`, `database_seed.sql`, `src/models.rs`, `src/db/`, `src/handlers/`, `src/routes.rs`, `src/middleware/openapi.rs`, and `frontend/src/app.rs`. Do NOT modify any files — this is analysis only.
