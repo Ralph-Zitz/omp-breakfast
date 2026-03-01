@@ -296,7 +296,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
                         DefaultHeaders::new()
                             .add((
                                 "Content-Security-Policy",
-                                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'",
+                                "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'",
                             )),
                     )
                     .service(Files::new("/", FRONTEND_DIR).index_file("index.html")),
