@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-01 (updated)
+Last assessed: 2026-03-01 (re-assessed, cargo-audit addressed)
 
 This file is **generated and maintained by the project assessment process** defined in the "Project Assessment" section of `CLAUDE.md`. Each time `assess the project` is run, findings of all severities (critical, important, minor, informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -18,46 +18,24 @@ No open important items. All important findings have been resolved and moved to 
 
 ## Minor Items
 
-### Backend — Redundant Token-Type Check
-
-- [ ] **#45 — `refresh_token` handler duplicates token-type check already enforced by middleware**
-  - File: `src/handlers/users.rs` lines 95–99, `src/middleware/auth.rs` lines 223–230
-  - Problem: The `refresh_token` handler manually checks `claims.claims.token_type != "refresh"` and returns `Error::Unauthorized`. However, the `refresh_validator` middleware (which guards the `/auth/refresh` route) already performs the same check and rejects non-refresh tokens before the handler is ever reached. The handler-level check is dead code under normal request flow.
-  - Fix: Remove the `token_type` check from the `refresh_token` handler (lines 95–99 of `src/handlers/users.rs`) since `refresh_validator` already enforces it. Alternatively, keep it as defence-in-depth but add a comment explaining the redundancy.
-  - Source commands: `review`, `security-audit`
-
-### Frontend — Clippy Warning in Test File
-
-- [ ] **#46 — Useless `format!` in frontend test `ui_tests.rs`**
-  - File: `frontend/tests/ui_tests.rs` line 842
-  - Problem: `cargo clippy --tests` warns about a `format!()` call that contains no format arguments — it should be a plain string with `.to_string()`. This is the only clippy warning in the frontend crate.
-  - Fix: Replace `format!(r#"..."#)` with `r#"..."#.to_string()` as suggested by clippy, or run `cargo clippy --fix --test "ui_tests" -p breakfast-frontend`.
-  - Source command: `review`
-
-### Testing — Flaky DB Test
-
-- [ ] **#47 — `cleanup_expired_tokens_removes_old_entries` is flaky under parallel test execution**
-  - File: `tests/db_tests.rs` lines 1987–2011
-  - Problem: This test inserts an expired token, runs `cleanup_expired_tokens`, and asserts `deleted >= 1`. When other tests running in parallel also insert expired tokens, the count may vary. More critically, if the test database retains expired tokens from a previous failed run, the assertion `!revoked_after` can fail because `cleanup_expired_tokens` uses `DELETE ... WHERE expires_at < NOW()` and timing can be tight with a 1-hour-ago expiry.
-  - Fix: Use a unique `jti` (already done via `Uuid::now_v7()`) and assert specifically on whether that token was cleaned up, rather than relying on global count. Alternatively, wrap the test in a transaction that rolls back, isolating it from other tests.
-  - Source command: `test-gaps`
-
-### Security — Missing CSP Headers for Static Files
-
-- [ ] **#48 — No Content-Security-Policy header on static file responses**
-  - File: `src/server.rs` line 295
-  - Problem: `actix-files` serves the frontend SPA from `frontend/dist/` without any `Content-Security-Policy` header. While the app uses `sessionStorage` (not cookies) and has no inline scripts in the built output, adding a CSP header would provide defence-in-depth against XSS. This is a hardening measure, not a vulnerability.
-  - Fix: Add a middleware (e.g., `actix_web::middleware::DefaultHeaders`) that sets a `Content-Security-Policy` header with at minimum `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'`. Tune the policy to match the frontend's actual resource loading patterns.
-  - Source commands: `security-audit`
+No open minor items. All minor findings have been resolved and moved to "Completed Items" below.
 
 ## Informational Items
 
-### Architecture — Defence-in-Depth Notes
+### Dependencies — Unfixable RSA Advisory
 
-- [ ] **#49 — RBAC, OpenAPI sync, and dependency health all verified correct**
-  - Problem: No issues found. The RBAC enforcement matches the documented role policy table. OpenAPI spec is in sync with routes and frontend API usage. Dependencies are current with no known vulnerabilities (note: `cargo-audit` is not installed locally, so automated vulnerability scanning is skipped by `make test-all`).
-  - Source commands: `rbac-rules`, `openapi-sync`, `dependency-check`
-  - Action: No code changes needed. Consider installing `cargo-audit` for automated vulnerability scanning.
+- [ ] **#55 — `rsa` 0.9.10 has an unfixable timing side-channel advisory (RUSTSEC-2023-0071)**
+  - Problem: The `rsa` crate (transitive dependency via `jsonwebtoken` 10.3.0) is affected by the Marvin Attack (CVSS 5.9, medium severity), a timing side-channel that could allow key recovery during RSA decryption. No patched version is available upstream. Since this project uses HMAC-based JWT signing (not RSA key exchange), the practical risk is negligible. This item will remain open until `jsonwebtoken` updates its `rsa` dependency or a patched `rsa` release is published.
+  - Source command: `dependency-check` (cargo audit)
+  - Action: No code changes possible — waiting on upstream fix. Monitor `jsonwebtoken` releases.
+
+### Documentation — Test Count Maintenance Burden
+
+- [ ] **#54 — Test counts in CLAUDE.md will drift as tests are added**
+  - File: `CLAUDE.md` lines 256–258, 264
+  - Problem: CLAUDE.md hard-codes specific test counts (79 unit, 65 API integration, 86 DB, 22 WASM). These go stale every time a test is added or removed. The counts were just corrected in the prior assessment round and are currently accurate, but they will drift again with the next code change that adds tests.
+  - Source command: `practices-audit`
+  - Action: No code change needed. This is an inherent maintenance cost of documenting exact counts. The assessment process updates them each time it runs.
 
 ## Completed Items
 
@@ -125,7 +103,13 @@ Items moved here after being resolved:
   - Resolution: Same approach as #6 — changed to `filter_map` with `try_get()` and `warn!()` on failure, matching the project convention.
   - Source commands: `db-review`, `practices-audit`
 
-### Test Gaps
+### Architecture — Defence-in-Depth Notes
+
+- [x] **#49 — RBAC, OpenAPI sync, and dependency health all verified correct**
+  - Resolution: `cargo-audit` is now installed and integrated. Ran `cargo update` to resolve 4 of 5 vulnerabilities (aes-gcm, bytes, ring, time) and 6 of 7 warnings (adler, paste, pest/pest_derive/pest_generator/pest_meta yanked versions). Migrated from unmaintained `rustls-pemfile` to `rustls-pki-types` `PemObject` trait (removed direct dependency). Only 1 unfixable advisory remains: `rsa` 0.9.10 via `jsonwebtoken` (RUSTSEC-2023-0071, no upstream fix available — tracked as #55). RBAC and OpenAPI sync remain correct.
+  - Source commands: `rbac-rules`, `openapi-sync`, `dependency-check`
+
+### Test Gaps (Earlier Round)
 
 - [x] **#37 — No integration test for closed-order enforcement**
   - File: `tests/api_tests.rs`
@@ -142,8 +126,69 @@ Items moved here after being resolved:
   - Resolution: Added `test_authed_get_retries_after_401_with_token_refresh` with a stateful fetch mock that tracks `/api/v1.0/users/` call count — returns 401 on first call, 200 on retry. Mock also handles `POST /auth/refresh` returning new tokens. Test verifies: dashboard renders with refreshed user details, `sessionStorage` contains updated tokens, and the user endpoint was called exactly twice (initial 401 + retry 200). All 22 WASM tests pass in headless Chrome.
   - Source command: `test-gaps`
 
+### Backend — Redundant Token-Type Check
+
+- [x] **#45 — `refresh_token` handler duplicates token-type check already enforced by middleware**
+  - File: `src/handlers/users.rs` lines 93–98
+  - Resolution: Kept the check as defence-in-depth and added a comment explaining that `refresh_validator` middleware already rejects non-refresh tokens before the handler is reached, so this check is a safety net. All 79 unit tests and 65 API integration tests pass.
+  - Source commands: `review`, `security-audit`
+
+### Frontend — Clippy Warning in Test File
+
+- [x] **#46 — Useless `format!` in frontend test `ui_tests.rs`**
+  - File: `frontend/tests/ui_tests.rs` line 842
+  - Resolution: Replaced `format!(r#"..."#)` with `r#"..."#.to_string()` and un-escaped the double braces (`{{`/`}}`) to single braces (`{`/`}`) since format string escaping is no longer needed.
+  - Source command: `review`
+
+### Testing — Flaky DB Test
+
+- [x] **#47 — `cleanup_expired_tokens_removes_old_entries` is flaky under parallel test execution**
+  - File: `tests/db_tests.rs` lines 1987–2007
+  - Resolution: Changed expiry from 1 hour ago to 1 day ago to avoid timing edge cases. Removed the `assert!(deleted >= 1)` global count assertion that was affected by parallel tests. Now only asserts on the specific JTI being removed after cleanup — the meaningful check. All 86 DB integration tests pass.
+  - Source command: `test-gaps`
+
+### Security — Missing CSP Headers for Static Files
+
+- [x] **#48 — No Content-Security-Policy header on static file responses**
+  - File: `src/server.rs` lines 298–309
+  - Resolution: Wrapped the `actix-files` static file service in a `web::scope("")` with `DefaultHeaders` middleware that sets `Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'`. Policy allows WASM execution, inline styles, and data URIs for images while restricting everything else to same-origin. All tests pass.
+  - Source commands: `security-audit`
+
+### Security — Credentials Logged via `#[instrument]`
+
+- [x] **#50 — `#[instrument]` on auth handlers doesn't skip credential parameters**
+  - File: `src/handlers/users.rs` lines 65, 85, 129
+  - Resolution: Updated all three `#[instrument]` annotations to skip credential parameters:
+    - `auth_user`: `#[instrument(skip(basic, state), level = "debug")]`
+    - `refresh_token`: `#[instrument(skip(credentials, state), level = "debug")]`
+    - `revoke_user_token`: `#[instrument(skip(state, json), level = "debug")]`
+  - Source commands: `security-audit`, `review`
+
+### Documentation — CLAUDE.md `handlers/mod.rs` Description Incomplete
+
+- [x] **#51 — `handlers/mod.rs` description in CLAUDE.md omits newer RBAC helpers**
+  - File: `CLAUDE.md` line 62
+  - Resolution: Updated the Project Structure description to list all current RBAC helpers: `require_admin, require_admin_or_team_admin, require_team_admin, require_team_member, require_self_or_admin, require_self_or_admin_or_team_admin, requesting_user_id`.
+  - Source command: `practices-audit`
+
+### Database — Missing DROP TABLE for token_blacklist
+
+- [x] **#52 — `database.sql` missing `DROP TABLE IF EXISTS token_blacklist`**
+  - File: `database.sql` line 16
+  - Resolution: Added `DROP TABLE IF EXISTS token_blacklist;` after the existing `DROP TABLE IF EXISTS items;` block, before `CREATE EXTENSION`. Verified by `make test-integration` which re-runs the schema script on a fresh database (output shows `NOTICE: table "token_blacklist" does not exist, skipping`).
+  - Source command: `db-review`
+
+### Code Quality — Unused `require_self_or_admin` Helper
+
+- [x] **#53 — `require_self_or_admin` helper is retained but never called**
+  - File: `src/handlers/mod.rs` line 92
+  - Resolution: Added `#[deprecated(note = "Use require_self_or_admin_or_team_admin instead")]` attribute to make the intent explicit. The function is kept for potential future use but callers will now see a deprecation warning. CLAUDE.md already documents the legacy status.
+  - Source command: `review`
+
 ## Notes
 
-- All 79 unit tests pass; 65 API integration tests pass; 86 DB integration tests pass (1 flaky — see #47); 22 WASM tests pass.
-- Clippy is clean on the backend; 1 minor warning on the frontend test file (see #46).
-- `cargo-audit` is not installed locally; `make test-all` skips the audit step gracefully (see #49).
+- All 79 unit tests pass; 65 API integration tests pass; 86 DB integration tests pass; 22 WASM tests pass.
+- Clippy is clean on both backend and frontend (the frontend test file warning #46 is now fixed).
+- `cargo-audit` is now installed. `cargo audit` reports 1 unfixable vulnerability (`rsa` 0.9.10 via `jsonwebtoken`, RUSTSEC-2023-0071) and 0 warnings. All other advisories resolved via `cargo update` and the `rustls-pemfile` → `rustls-pki-types` migration.
+- All 21 previously completed items (#1, #6, #7, #15, #16, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53) confirmed in place. No regressions.
+- No critical, important, or minor findings remain open. Only informational items (#54, #55) remain — #54 requires no code changes, #55 is waiting on an upstream fix.

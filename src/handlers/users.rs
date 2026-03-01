@@ -62,7 +62,7 @@ pub async fn get_user(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
     ),
     security(("basic_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(basic, state), level = "debug")]
 pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Responder, Error> {
     let cache = &state.cache;
     if let Some(cached) = cache.pin().get(&basic.user_id().to_string()) {
@@ -82,7 +82,7 @@ pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Resp
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(credentials, state), level = "debug")]
 pub async fn refresh_token(
     credentials: BearerAuth,
     state: Data<State>,
@@ -90,7 +90,8 @@ pub async fn refresh_token(
     let jwt_secret = state.jwtsecret.clone();
     let claims = verify_jwt(credentials.token().to_string(), jwt_secret.clone()).await?;
 
-    // Verify it's a refresh token
+    // Defence-in-depth: refresh_validator middleware already rejects non-refresh tokens
+    // before this handler is reached, but we check again here as a safety net.
     if claims.claims.token_type != "refresh" {
         return Err(Error::Unauthorized(
             "Invalid token type, refresh token required".to_string(),
@@ -126,7 +127,7 @@ pub async fn refresh_token(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, json), level = "debug")]
 pub async fn revoke_user_token(
     state: Data<State>,
     json: Json<TokenRequest>,

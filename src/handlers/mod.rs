@@ -89,6 +89,7 @@ pub async fn require_admin_or_team_admin(client: &Client, req: &HttpRequest) -> 
 }
 
 /// Require the requesting user to be the target user themselves, or a global Admin.
+#[deprecated(note = "Use require_self_or_admin_or_team_admin instead")]
 pub async fn require_self_or_admin(
     client: &Client,
     req: &HttpRequest,

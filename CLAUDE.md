@@ -59,7 +59,7 @@ src/
   routes.rs        – All route definitions with auth middleware wiring
   lib.rs           – Module declarations
   handlers/
-    mod.rs         – get_client() utility, health endpoint, RBAC helpers (require_admin, require_team_admin, require_team_member, require_self_or_admin)
+    mod.rs         – get_client() utility, health endpoint, RBAC helpers (require_admin, require_admin_or_team_admin, require_team_admin, require_team_member, require_self_or_admin, require_self_or_admin_or_team_admin, requesting_user_id)
     users.rs       – User CRUD + auth handlers (RBAC: self or admin)
     teams.rs       – Team CRUD + team order + member management handlers (team RBAC)
     roles.rs       – Role CRUD handlers (admin-gated CUD)
@@ -280,7 +280,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### All Tests
 
 - Run everything: `make test-all` (backend unit + integration + frontend WASM + dependency audit)
-- Dependency audit: `make audit` runs `cargo audit`; `make test-all` includes it automatically via `audit-if-available` (skips gracefully if `cargo-audit` is not installed)
+- Dependency audit: `make audit` runs `cargo audit`; `make test-all` includes it automatically via `audit-if-available`
 
 ## Required Test Runs
 

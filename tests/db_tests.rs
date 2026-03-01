@@ -1987,8 +1987,8 @@ async fn revoke_token_db_is_idempotent() {
 async fn cleanup_expired_tokens_removes_old_entries() {
     let client = test_client().await;
     let jti = Uuid::now_v7();
-    // Set expires_at in the past
-    let expires_at = Utc::now() - chrono::Duration::try_hours(1).unwrap();
+    // Use a well-past expiry to avoid timing edge cases
+    let expires_at = Utc::now() - chrono::Duration::try_days(1).unwrap();
 
     db::revoke_token_db(&client, jti, expires_at)
         .await
@@ -1998,13 +1998,13 @@ async fn cleanup_expired_tokens_removes_old_entries() {
     let revoked = db::is_token_revoked_db(&client, jti).await.unwrap();
     assert!(revoked, "should be in blacklist before cleanup");
 
-    // Run cleanup
-    let deleted = db::cleanup_expired_tokens(&client)
+    // Run cleanup — don't assert on global count since parallel tests may
+    // insert/remove expired tokens concurrently
+    db::cleanup_expired_tokens(&client)
         .await
         .expect("cleanup should succeed");
-    assert!(deleted >= 1, "should have cleaned up at least 1 entry");
 
-    // Verify it's gone
+    // Verify our specific token was removed
     let revoked_after = db::is_token_revoked_db(&client, jti).await.unwrap();
     assert!(!revoked_after, "should be removed after cleanup");
 }

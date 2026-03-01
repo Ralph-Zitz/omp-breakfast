@@ -13,6 +13,8 @@ DROP TABLE IF EXISTS roles;
 
 DROP TABLE IF EXISTS items;
 
+DROP TABLE IF EXISTS token_blacklist;
+
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 /* Set Timezone */

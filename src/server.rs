@@ -1,7 +1,7 @@
 use crate::{config::Settings, db, models::State, routes::routes};
 use actix_cors::Cors;
 use actix_files::Files;
-use actix_web::{App, HttpServer, web::Data};
+use actix_web::{App, HttpServer, middleware::DefaultHeaders, web::Data};
 use deadpool_postgres::{Pool, Runtime};
 use flurry::HashMap;
 use opentelemetry::global;
@@ -9,9 +9,8 @@ use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use opentelemetry_stdout as stdout;
 use rustls::ServerConfig;
-use rustls_pemfile::{certs, pkcs8_private_keys};
-use rustls_pki_types::PrivateKeyDer;
-use std::{env, fs::File, io::BufReader, path::Path, time::Duration};
+use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, pem::PemObject};
+use std::{env, path::Path, time::Duration};
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{error, info, warn};
 use tracing_actix_web::TracingLogger;
@@ -57,41 +56,39 @@ fn tls_config() -> Result<ServerConfig, crate::errors::Error> {
     let cert_path = "localhost.pem";
     let key_path = "localhost_key.pem";
 
-    let cert_file = &mut BufReader::new(File::open(cert_path).map_err(|e| {
-        error!("Failed to open TLS certificate file '{}': {}", cert_path, e);
-        crate::errors::Error::Io(e)
-    })?);
-    let key_file = &mut BufReader::new(File::open(key_path).map_err(|e| {
-        error!("Failed to open TLS private key file '{}': {}", key_path, e);
-        crate::errors::Error::Io(e)
-    })?);
-
-    let cert_chain: Vec<_> = certs(cert_file)
+    let cert_chain: Vec<CertificateDer<'static>> = CertificateDer::pem_file_iter(cert_path)
+        .map_err(|e| {
+            error!("Failed to load TLS certificate from '{}': {}", cert_path, e);
+            crate::errors::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            ))
+        })?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| {
-            error!("Failed to parse TLS certificate from '{}': {}", cert_path, e);
-            crate::errors::Error::Io(e)
+            error!(
+                "Failed to parse TLS certificate from '{}': {}",
+                cert_path, e
+            );
+            crate::errors::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            ))
         })?;
     info!("TLS certificate loaded successfully from '{}'", cert_path);
 
-    let keys = pkcs8_private_keys(key_file)
-        .next()
-        .ok_or_else(|| {
-            error!("No PKCS8 private key found in '{}'", key_path);
-            crate::errors::Error::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("No PKCS8 private key found in '{}'", key_path),
-            ))
-        })?
-        .map_err(|e| {
-            error!("Failed to parse TLS private key from '{}': {}", key_path, e);
-            crate::errors::Error::Io(e)
-        })?;
+    let key = PrivatePkcs8KeyDer::from_pem_file(key_path).map_err(|e| {
+        error!("Failed to load TLS private key from '{}': {}", key_path, e);
+        crate::errors::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            e.to_string(),
+        ))
+    })?;
     info!("TLS private key loaded successfully from '{}'", key_path);
 
     let mut config = ServerConfig::builder()
         .with_no_client_auth()
-        .with_single_cert(cert_chain, PrivateKeyDer::Pkcs8(keys))
+        .with_single_cert(cert_chain, PrivateKeyDer::Pkcs8(key))
         .map_err(|e| {
             error!("Failed to build TLS configuration: {}", e);
             crate::errors::Error::Io(std::io::Error::new(
@@ -109,12 +106,13 @@ fn tls_config() -> Result<ServerConfig, crate::errors::Error> {
 fn db_tls_connector(settings: &Settings) -> MakeRustlsConnect {
     let mut root_store = rustls::RootCertStore::empty();
     if let Some(ca_cert_path) = &settings.db_ca_cert {
-        let ca_file = &mut BufReader::new(File::open(ca_cert_path).unwrap_or_else(|e| {
-            panic!("Failed to open DB CA certificate '{}': {}", ca_cert_path, e);
-        }));
-        let ca_certs: Vec<_> = certs(ca_file)
-            .map(|c| c.expect("invalid CA cert"))
-            .collect();
+        let ca_certs: Vec<CertificateDer<'static>> =
+            CertificateDer::pem_file_iter(ca_cert_path.as_str())
+                .unwrap_or_else(|e| {
+                    panic!("Failed to open DB CA certificate '{}': {}", ca_cert_path, e);
+                })
+                .map(|c| c.expect("invalid CA cert"))
+                .collect();
         for cert in ca_certs {
             root_store.add(cert).expect("failed to add CA cert");
         }
@@ -292,7 +290,17 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
             .app_data(state.clone())
             .app_data(swagger_config.clone())
             .configure(routes)
-            .service(Files::new("/", FRONTEND_DIR).index_file("index.html"))
+            .service(
+                actix_web::web::scope("")
+                    .wrap(
+                        DefaultHeaders::new()
+                            .add((
+                                "Content-Security-Policy",
+                                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'",
+                            )),
+                    )
+                    .service(Files::new("/", FRONTEND_DIR).index_file("index.html")),
+            )
     })
     .bind_rustls_0_23(&bind_address, ssl_config)?
     .run()

@@ -839,30 +839,29 @@ async fn test_loading_page_shown_during_session_restore() {
 
     // Install a slow-responding fetch mock to catch the loading state
     let token = mock_token("12345678-1234-1234-1234-1234567890ab");
-    let js = format!(
-        r#"(() => {{
+    let js = r#"(() => {
             window.__original_fetch = window.fetch;
-            window.fetch = function(input) {{
+            window.fetch = function(input) {
                 var url = (typeof input === 'string') ? input : input.url;
-                if (url.includes('/api/v1.0/users/')) {{
-                    return new Promise(function(resolve) {{
-                        setTimeout(function() {{
+                if (url.includes('/api/v1.0/users/')) {
+                    return new Promise(function(resolve) {
+                        setTimeout(function() {
                             resolve(new Response(
-                                JSON.stringify({{
+                                JSON.stringify({
                                     user_id: "12345678-1234-1234-1234-1234567890ab",
                                     firstname: "John",
                                     lastname: "Doe",
                                     email: "john@example.com"
-                                }}),
-                                {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                                }),
+                                { status: 200, headers: { "Content-Type": "application/json" } }
                             ));
-                        }}, 2000);
-                    }});
-                }}
-                return Promise.resolve(new Response("Not Found", {{ status: 404 }}));
-            }};
-        }})()"#,
-    );
+                        }, 2000);
+                    });
+                }
+                return Promise.resolve(new Response("Not Found", { status: 404 }));
+            };
+        })()"#
+        .to_string();
     js_sys::eval(&js).expect("install slow mock failed");
 
     // Store a valid token so session restore triggers
