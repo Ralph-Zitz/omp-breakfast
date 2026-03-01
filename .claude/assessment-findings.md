@@ -1,8 +1,8 @@
 # Assessment Findings
 
-Last assessed: 2026-03-01 (re-assessed, cargo-audit addressed)
+Last assessed: 2026-03-01 (full re-assessment, all 10 command areas)
 
-This file is **generated and maintained by the project assessment process** defined in the "Project Assessment" section of `CLAUDE.md`. Each time `assess the project` is run, findings of all severities (critical, important, minor, informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
+This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
 **Do not edit manually** unless you are checking off a completed item. The assessment process will preserve completed items, update open items (file/line references may shift), remove items no longer surfaced, and append new findings.
 
@@ -40,6 +40,13 @@ No open minor items. All minor findings have been resolved and moved to "Complet
 ## Completed Items
 
 Items moved here after being resolved:
+
+### Security — actix-files CVE (Verified Patched)
+
+- [x] **#56 — `actix-files` had 2 known CVEs (GHSA-8v2v-wjwg-vx6r, GHSA-gcqf-3g44-vc9p)**
+  - Problem: `actix-files` versions prior to 0.6.10 are vulnerable to information exposure when serving a non-existing folder (GHSA-8v2v-wjwg-vx6r, medium severity) and panic on empty `Range` header (GHSA-gcqf-3g44-vc9p, medium severity).
+  - Resolution: Verified that `Cargo.lock` already pins `actix-files` at version 0.6.10 (the fixed version). The `Cargo.toml` spec `"0.6"` (equivalent to `>=0.6.0, <0.7.0`) resolved to the patched version via `cargo update` in a prior session. No code changes required.
+  - Source commands: `dependency-check`, `security-audit`
 
 ### Security — Password Hashing at User Creation
 
@@ -188,7 +195,13 @@ Items moved here after being resolved:
 ## Notes
 
 - All 79 unit tests pass; 65 API integration tests pass; 86 DB integration tests pass; 22 WASM tests pass.
-- Clippy is clean on both backend and frontend (the frontend test file warning #46 is now fixed).
-- `cargo-audit` is now installed. `cargo audit` reports 1 unfixable vulnerability (`rsa` 0.9.10 via `jsonwebtoken`, RUSTSEC-2023-0071) and 0 warnings. All other advisories resolved via `cargo update` and the `rustls-pemfile` → `rustls-pki-types` migration.
-- All 21 previously completed items (#1, #6, #7, #15, #16, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53) confirmed in place. No regressions.
+- Clippy is clean on both backend and frontend.
+- `cargo-audit` reports 1 unfixable vulnerability (`rsa` 0.9.10 via `jsonwebtoken`, RUSTSEC-2023-0071) and 0 warnings. All other advisories resolved via `cargo update` and the `rustls-pemfile` → `rustls-pki-types` migration.
+- `actix-files` CVE (GHSA-8v2v-wjwg-vx6r, GHSA-gcqf-3g44-vc9p) verified patched — `Cargo.lock` resolves to 0.6.10 (fixed version).
+- All 22 previously completed items (#1, #6, #7, #15, #16, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53) confirmed in place. No regressions.
+- New completed item #56 (actix-files CVE verified patched) added this session.
 - No critical, important, or minor findings remain open. Only informational items (#54, #55) remain — #54 requires no code changes, #55 is waiting on an upstream fix.
+- All 10 assessment commands verified: `api-completeness`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment`.
+- RBAC enforcement is correct across all handlers per the policy table in `rbac-rules.md`.
+- OpenAPI spec (`middleware/openapi.rs`) is fully synchronized with `routes.rs` — all 37 handler paths present, all request/response schemas registered.
+- CLAUDE.md conventions are followed consistently: error handling pattern, `#[instrument]` annotations, validation before DB calls, logging severity levels.
