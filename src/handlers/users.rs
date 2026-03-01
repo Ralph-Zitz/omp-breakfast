@@ -161,11 +161,12 @@ pub async fn revoke_user_token(
     responses(
         (status = 201, description = "User created", body = UserEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
+        (status = 403, description = "Forbidden - admin or team admin role required", body = ErrorResponse),
         (status = 404, description = "User not created", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state), level = "debug")]
+#[instrument(skip(state, req), level = "debug")]
 pub async fn create_user(
     state: Data<State>,
     json: Json<CreateUserEntry>,
@@ -173,6 +174,10 @@ pub async fn create_user(
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
     let client: Client = get_client(state.pool.clone()).await?;
+
+    // RBAC: admin or team admin
+    require_admin_or_team_admin(&client, &req).await?;
+
     let user = db::create_user(&client, json.into_inner()).await?;
     let mut response = HttpResponse::Created();
     if let Ok(url) = req.url_for("/users/user_id", [user.user_id.to_string()]) {
@@ -187,7 +192,7 @@ pub async fn create_user(
     responses(
         (status = 200, description = "User deleted successfully", body = DeletedResponse),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
-        (status = 403, description = "Forbidden - can only delete own account or requires admin", body = ErrorResponse),
+        (status = 403, description = "Forbidden - can only delete own account, requires admin, or team admin of a shared team", body = ErrorResponse),
         (status = 404, description = "User not deleted", body = DeletedResponse),
     ),
     params(
@@ -204,8 +209,8 @@ pub async fn delete_user(
     let uid = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
 
-    // RBAC: self or global admin
-    require_self_or_admin(&client, &req, uid).await?;
+    // RBAC: self, global admin, or team admin of a shared team
+    require_self_or_admin_or_team_admin(&client, &req, uid).await?;
 
     // Fetch user email before deletion to invalidate the auth cache
     if let Ok(user) = db::get_user(&client, uid).await {
@@ -226,7 +231,7 @@ pub async fn delete_user(
     responses(
         (status = 200, description = "User deleted successfully", body = DeletedResponse),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
-        (status = 403, description = "Forbidden - can only delete own account or requires admin", body = ErrorResponse),
+        (status = 403, description = "Forbidden - can only delete own account, requires admin, or team admin of a shared team", body = ErrorResponse),
         (status = 404, description = "User not deleted", body = DeletedResponse),
     ),
     params(
@@ -243,10 +248,10 @@ pub async fn delete_user_by_email(
     let email = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
 
-    // RBAC: self or global admin — look up user_id from email first
+    // RBAC: self, global admin, or team admin of a shared team
     match db::get_user_by_email(&client, &email).await {
         Ok(user) => {
-            require_self_or_admin(&client, &req, user.user_id).await?;
+            require_self_or_admin_or_team_admin(&client, &req, user.user_id).await?;
         }
         Err(_) => {
             // User not found — still enforce admin check to prevent info leakage
@@ -257,6 +262,8 @@ pub async fn delete_user_by_email(
 
     let deleted = db::delete_user_by_email(&client, &email).await?;
     if deleted {
+        // Invalidate the auth cache so the deleted user cannot authenticate
+        invalidate_cache(state.clone(), &email);
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
     } else {
         Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
@@ -270,7 +277,7 @@ pub async fn delete_user_by_email(
     responses(
         (status = 200, description = "User updated successfully", body = UserEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
-        (status = 403, description = "Forbidden - can only update own account or requires admin", body = ErrorResponse),
+        (status = 403, description = "Forbidden - can only update own account, requires admin, or team admin of a shared team", body = ErrorResponse),
         (status = 404, description = "User not updated", body = ErrorResponse),
     ),
     params(
@@ -289,8 +296,8 @@ pub async fn update_user(
     let uid = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
 
-    // RBAC: self or global admin
-    require_self_or_admin(&client, &req, uid).await?;
+    // RBAC: self, global admin, or team admin of a shared team
+    require_self_or_admin_or_team_admin(&client, &req, uid).await?;
 
     validate(&json)?;
     let user = db::update_user(&client, uid, json.into_inner()).await?;

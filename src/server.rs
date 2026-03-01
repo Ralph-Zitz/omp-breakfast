@@ -1,7 +1,7 @@
-use crate::{config::Settings, models::State, routes::routes};
+use crate::{config::Settings, db, models::State, routes::routes};
 use actix_files::Files;
-use actix_web::{web::Data, App, HttpServer};
-use deadpool_postgres::Runtime;
+use actix_web::{App, HttpServer, web::Data};
+use deadpool_postgres::{Pool, Runtime};
 use flurry::HashMap;
 use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _;
@@ -10,15 +10,45 @@ use opentelemetry_stdout as stdout;
 use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use rustls_pki_types::PrivateKeyDer;
-use std::{env, fs::File, io::BufReader, path::Path};
+use std::{env, fs::File, io::BufReader, path::Path, time::Duration};
 use tokio_postgres_rustls::MakeRustlsConnect;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use tracing_actix_web::TracingLogger;
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
-use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Registry};
+use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
 use utoipa_swagger_ui::Config as SwaggerConfig;
+
+/// Interval between token blacklist cleanup runs (1 hour).
+const TOKEN_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
+
+/// Background task that periodically removes expired entries from the
+/// `token_blacklist` table so it doesn't grow unbounded.
+fn spawn_token_cleanup_task(pool: Pool) {
+    actix_web::rt::spawn(async move {
+        loop {
+            actix_web::rt::time::sleep(TOKEN_CLEANUP_INTERVAL).await;
+            match pool.get().await {
+                Ok(client) => match db::cleanup_expired_tokens(&client).await {
+                    Ok(count) if count > 0 => {
+                        info!(
+                            deleted = count,
+                            "Cleaned up expired entries from token blacklist"
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!(error = %e, "Failed to clean up expired tokens");
+                    }
+                },
+                Err(e) => {
+                    error!(error = %e, "Failed to acquire DB client for token cleanup");
+                }
+            }
+        }
+    });
+}
 
 const FRONTEND_DIR: &str = "frontend/dist";
 
@@ -97,9 +127,14 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
 
     let is_production = env::var("ENV").unwrap_or_default() == "production";
 
+    // Hold the non-blocking writer guard at function scope so it lives for the
+    // entire server lifetime. Dropping it early would lose buffered log writes.
+    let _non_blocking_guard;
+
     if is_production {
         // Production: structured JSON output for log aggregators (no color)
-        let (non_blocking_writer, _guard) = tracing_appender::non_blocking(std::io::stdout());
+        let (non_blocking_writer, guard) = tracing_appender::non_blocking(std::io::stdout());
+        _non_blocking_guard = Some(guard);
         let bunyan_formatting_layer = BunyanFormattingLayer::new(app_name, non_blocking_writer);
         let subscriber = Registry::default()
             .with(env_filter)
@@ -110,6 +145,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         tracing::subscriber::set_global_default(subscriber)
             .expect("Failed to install `tracing` subscriber.");
     } else {
+        _non_blocking_guard = None;
         // Development: colorized human-readable output with severity colors
         // ERROR = red, WARN = yellow, INFO = green, DEBUG = blue, TRACE = purple
         let subscriber = Registry::default()
@@ -133,12 +169,21 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     let host = settings.server.host.clone();
     let port = settings.server.port;
 
-    // C1: Reject the default JWT secret in production
-    let is_prod = env::var("ENV").unwrap_or_default() == "production";
-    if is_prod && settings.server.jwtsecret == "Very Secret" {
-        panic!("FATAL: JWT secret must be changed from the default value in production. Set BREAKFAST_SERVER_JWTSECRET environment variable.");
+    // Reject default secrets in production
+    if is_production && settings.server.secret == "Very Secret" {
+        panic!(
+            "FATAL: Server secret must be changed from the default value in production. Set BREAKFAST_SERVER_SECRET environment variable."
+        );
     }
-    if !is_prod && settings.server.jwtsecret == "Very Secret" {
+    if !is_production && settings.server.secret == "Very Secret" {
+        warn!("Using default server secret — acceptable for development only");
+    }
+    if is_production && settings.server.jwtsecret == "Very Secret" {
+        panic!(
+            "FATAL: JWT secret must be changed from the default value in production. Set BREAKFAST_SERVER_JWTSECRET environment variable."
+        );
+    }
+    if !is_production && settings.server.jwtsecret == "Very Secret" {
         warn!("Using default JWT secret — acceptable for development only");
     }
 
@@ -188,6 +233,13 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
             FRONTEND_DIR
         );
     }
+
+    // Start background task: periodic token blacklist cleanup
+    spawn_token_cleanup_task(state.pool.clone());
+    info!(
+        "Token blacklist cleanup task started (interval: {:?})",
+        TOKEN_CLEANUP_INTERVAL
+    );
 
     info!("Starting server at https://{}:{}", host, port);
 
