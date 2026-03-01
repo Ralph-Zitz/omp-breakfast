@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-01 (#69 completed — UUID v7 defaults migration)
+Last assessed: 2026-03-01 (re-assessment — 2 new findings: #83, #84)
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -34,7 +34,7 @@ _No important items remaining._
 
 - [ ] **#68 — `database.url` field in `Settings` is configured but unused**
   - Files: `src/config.rs` lines 19–22 (`Database` struct with `#[allow(dead_code)]`), `config/default.yml` lines 10–11, `config/development.yml` lines 1–2
-  - Problem: The `Database` struct contains a single `url` field marked `#[allow(dead_code)]`. The DB pool is created from the `pg.*` config fields (`deadpool_postgres::Config`), not from `database.url`. The only reference to `database.url` is in a config unit test assertion (`config.rs` line 150). The field and its config entries serve no purpose and could confuse developers.
+  - Problem: The `Database` struct contains a single `url` field marked `#[allow(dead_code)]`. The DB pool is created from the `pg.*` config fields (`deadpool_postgres::Config`), not from `database.url`. The only reference to `database.url` is in a config unit test assertion (`config.rs` line 143). The field and its config entries serve no purpose and could confuse developers.
   - Fix: Remove the `Database` struct and its `database` field from `Settings`. Remove `database:` sections from `config/default.yml` and `config/development.yml`. Update the config test to remove the `database.url` assertion.
   - Source commands: `review`, `practices-audit`
 
@@ -48,8 +48,8 @@ _No important items remaining._
 
 ### Frontend — All Components in Single `app.rs` File
 
-- [ ] **#71 — Frontend `app.rs` is a 607-line monolith**
-  - File: `frontend/src/app.rs` (607 lines — all components, auth logic, API calls, types)
+- [ ] **#71 — Frontend `app.rs` is a 608-line monolith**
+  - File: `frontend/src/app.rs` (608 lines — all components, auth logic, API calls, types)
   - Problem: The entire frontend — all components (`App`, `LoginPage`, `DashboardPage`, `LoadingPage`, and 6 sub-components), auth helpers (`try_refresh_token`, `authed_get`, `revoke_token_server_side`), JWT decoding, and type definitions — lives in a single file. As the 6 planned pages (Team Management, Orders, Items, Profile, Admin, Roles) are built, this file will become unmanageable.
   - Fix: When building the next frontend page, split into a module structure: `app/mod.rs` (App + router), `app/auth.rs` (token logic), `app/types.rs` (shared types), `app/pages/login.rs`, `app/pages/dashboard.rs`, `app/pages/loading.rs`, `app/components/` (reusable sub-components). This is tracked as part of the Frontend Roadmap in CLAUDE.md.
   - Source commands: `review`, `practices-audit`
@@ -70,7 +70,19 @@ _No important items remaining._
   - Fix: Add a startup check in `server.rs` (similar to the existing secret-validation panic) that verifies `pg.host` is not `pick.a.proper.hostname` when `ENV=production`. Alternatively, remove the placeholder and require the env var to be set.
   - Source commands: `practices-audit`, `review`
 
+### Documentation — CLAUDE.md Test Counts and Module List Are Stale
 
+- [x] **#83 — CLAUDE.md says 136 unit tests but actual count is 156 (20 `db::migrate` tests uncounted)**
+  - File: `CLAUDE.md` line 276 (Testing → Backend section)
+  - Resolution: Updated test count from 136 to 156 and added `db::migrate` to the module list. The correct breakdown is: config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, db/migrate: 20, healthcheck: 22.
+  - Source commands: `practices-audit`
+
+### Documentation — CLAUDE.md Project Structure Missing V2 Migration
+
+- [x] **#84 — `migrations/V2__uuid_v7_defaults.sql` is not listed in the Project Structure tree**
+  - File: `CLAUDE.md` line 104 (Project Structure section, `migrations/` directory)
+  - Resolution: Added `V2__uuid_v7_defaults.sql – UUID v7 default migration (PostgreSQL 18+)` after the V1 entry in the Project Structure tree.
+  - Source commands: `practices-audit`
 
 ## Informational Items
 
@@ -84,8 +96,8 @@ _No important items remaining._
 ### Documentation — Test Count Maintenance Burden
 
 - [ ] **#54 — Test counts in CLAUDE.md will drift as tests are added**
-  - File: `CLAUDE.md` lines 268, 277
-  - Problem: CLAUDE.md hard-codes specific test counts (136 unit, 65 API integration, 86 DB, 23 WASM). These go stale every time a test is added or removed. The counts were verified as of 2026-03-01, but they will drift again with the next code change that adds tests.
+  - File: `CLAUDE.md` line 275
+  - Problem: CLAUDE.md hard-codes specific test counts (now 156 unit, 65 API integration, 86 DB, 23 WASM). These go stale every time a test is added or removed. The counts were verified as of 2026-03-01, but they will drift again with the next code change that adds tests. Proven again by finding #83 (db/migrate tests were added without updating the count).
   - Source command: `practices-audit`
   - Action: No code change needed. This is an inherent maintenance cost of documenting exact counts. The assessment process updates them each time it runs.
 
@@ -107,6 +119,20 @@ _No important items remaining._
 ## Completed Items
 
 Items moved here after being resolved:
+
+### Documentation — CLAUDE.md Test Counts and Module List Are Stale
+
+- [x] **#83 — CLAUDE.md says 136 unit tests but actual count is 156 (20 `db::migrate` tests uncounted)**
+  - File: `CLAUDE.md` line 276 (Testing → Backend section)
+  - Resolution: Updated test count from 136 to 156 and added `db::migrate` to the module list. The correct breakdown is: config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, db/migrate: 20, healthcheck: 22.
+  - Source commands: `practices-audit`
+
+### Documentation — CLAUDE.md Project Structure Missing V2 Migration
+
+- [x] **#84 — `migrations/V2__uuid_v7_defaults.sql` is not listed in the Project Structure tree**
+  - File: `CLAUDE.md` line 104 (Project Structure section, `migrations/` directory)
+  - Resolution: Added `V2__uuid_v7_defaults.sql – UUID v7 default migration (PostgreSQL 18+)` after the V1 entry in the Project Structure tree.
+  - Source commands: `practices-audit`
 
 ### Database — UUID Version Mismatch Between Schema and Application
 
@@ -390,26 +416,17 @@ Items moved here after being resolved:
 
 ## Notes
 
-- All 136 backend unit tests pass (114 lib + 22 healthcheck); 65 API integration tests pass; 86 DB integration tests pass; 23 WASM tests pass. Total: 310 tests, 0 failures.
+- All 156 backend unit tests pass (134 lib + 22 healthcheck); 65 API integration tests pass; 86 DB integration tests pass; 23 WASM tests pass. Total: 330 tests, 0 failures.
+- Backend unit test breakdown: config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, db/migrate: 20, healthcheck: 22 = **156 total**.
+- Previous assessment notes said 136 unit tests — the 20 `db/migrate` tests were not counted in the prior assessment despite existing in the codebase.
 - Clippy is clean on both backend and frontend (including `--tests` and `-W clippy::all`).
 - `cargo fmt --check` is clean on both crates.
 - `cargo-audit` reports 1 unfixable vulnerability (`rsa` 0.9.10 via `jsonwebtoken`, RUSTSEC-2023-0071) and 0 warnings. All other advisories resolved via `cargo update` and the `rustls-pemfile` → `rustls-pki-types` migration.
-- `actix-files` CVE (GHSA-8v2v-wjwg-vx6r, GHSA-gcqf-3g44-vc9p) verified patched — `Cargo.lock` resolves to 0.6.10 (fixed version).
-- No direct dependency CVEs found via CVE validation of all 24 direct dependencies.
-- CSP white-screen bug fixed in commit `5ae1f07`: added `'unsafe-inline'` to `script-src` so Trunk's inline WASM bootstrap script is not blocked by Chrome.
-- All 39 completed items (#1, #6, #7, #15, #16, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, #56, #57, #58, #60, #62, #63, #64, #65, #66, #67, #72, #74, #77, #78, #79, #80, #81, #82) confirmed in place. No regressions found during re-assessment.
-- Open items summary: 0 critical, 0 important, 7 minor (#59, #68, #69, #70, #71, #73, #75), 4 informational (#54, #55, #61, #76). No new items surfaced.
+- No direct dependency CVEs found via CVE validation of all 24 backend and 6 frontend direct dependencies.
 - All 10 assessment commands run: `api-completeness`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment`.
 - RBAC enforcement is correct across all handlers per the policy table in `rbac-rules.md`.
 - OpenAPI spec (`middleware/openapi.rs`) is fully synchronized with `routes.rs` — all 41 handler paths present, all 27 request/response schemas registered.
 - CLAUDE.md conventions are followed consistently: error handling pattern, `#[instrument]` annotations, validation before DB calls, logging severity levels.
-- CSP header documented in CLAUDE.md Key Conventions (completed item #57) and enforced in `server.rs` (completed item #48).
-- Test counts re-verified on 2026-03-01: 136 backend unit (config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, healthcheck: 22), 65 API integration, 86 DB integration, 23 WASM. All match CLAUDE.md and actual `cargo test` output.
-- `flurry` replaced with `dashmap` 6.1.0 (#65) — all `.pin()` patterns removed, DashMap uses direct method calls.
-- `src/db.rs` split into `src/db/` module with 9 domain files (#64) — all call sites unchanged via `pub use` re-exports in `mod.rs`.
-- Command files (`db-review.md`, `api-completeness.md`, `test-gaps.md`) updated to reference `src/db/` module directory (#78).
-- `refinery` 0.8 adopted for database migrations (#66). Initial migration `V1__initial_schema.sql` created. Migrations run at server startup. `database.sql` retained for dev/test with warning header.
-- In-memory token blacklist now stores `DateTime<Utc>` expiry times (#67). `spawn_token_cleanup_task` evicts expired entries via `DashMap::retain()` every hour.
-- Docker-compose DB initialization separated: `init_dev_db.sh` runs the V1 migration SQL, creates the Refinery tracking table, marks V1 as applied, and loads seed data from `database_seed.sql`. This replaces the previous `database.sql` direct execution.
-- Frontend `fetch_user_details` now returns `Option<(String, String)>` to distinguish auth failure from success. Login handler falls back to login page with error message when post-login user fetch fails due to double auth failure.
-- Re-assessment on 2026-03-01 confirmed: clippy clean (backend + frontend), fmt clean, all tests passing, RBAC correct, OpenAPI in sync, no new vulnerabilities, CLAUDE.md accurate. `cargo update --dry-run` shows only 2 minor semver-compatible updates behind latest.
+- CSP header documented in CLAUDE.md Key Conventions and enforced in `server.rs`.
+- Open items summary: 0 critical, 0 important, 6 minor (#59, #68, #70, #71, #73, #75), 4 informational (#54, #55, #61, #76). 2 items resolved (#83, #84).
+- All 43 completed items (#1, #6, #7, #15, #16, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, #56, #57, #58, #60, #62, #63, #64, #65, #66, #67, #69, #72, #74, #77, #78, #79, #80, #81, #82, #83, #84) confirmed in place. No regressions found during re-assessment.

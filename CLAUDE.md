@@ -101,6 +101,7 @@ database_seed.sql  – Seed data for development/testing
 init_dev_db.sh     – Docker development database initialization script
 migrations/
   V1__initial_schema.sql – Refinery migration for the database schema
+  V2__uuid_v7_defaults.sql – UUID v7 default migration (PostgreSQL 18+)
 MIGRATION_FIX_SUMMARY.md – Documents the migration architecture change
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
@@ -272,7 +273,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 136 unit tests across `config`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `routes`, `server`, `validate` modules and the `healthcheck` binary
+- 156 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `routes`, `server`, `validate` modules and the `healthcheck` binary
 - 65 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - 86 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
