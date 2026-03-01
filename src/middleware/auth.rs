@@ -318,13 +318,12 @@ pub async fn basic_validator(
             .map(|cached| cached.user.clone())
     };
     // Evict expired entry if TTL expired
-    if user.is_none() {
-        if let Some(cached) = cache.get(&credentials.user_id().to_string()) {
-            if (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS {
-                drop(cached);
-                cache.remove(&credentials.user_id().to_string());
-            }
-        }
+    if user.is_none()
+        && let Some(cached) = cache.get(&credentials.user_id().to_string())
+        && (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS
+    {
+        drop(cached);
+        cache.remove(&credentials.user_id().to_string());
     }
     let user = match user {
         Some(u) => u,

@@ -6,7 +6,7 @@ use actix_web::{
 };
 use chrono::Utc;
 use dashmap::DashMap;
-use deadpool_postgres::{Pool, Runtime};
+use deadpool_postgres::Runtime;
 use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
@@ -307,11 +307,11 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     // Run database migrations before accepting requests
     {
         let mut client = pool.get().await?;
-        let report = db::migrate::run_migrations(&mut *client)
+        let report = db::migrate::run_migrations(&mut client)
             .await
             .map_err(|e| {
                 error!(error = %e, "Database migration failed — refusing to start");
-                std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+                std::io::Error::other(e.to_string())
             })?;
         let applied = report.applied_migrations().len();
         if applied > 0 {

@@ -6,7 +6,7 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    http::header, web::Data, web::Json, web::Path, HttpRequest, HttpResponse, Responder,
+    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
 };
 use deadpool_postgres::Client;
 use tracing::instrument;
@@ -92,7 +92,11 @@ pub async fn create_role(
     security(("bearer_auth" = [])),
 )]
 #[instrument(skip(state, req), level = "debug")]
-pub async fn delete_role(state: Data<State>, rid: Path<Uuid>, req: HttpRequest) -> Result<impl Responder, Error> {
+pub async fn delete_role(
+    state: Data<State>,
+    rid: Path<Uuid>,
+    req: HttpRequest,
+) -> Result<impl Responder, Error> {
     let client: Client = get_client(state.pool.clone()).await?;
     require_admin(&client, &req).await?;
     let deleted = db::delete_role(&client, rid.into_inner()).await?;
