@@ -45,3 +45,128 @@ impl Settings {
         Ok(settings)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // Serialize config tests because they modify process-wide env vars.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Helper: remove env vars that could leak between tests.
+    ///
+    /// SAFETY: All config tests are serialized via ENV_LOCK so no other
+    /// thread reads these env vars concurrently.
+    unsafe fn clean_env() {
+        unsafe {
+            std::env::remove_var("BREAKFAST_SERVER_PORT");
+            std::env::remove_var("BREAKFAST_SERVER_SECRET");
+            std::env::remove_var("BREAKFAST_SERVER_JWTSECRET");
+            std::env::remove_var("BREAKFAST_SERVER_HOST");
+            // Force the "development" environment so the test overlay is loaded
+            // only when the file exists (required(false) means it's optional).
+            std::env::set_var("ENV", "development");
+        }
+    }
+
+    #[test]
+    fn settings_loads_default_config() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { clean_env() };
+
+        let settings = Settings::new().expect("should load default config");
+        assert_eq!(settings.server.host, "0.0.0.0");
+        assert_eq!(settings.server.port, 8080);
+        assert_eq!(settings.server.secret, "Very Secret");
+        assert_eq!(settings.server.jwtsecret, "Very Secret");
+    }
+
+    #[test]
+    fn settings_env_override_port() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { clean_env() };
+        // SAFETY: serialized via ENV_LOCK
+        unsafe { std::env::set_var("BREAKFAST_SERVER_PORT", "9090") };
+
+        let settings = Settings::new().expect("should load with port override");
+        assert_eq!(settings.server.port, 9090);
+
+        // SAFETY: serialized via ENV_LOCK
+        unsafe { std::env::remove_var("BREAKFAST_SERVER_PORT") };
+    }
+
+    #[test]
+    fn settings_env_override_secret() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { clean_env() };
+        // SAFETY: serialized via ENV_LOCK
+        unsafe { std::env::set_var("BREAKFAST_SERVER_SECRET", "custom-secret-value") };
+
+        let settings = Settings::new().expect("should load with secret override");
+        assert_eq!(settings.server.secret, "custom-secret-value");
+
+        // SAFETY: serialized via ENV_LOCK
+        unsafe { std::env::remove_var("BREAKFAST_SERVER_SECRET") };
+    }
+
+    #[test]
+    fn settings_git_version_is_populated() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { clean_env() };
+
+        let settings = Settings::new().expect("should load config");
+        assert!(
+            !settings.server.git_version.is_empty(),
+            "git_version should not be empty"
+        );
+        // In a git repo the version should be a tag or commit hash, not the
+        // fallback value "unknown".
+        assert_ne!(
+            settings.server.git_version, "unknown",
+            "git_version should resolve to a real value in a git repo"
+        );
+    }
+
+    #[test]
+    fn settings_pg_defaults() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { clean_env() };
+
+        let settings = Settings::new().expect("should load config");
+        assert_eq!(settings.pg.user, Some("actix".to_string()));
+        assert_eq!(settings.pg.dbname, Some("actix".to_string()));
+        assert_eq!(settings.pg.port, Some(5432));
+        assert_eq!(settings.pg.password, Some("actix".to_string()));
+    }
+
+    #[test]
+    fn settings_database_url() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { clean_env() };
+
+        let settings = Settings::new().expect("should load config");
+        assert!(
+            settings.database.url.starts_with("postgres://"),
+            "database URL should be a postgres connection string"
+        );
+    }
+
+    #[test]
+    fn settings_nonexistent_env_file_is_ignored() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { clean_env() };
+        // Set ENV to a value with no matching config file — should still work
+        // because the environment file source is required(false).
+        // SAFETY: serialized via ENV_LOCK
+        unsafe { std::env::set_var("ENV", "nonexistent_environment") };
+
+        let settings = Settings::new().expect("should load with missing env file");
+        // Should still have defaults from config/default.yml
+        assert_eq!(settings.server.host, "0.0.0.0");
+        assert_eq!(settings.server.port, 8080);
+
+        // SAFETY: serialized via ENV_LOCK
+        unsafe { std::env::set_var("ENV", "development") };
+    }
+}

@@ -86,7 +86,8 @@ config/
   production.yml   – Prod overrides
 database.sql       – Full schema + seed data
 tests/
-  api_tests.rs     – Integration tests (ignored without running DB)
+  api_tests.rs     – API integration tests (ignored without running DB)
+  db_tests.rs      – DB function integration tests (ignored without running DB)
 ```
 
 ## Key Conventions
@@ -237,11 +238,11 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 46 unit tests across `errors`, `handlers`, `middleware::auth`, and `validate` modules
-- 55 integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
-- No tests for `db.rs` functions (they require a live DB connection)
+- 59 unit tests across `config`, `errors`, `handlers`, `middleware::auth`, `server`, and `validate` modules
+- 55 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 83 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
-- Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs ignored tests, then tears down)
+- Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
 - Test DB uses `docker-compose.test.yml` overlay to expose port 5433 (avoids conflicts with dev DB on 5432)
 
 ### Frontend

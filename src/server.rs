@@ -275,3 +275,124 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frontend_dir_constant_is_correct() {
+        assert_eq!(FRONTEND_DIR, "frontend/dist");
+    }
+
+    #[test]
+    fn token_cleanup_interval_is_one_hour() {
+        assert_eq!(TOKEN_CLEANUP_INTERVAL, Duration::from_secs(3600));
+    }
+
+    #[test]
+    fn tls_config_loads_certs() {
+        // Skip if cert files are not present (e.g. CI environments)
+        if !std::path::Path::new("localhost.pem").exists()
+            || !std::path::Path::new("localhost_key.pem").exists()
+        {
+            eprintln!("SKIP: TLS cert files not found — skipping tls_config test");
+            return;
+        }
+
+        let config = tls_config();
+
+        // Verify ALPN protocols are configured for HTTP/1.1 and h2
+        assert!(
+            config.alpn_protocols.contains(&b"http/1.1".to_vec()),
+            "ALPN should include http/1.1"
+        );
+        assert!(
+            config.alpn_protocols.contains(&b"h2".to_vec()),
+            "ALPN should include h2"
+        );
+        assert_eq!(
+            config.alpn_protocols.len(),
+            2,
+            "should have exactly 2 ALPN protocols"
+        );
+    }
+
+    #[test]
+    fn db_tls_connector_with_webpki_roots() {
+        // When db_ca_cert is None, the connector should use webpki root certs
+        let settings = Settings {
+            server: crate::config::ServerConfig {
+                host: "0.0.0.0".to_string(),
+                port: 8080,
+                secret: "secret".to_string(),
+                jwtsecret: "jwtsecret".to_string(),
+                s3_key_id: String::new(),
+                s3_key_secret: String::new(),
+                git_version: "test".to_string(),
+            },
+            database: crate::config::Database {
+                url: "postgres://localhost/test".to_string(),
+            },
+            pg: deadpool_postgres::Config::new(),
+            db_ca_cert: None,
+        };
+
+        // Should not panic — returns a valid MakeRustlsConnect
+        let _connector = db_tls_connector(&settings);
+    }
+
+    #[test]
+    fn db_tls_connector_with_custom_ca() {
+        // Skip if the local CA cert is not present
+        let ca_path = "localhost_ca.pem";
+        if !std::path::Path::new(ca_path).exists() {
+            eprintln!("SKIP: {} not found — skipping custom CA test", ca_path);
+            return;
+        }
+
+        let settings = Settings {
+            server: crate::config::ServerConfig {
+                host: "0.0.0.0".to_string(),
+                port: 8080,
+                secret: "secret".to_string(),
+                jwtsecret: "jwtsecret".to_string(),
+                s3_key_id: String::new(),
+                s3_key_secret: String::new(),
+                git_version: "test".to_string(),
+            },
+            database: crate::config::Database {
+                url: "postgres://localhost/test".to_string(),
+            },
+            pg: deadpool_postgres::Config::new(),
+            db_ca_cert: Some(ca_path.to_string()),
+        };
+
+        // Should not panic — loads the CA cert and returns a valid connector
+        let _connector = db_tls_connector(&settings);
+    }
+
+    #[test]
+    #[should_panic(expected = "Failed to open DB CA certificate")]
+    fn db_tls_connector_panics_on_missing_ca_file() {
+        let settings = Settings {
+            server: crate::config::ServerConfig {
+                host: "0.0.0.0".to_string(),
+                port: 8080,
+                secret: "secret".to_string(),
+                jwtsecret: "jwtsecret".to_string(),
+                s3_key_id: String::new(),
+                s3_key_secret: String::new(),
+                git_version: "test".to_string(),
+            },
+            database: crate::config::Database {
+                url: "postgres://localhost/test".to_string(),
+            },
+            pg: deadpool_postgres::Config::new(),
+            db_ca_cert: Some("/nonexistent/path/ca.pem".to_string()),
+        };
+
+        // Should panic because the file does not exist
+        let _connector = db_tls_connector(&settings);
+    }
+}

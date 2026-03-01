@@ -35,7 +35,7 @@ test-unit:
 
 test-integration: db-up db-wait
 	@echo "Running integration tests on port $(TEST_DB_PORT)..."
-	TEST_DB_PORT=$(TEST_DB_PORT) cargo test --test api_tests -- --ignored; \
+	TEST_DB_PORT=$(TEST_DB_PORT) cargo test -- --ignored; \
 	EXIT_CODE=$$?; \
 	$(MAKE) db-down; \
 	exit $$EXIT_CODE
