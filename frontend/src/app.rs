@@ -341,13 +341,26 @@ fn LoginPage(set_page: WriteSignal<Page>) -> impl IntoView {
                             let _ = storage.set_item("refresh_token", &auth.refresh_token);
                         }
 
-                        let (name, user_email) =
-                            fetch_user_details(&auth.access_token, &username_val).await;
-
-                        set_page.set(Page::Dashboard {
-                            name,
-                            email: user_email,
-                        });
+                        match fetch_user_details(&auth.access_token).await {
+                            Some((name, user_email)) => {
+                                set_page.set(Page::Dashboard {
+                                    name,
+                                    email: user_email,
+                                });
+                            }
+                            None => {
+                                // Auth succeeded but user fetch failed (tokens
+                                // revoked server-side or double auth failure).
+                                // Clear tokens and stay on login.
+                                if let Some(storage) = session_storage() {
+                                    let _ = storage.remove_item("access_token");
+                                    let _ = storage.remove_item("refresh_token");
+                                }
+                                set_error.set(Some(
+                                    "Login succeeded but your session could not be verified. Please try again.".into(),
+                                ));
+                            }
+                        }
                     }
                     Err(_) => {
                         set_error.set(Some("Unexpected server response. Please try again.".into()));
@@ -498,21 +511,21 @@ fn SubmitButton(loading: ReadSignal<bool>) -> impl IntoView {
 
 /// Fetch user details from the API after authentication.
 /// Uses `authed_get` for automatic token refresh on 401.
-async fn fetch_user_details(access_token: &str, fallback_email: &str) -> (String, String) {
-    let payload = decode_jwt_payload(access_token);
-    let user_id = match &payload {
-        Some(p) => &p.sub,
-        None => return ("User".into(), fallback_email.into()),
-    };
-
-    let url = format!("/api/v1.0/users/{}", user_id);
-    match authed_get(&url).await {
-        Some(r) if r.ok() => match r.json::<UserEntry>().await {
-            Ok(user) => (format!("{} {}", user.firstname, user.lastname), user.email),
-            Err(_) => ("User".into(), fallback_email.into()),
-        },
-        _ => ("User".into(), fallback_email.into()),
+/// Fetch user details using an authenticated GET request.
+///
+/// Returns `Some((name, email))` on success, or `None` when the request
+/// fails due to an authentication/authorization error (e.g. both the access
+/// token and the refresh token are rejected). Callers should treat `None`
+/// as a signal that the session is invalid and redirect to the login page.
+async fn fetch_user_details(access_token: &str) -> Option<(String, String)> {
+    let payload = decode_jwt_payload(access_token)?;
+    let url = format!("/api/v1.0/users/{}", payload.sub);
+    let resp = authed_get(&url).await?;
+    if !resp.ok() {
+        return None;
     }
+    let user: UserEntry = resp.json().await.ok()?;
+    Some((format!("{} {}", user.firstname, user.lastname), user.email))
 }
 
 // ── Dashboard page (post-login) ─────────────────────────────────────────────

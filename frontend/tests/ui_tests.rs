@@ -1076,7 +1076,7 @@ async fn test_authed_get_retries_after_401_with_token_refresh() {
 /// refresh token is also rejected. `authed_get` should return `None`,
 /// tokens should be cleared, and the user should land on the login page.
 fn install_mock_fetch_double_failure() {
-    let token = mock_token("12345678-1234-1234-1234-1234567890ab");
+    let _token = mock_token("12345678-1234-1234-1234-1234567890ab");
     let far_future_token = {
         use base64::Engine;
         let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
