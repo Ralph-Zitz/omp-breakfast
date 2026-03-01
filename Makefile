@@ -1,5 +1,5 @@
 .PHONY: build check fmt test test-unit test-integration test-frontend test-all db-up db-down db-wait \
-       frontend frontend-build frontend-dev frontend-clean
+       frontend frontend-build frontend-dev frontend-clean audit audit-install
 
 COMPOSE_TEST = docker compose -f docker-compose.yml -f docker-compose.test.yml
 TEST_DB_PORT ?= 5433
@@ -64,3 +64,12 @@ db-wait:
 db-down:
 	@echo "Stopping test database..."
 	$(COMPOSE_TEST) down -v
+
+## Security
+audit-install:
+	@echo "Installing cargo-audit..."
+	cargo install cargo-audit
+
+audit:
+	@echo "Running security audit on dependencies..."
+	cargo audit

@@ -74,7 +74,7 @@ CREATE TABLE memberof (
   PRIMARY KEY (memberof_team_id, memberof_user_id),
   FOREIGN KEY (memberof_team_id) REFERENCES teams (team_id) ON DELETE CASCADE,
   FOREIGN KEY (memberof_user_id) REFERENCES users (user_id) ON DELETE CASCADE,
-  FOREIGN KEY (memberof_role_id) REFERENCES roles (role_id) ON DELETE CASCADE
+  FOREIGN KEY (memberof_role_id) REFERENCES roles (role_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX idx_memberof_user ON memberof (memberof_user_id);

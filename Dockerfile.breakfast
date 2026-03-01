@@ -39,6 +39,7 @@ COPY --from=cacher /usr/local/cargo /usr/local/cargo
 # Build for release
 RUN cargo build --release
 RUN strip -s /app/target/release/breakfast
+RUN strip -s /app/target/release/healthcheck
 
 # Stage 4 - build frontend (WASM via Trunk)
 FROM rust:1.93.1 AS frontend-builder
@@ -61,6 +62,7 @@ COPY localhost_ca.pem /etc/ssl/certs/
 COPY --chown=web:web rds-ca-2019-root.pem rds-ca-2019-root.pem
 COPY rds-ca-2019-root.pem /etc/ssl/certs/
 COPY --from=builder --chown=web:web /app/target/release/breakfast /breakfast
+COPY --from=builder --chown=web:web /app/target/release/healthcheck /healthcheck
 COPY --chown=web:web config/default.yml /config/default.yml
 COPY --chown=web:web config/development.yml /config/development.yml
 COPY --chown=web:web config/production.yml config/production.yml

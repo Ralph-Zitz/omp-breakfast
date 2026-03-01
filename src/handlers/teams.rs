@@ -6,7 +6,7 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    http::header, web::Data, web::Json, web::Path, HttpRequest, HttpResponse, Responder,
+    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -91,7 +91,11 @@ pub async fn create_team(
     security(("bearer_auth" = [])),
 )]
 #[instrument(skip(state, req), level = "debug")]
-pub async fn delete_team(state: Data<State>, tid: Path<Uuid>, req: HttpRequest) -> Result<impl Responder, Error> {
+pub async fn delete_team(
+    state: Data<State>,
+    tid: Path<Uuid>,
+    req: HttpRequest,
+) -> Result<impl Responder, Error> {
     let team_id = tid.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
     require_admin(&client, &req).await?;
@@ -225,8 +229,7 @@ pub async fn create_team_order(
     let tid = team_id.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
     require_team_member(&client, &req, tid).await?;
-    let order =
-        db::create_team_order(&client, tid, json.into_inner()).await?;
+    let order = db::create_team_order(&client, tid, json.into_inner()).await?;
     Ok(HttpResponse::Created().json(order))
 }
 
@@ -285,9 +288,7 @@ pub async fn delete_team_orders(
     let client: Client = get_client(state.pool.clone()).await?;
     require_team_admin(&client, &req, tid).await?;
     let count = db::delete_team_orders(&client, tid).await?;
-    Ok(HttpResponse::Ok().json(DeletedResponse {
-        deleted: count > 0,
-    }))
+    Ok(HttpResponse::Ok().json(DeletedResponse { deleted: count > 0 }))
 }
 
 #[utoipa::path(
@@ -317,8 +318,7 @@ pub async fn update_team_order(
     let (team_id, order_id) = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
     require_team_member(&client, &req, team_id).await?;
-    let order =
-        db::update_team_order(&client, team_id, order_id, json.into_inner()).await?;
+    let order = db::update_team_order(&client, team_id, order_id, json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(order))
 }
 
@@ -348,11 +348,9 @@ pub async fn add_team_member(
 ) -> Result<impl Responder, Error> {
     let tid = team_id.into_inner();
     let member = json.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let mut client: Client = get_client(state.pool.clone()).await?;
     require_team_admin(&client, &req, tid).await?;
-    let result =
-        db::add_team_member(&client, tid, member.user_id, member.role_id)
-            .await?;
+    let result = db::add_team_member(&mut client, tid, member.user_id, member.role_id).await?;
     Ok(HttpResponse::Created().json(result))
 }
 
@@ -412,9 +410,9 @@ pub async fn update_member_role(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let (team_id, user_id) = path.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let mut client: Client = get_client(state.pool.clone()).await?;
     require_team_admin(&client, &req, team_id).await?;
     let result =
-        db::update_member_role(&client, team_id, user_id, json.into_inner().role_id).await?;
+        db::update_member_role(&mut client, team_id, user_id, json.into_inner().role_id).await?;
     Ok(HttpResponse::Ok().json(result))
 }

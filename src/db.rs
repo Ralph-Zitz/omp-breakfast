@@ -6,6 +6,7 @@ use argon2::{
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Client;
 use tokio_pg_mapper::FromTokioPostgresRow;
+use tracing::warn;
 use uuid::Uuid;
 
 pub async fn check_db(client: &Client) -> Result<bool, Error> {
@@ -26,7 +27,13 @@ pub async fn get_users(client: &Client) -> Result<Vec<UserEntry>, Error> {
         .await
         .map_err(Error::Db)?
         .iter()
-        .filter_map(|row| UserEntry::from_row_ref(row).ok())
+        .filter_map(|row| match UserEntry::from_row_ref(row) {
+            Ok(entry) => Some(entry),
+            Err(e) => {
+                warn!(error = %e, "Failed to map user row — skipping");
+                None
+            }
+        })
         .collect();
 
     Ok(users)
@@ -200,11 +207,7 @@ pub async fn get_user_teams(client: &Client, uid: Uuid) -> Result<Vec<UserInTeam
         })
         .collect::<Vec<UserInTeams>>();
 
-    if result.is_empty() {
-        Err(Error::NotFound("record not found".to_string()))
-    } else {
-        Ok(result)
-    }
+    Ok(result)
 }
 
 pub async fn get_teams(client: &Client) -> Result<Vec<TeamEntry>, Error> {
@@ -218,7 +221,13 @@ pub async fn get_teams(client: &Client) -> Result<Vec<TeamEntry>, Error> {
         .await
         .map_err(Error::Db)?
         .iter()
-        .filter_map(|row| TeamEntry::from_row_ref(row).ok())
+        .filter_map(|row| match TeamEntry::from_row_ref(row) {
+            Ok(entry) => Some(entry),
+            Err(e) => {
+                warn!(error = %e, "Failed to map team row — skipping");
+                None
+            }
+        })
         .collect();
 
     Ok(teams)
@@ -318,11 +327,7 @@ pub async fn get_team_users(client: &Client, tid: Uuid) -> Result<Vec<UsersInTea
         })
         .collect::<Vec<UsersInTeam>>();
 
-    if result.is_empty() {
-        Err(Error::NotFound("record not found".to_string()))
-    } else {
-        Ok(result)
-    }
+    Ok(result)
 }
 
 pub async fn get_roles(client: &Client) -> Result<Vec<RoleEntry>, Error> {
@@ -336,7 +341,13 @@ pub async fn get_roles(client: &Client) -> Result<Vec<RoleEntry>, Error> {
         .await
         .map_err(Error::Db)?
         .iter()
-        .filter_map(|row| RoleEntry::from_row_ref(row).ok())
+        .filter_map(|row| match RoleEntry::from_row_ref(row) {
+            Ok(entry) => Some(entry),
+            Err(e) => {
+                warn!(error = %e, "Failed to map role row — skipping");
+                None
+            }
+        })
         .collect();
 
     Ok(roles)
@@ -418,7 +429,13 @@ pub async fn get_items(client: &Client) -> Result<Vec<ItemEntry>, Error> {
         .await
         .map_err(Error::Db)?
         .iter()
-        .filter_map(|row| ItemEntry::from_row_ref(row).ok())
+        .filter_map(|row| match ItemEntry::from_row_ref(row) {
+            Ok(entry) => Some(entry),
+            Err(e) => {
+                warn!(error = %e, "Failed to map item row — skipping");
+                None
+            }
+        })
         .collect();
 
     Ok(items)
@@ -516,7 +533,13 @@ pub async fn get_team_orders(client: &Client, team_id: Uuid) -> Result<Vec<TeamO
         .await
         .map_err(Error::Db)?
         .iter()
-        .filter_map(|row| TeamOrderEntry::from_row_ref(row).ok())
+        .filter_map(|row| match TeamOrderEntry::from_row_ref(row) {
+            Ok(entry) => Some(entry),
+            Err(e) => {
+                warn!(error = %e, "Failed to map team order row — skipping");
+                None
+            }
+        })
         .collect();
 
     Ok(orders)
@@ -643,6 +666,62 @@ pub async fn delete_team_orders(client: &Client, team_id: Uuid) -> Result<u64, E
 
 // ── Memberof management ────────────────────────────────────────────────────
 
+/// Check whether the user holds the "Admin" or "Team Admin" role in any team.
+pub async fn is_admin_or_team_admin(client: &Client, user_id: Uuid) -> Result<bool, Error> {
+    let statement = client
+        .prepare(
+            r#"
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM memberof m
+                    JOIN roles r ON r.role_id = m.memberof_role_id
+                    WHERE m.memberof_user_id = $1 AND r.title IN ('Admin', 'Team Admin')
+                ) AS is_admin_or_team_admin
+            "#,
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    let row = client
+        .query_one(&statement, &[&user_id])
+        .await
+        .map_err(Error::Db)?;
+
+    Ok(row.get("is_admin_or_team_admin"))
+}
+
+/// Check whether the requesting user holds the "Team Admin" role in any team
+/// where the target user is also a member.
+pub async fn is_team_admin_of_user(
+    client: &Client,
+    requesting_user_id: Uuid,
+    target_user_id: Uuid,
+) -> Result<bool, Error> {
+    let statement = client
+        .prepare(
+            r#"
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM memberof admin_m
+                    JOIN roles admin_r ON admin_r.role_id = admin_m.memberof_role_id
+                    JOIN memberof target_m ON target_m.memberof_team_id = admin_m.memberof_team_id
+                    WHERE admin_m.memberof_user_id = $1
+                      AND admin_r.title = 'Team Admin'
+                      AND target_m.memberof_user_id = $2
+                ) AS is_team_admin_of_user
+            "#,
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    let row = client
+        .query_one(&statement, &[&requesting_user_id, &target_user_id])
+        .await
+        .map_err(Error::Db)?;
+
+    Ok(row.get("is_team_admin_of_user"))
+}
+
 /// Check whether the user holds the "Admin" role in any team.
 pub async fn is_admin(client: &Client, user_id: Uuid) -> Result<bool, Error> {
     let statement = client
@@ -693,12 +772,14 @@ pub async fn get_member_role(
 }
 
 pub async fn add_team_member(
-    client: &Client,
+    client: &mut Client,
     team_id: Uuid,
     user_id: Uuid,
     role_id: Uuid,
 ) -> Result<UsersInTeam, Error> {
-    let statement = client
+    let tx = client.transaction().await.map_err(Error::Db)?;
+
+    let statement = tx
         .prepare(
             r#"
                insert into memberof (memberof_team_id, memberof_user_id, memberof_role_id)
@@ -708,13 +789,12 @@ pub async fn add_team_member(
         .await
         .map_err(Error::Db)?;
 
-    client
-        .execute(&statement, &[&team_id, &user_id, &role_id])
+    tx.execute(&statement, &[&team_id, &user_id, &role_id])
         .await
         .map_err(Error::Db)?;
 
     // Return the joined result
-    let query = client
+    let query = tx
         .prepare(
             r#"
                 select user_id, firstname, lastname, email, title
@@ -728,18 +808,22 @@ pub async fn add_team_member(
         .await
         .map_err(Error::Db)?;
 
-    let row = client
+    let row = tx
         .query_one(&query, &[&team_id, &user_id])
         .await
         .map_err(Error::Db)?;
 
-    Ok(UsersInTeam {
+    let result = UsersInTeam {
         user_id: row.get("user_id"),
         firstname: row.get("firstname"),
         lastname: row.get("lastname"),
         email: row.get("email"),
         title: row.get("title"),
-    })
+    };
+
+    tx.commit().await.map_err(Error::Db)?;
+
+    Ok(result)
 }
 
 pub async fn remove_team_member(
@@ -761,12 +845,14 @@ pub async fn remove_team_member(
 }
 
 pub async fn update_member_role(
-    client: &Client,
+    client: &mut Client,
     team_id: Uuid,
     user_id: Uuid,
     role_id: Uuid,
 ) -> Result<UsersInTeam, Error> {
-    let statement = client
+    let tx = client.transaction().await.map_err(Error::Db)?;
+
+    let statement = tx
         .prepare(
             r#"
                update memberof set memberof_role_id = $1
@@ -776,7 +862,7 @@ pub async fn update_member_role(
         .await
         .map_err(Error::Db)?;
 
-    let updated = client
+    let updated = tx
         .execute(&statement, &[&role_id, &team_id, &user_id])
         .await
         .map_err(Error::Db)?;
@@ -786,7 +872,7 @@ pub async fn update_member_role(
     }
 
     // Return the joined result
-    let query = client
+    let query = tx
         .prepare(
             r#"
                 select user_id, firstname, lastname, email, title
@@ -800,18 +886,22 @@ pub async fn update_member_role(
         .await
         .map_err(Error::Db)?;
 
-    let row = client
+    let row = tx
         .query_one(&query, &[&team_id, &user_id])
         .await
         .map_err(Error::Db)?;
 
-    Ok(UsersInTeam {
+    let result = UsersInTeam {
         user_id: row.get("user_id"),
         firstname: row.get("firstname"),
         lastname: row.get("lastname"),
         email: row.get("email"),
         title: row.get("title"),
-    })
+    };
+
+    tx.commit().await.map_err(Error::Db)?;
+
+    Ok(result)
 }
 
 // ── Order CRUD (items within a team order) ──────────────────────────────────
@@ -832,7 +922,13 @@ pub async fn get_order_items(
         .await
         .map_err(Error::Db)?
         .iter()
-        .filter_map(|row| OrderEntry::from_row_ref(row).ok())
+        .filter_map(|row| match OrderEntry::from_row_ref(row) {
+            Ok(entry) => Some(entry),
+            Err(e) => {
+                warn!(error = %e, "Failed to map order item row — skipping");
+                None
+            }
+        })
         .collect();
 
     Ok(items)

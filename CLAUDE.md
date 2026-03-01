@@ -48,7 +48,9 @@ make db-down                   # stop and remove test DB
 ```text
 src/
   main.rs          – Entry point, calls server()
-  server.rs        – Server setup: TLS, tracing, DB pool, HTTP server + static file serving
+  server.rs        – Server setup: TLS, tracing, DB pool, HTTP server, static file serving, background tasks
+  bin/
+    healthcheck.rs – Minimal TLS healthcheck binary for distroless Docker containers
   config.rs        – Settings loaded from config/*.yml + env vars
   models.rs        – All data structs (User, Team, Role, Order, Claims, State)
   db.rs            – All database query functions (one per operation)
@@ -90,19 +92,22 @@ tests/
 ## Key Conventions
 
 - Every handler returns `Result<impl Responder, Error>` using the custom `errors::Error` enum
-- DB functions take a `&Client` and return `Result<T, Error>`, using `.map_err(Error::Db)?` pattern
+- DB functions take a `&Client` and return `Result<T, Error>`, using `.map_err(Error::Db)?` pattern. Functions that perform multi-step mutations (`add_team_member`, `update_member_role`) take `&mut Client` and wrap operations in a database transaction.
 - All handlers are instrumented with `#[instrument(skip(state), level = "debug")]`
 - Validation uses `validate(&json)?` before any DB call
 - JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation
-- Token revocation uses a DB-backed `token_blacklist` table (persisted across restarts) with an in-memory `flurry::HashMap` cache for fast-path lookups
+- Token revocation uses a DB-backed `token_blacklist` table (persisted across restarts) with an in-memory `flurry::HashMap` cache for fast-path lookups. A background task runs every hour to clean up expired entries via `db::cleanup_expired_tokens`.
 - Auth cache uses TTL (5min) and max-size (1000 entries) with FIFO eviction
 - RBAC: Four roles — Admin (global superuser), Team Admin (team-scoped), Member, Guest. JWT claims stored in request extensions.
 - Global Admin RBAC: `require_admin` helper checks if user holds "Admin" role in any team (via `db::is_admin`); gates team CUD, items CUD, roles CUD. Admin bypasses all team-scoped and self-only checks.
+- Admin-or-Team-Admin RBAC: `require_admin_or_team_admin` helper checks if user holds "Admin" or "Team Admin" role in any team (via `db::is_admin_or_team_admin`); gates user creation.
 - Team RBAC: `require_team_member` and `require_team_admin` helpers gate team-scoped mutations; both allow global Admin bypass. `require_team_admin` checks for "Team Admin" role in the specific team.
-- Self-or-Admin RBAC: `require_self_or_admin` helper gates user mutations (update, delete); allows the user themselves or a global Admin.
+- Self-or-Admin-or-Team-Admin RBAC: `require_self_or_admin_or_team_admin` helper gates user mutations (update, delete); allows the user themselves, a global Admin, or a Team Admin of any team where the target user is also a member (checked via `db::is_team_admin_of_user` — a self-join on `memberof`). The legacy `require_self_or_admin` helper is retained but no longer used by any handler.
 - `Error::Forbidden` variant maps to HTTP 403 for authorization failures
-- Production safety: server panics at startup if JWT secret is still the default value when `ENV=production`
+- Production safety: server panics at startup if `server.secret` or `server.jwtsecret` is still the default value when `ENV=production`
 - Error responses are JSON `{"error": "..."}` via `ErrorResponse` struct; DB constraint violations return sanitized messages (never raw SQL)
+- List queries (`get_users`, `get_teams`, `get_roles`, `get_items`, `get_team_orders`, `get_order_items`) log a `warn!()` when a row fails to map instead of silently dropping it
+- `get_user_teams` and `get_team_users` return an empty `[]` (200 OK) when no records are found, rather than a 404 error
 - 4xx errors log with `warn!()`, 5xx errors log with `error!()` for color-coded severity
 - Config is layered: default.yml → environment.yml → env vars (separator: `_`)
 - Backend serves `frontend/dist/` as static files via `actix-files`, with `index_file("index.html")`
@@ -230,8 +235,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 35 unit tests across `errors`, `middleware::auth`, and `validate` modules
-- 44 integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 46 unit tests across `errors`, `handlers`, `middleware::auth`, and `validate` modules
+- 55 integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - No tests for `db.rs` functions (they require a live DB connection)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs ignored tests, then tears down)
