@@ -4,18 +4,18 @@ Review all database queries, schema design, and data access patterns for correct
 
 ## Instructions
 
-You are a database engineer reviewing a PostgreSQL-backed Rust application. Analyze `database.sql` for schema design and `src/db.rs` for query patterns.
+You are a database engineer reviewing a PostgreSQL-backed Rust application. Analyze `database.sql` for schema design and the `src/db/` module directory for query patterns.
 
 ### Schema review (`database.sql`)
 
-1. **Indexing** — Are all foreign keys indexed? Are frequently queried columns (used in WHERE clauses in `db.rs`) indexed? Are there missing or redundant indexes?
+1. **Indexing** — Are all foreign keys indexed? Are frequently queried columns (used in WHERE clauses in `src/db/`) indexed? Are there missing or redundant indexes?
 2. **Data types** — Are column types appropriate? (e.g., `money` type vs `numeric`, `text` vs `varchar` consistency)
 3. **Constraints** — Are NOT NULL, UNIQUE, CHECK constraints sufficient? Are there missing constraints that could prevent data corruption?
 4. **Cascading** — Review ON DELETE behavior for all foreign keys. Are there cases where CASCADE could cause unintended data loss?
 5. **Defaults** — Are defaults appropriate? Is `uuid_generate_v4()` the best choice vs application-generated UUIDs (the app uses `uuid::Uuid::now_v7()`)?
 6. **Triggers** — Is the `update_users_timestamp` trigger correct? Should similar triggers exist for other tables?
 
-### Query review (`src/db.rs`)
+### Query review (`src/db/`)
 
 1. **Prepared statements** — Are all queries using parameterized prepared statements?
 2. **N+1 queries** — Are there patterns where multiple queries could be combined into one?
@@ -37,9 +37,9 @@ For each finding:
 End with:
 
 1. **Schema improvement script** — SQL ALTER statements for recommended changes
-2. **Query optimization list** — Prioritized changes to `db.rs`
+2. **Query optimization list** — Prioritized changes to `src/db/`
 3. **Missing functionality** — DB functions needed for incomplete features
 
 ### Scope
 
-Read `database.sql` and `src/db.rs`. Reference `src/models.rs` for struct-to-table alignment. Do NOT modify any files — this is analysis only.
+Read `database.sql` and `src/db/`. Reference `src/models.rs` for struct-to-table alignment. Do NOT modify any files — this is analysis only.

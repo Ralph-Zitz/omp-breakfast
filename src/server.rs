@@ -1,9 +1,12 @@
 use crate::{config::Settings, db, models::State, routes::routes};
 use actix_cors::Cors;
 use actix_files::Files;
-use actix_web::{App, HttpServer, middleware::DefaultHeaders, web::Data};
+use actix_web::{
+    App, HttpRequest, HttpResponse, HttpServer, middleware::DefaultHeaders, web::Data,
+};
+use chrono::Utc;
+use dashmap::DashMap;
 use deadpool_postgres::{Pool, Runtime};
-use flurry::HashMap;
 use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
@@ -20,26 +23,43 @@ use tracing_log::LogTracer;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
 use utoipa_swagger_ui::Config as SwaggerConfig;
 
+/// Default HTTP port for the redirect server.
+const HTTP_REDIRECT_PORT: u16 = 80;
+
 /// Interval between token blacklist cleanup runs (1 hour).
 const TOKEN_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
 
 /// Background task that periodically removes expired entries from the
-/// `token_blacklist` table so it doesn't grow unbounded.
-fn spawn_token_cleanup_task(pool: Pool) {
+/// `token_blacklist` table and the in-memory DashMap so neither grows
+/// unbounded.
+fn spawn_token_cleanup_task(state: Data<State>) {
     actix_web::rt::spawn(async move {
         loop {
             actix_web::rt::time::sleep(TOKEN_CLEANUP_INTERVAL).await;
-            match pool.get().await {
+
+            // Evict expired entries from the in-memory blacklist
+            let before = state.token_blacklist.len();
+            let now = Utc::now();
+            state
+                .token_blacklist
+                .retain(|_, expires_at| *expires_at > now);
+            let memory_evicted = before - state.token_blacklist.len();
+
+            // Clean up the persistent DB blacklist
+            match state.pool.get().await {
                 Ok(client) => match db::cleanup_expired_tokens(&client).await {
-                    Ok(count) if count > 0 => {
-                        info!(
-                            deleted = count,
-                            "Cleaned up expired entries from token blacklist"
-                        );
+                    Ok(db_deleted) => {
+                        if db_deleted > 0 || memory_evicted > 0 {
+                            info!(
+                                db_deleted = db_deleted,
+                                memory_evicted = memory_evicted,
+                                memory_remaining = state.token_blacklist.len(),
+                                "Cleaned up expired entries from token blacklist"
+                            );
+                        }
                     }
-                    Ok(_) => {}
                     Err(e) => {
-                        error!(error = %e, "Failed to clean up expired tokens");
+                        error!(error = %e, "Failed to clean up expired tokens from DB");
                     }
                 },
                 Err(e) => {
@@ -51,6 +71,74 @@ fn spawn_token_cleanup_task(pool: Pool) {
 }
 
 const FRONTEND_DIR: &str = "frontend/dist";
+
+/// Handler that redirects any HTTP request to the equivalent HTTPS URL.
+/// Returns `301 Moved Permanently` with a `Location` header pointing to the
+/// HTTPS equivalent, preserving the path and query string.
+async fn redirect_to_https(req: HttpRequest, https_port: Data<u16>) -> HttpResponse {
+    let host = req
+        .headers()
+        .get("host")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("localhost");
+
+    // Strip any port from the Host header to replace with the HTTPS port
+    let hostname = host.split(':').next().unwrap_or(host);
+    let path = req
+        .uri()
+        .path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or("/");
+
+    let https_port = **https_port;
+    let location = if https_port == 443 {
+        format!("https://{}{}", hostname, path)
+    } else {
+        format!("https://{}:{}{}", hostname, https_port, path)
+    };
+
+    HttpResponse::MovedPermanently()
+        .insert_header(("Location", location))
+        .finish()
+}
+
+/// Spawn a background HTTP server that redirects all requests to HTTPS.
+/// Binds on `host:80` (or the default HTTP_REDIRECT_PORT). If binding fails
+/// (e.g., insufficient privileges for port 80), logs a warning and returns
+/// without blocking the main HTTPS server.
+fn spawn_http_redirect_server(host: String, https_port: u16) {
+    let bind_address = format!("{}:{}", host, HTTP_REDIRECT_PORT);
+    actix_web::rt::spawn(async move {
+        let https_port_data = Data::new(https_port);
+        let server = HttpServer::new(move || {
+            App::new()
+                .app_data(https_port_data.clone())
+                .default_service(actix_web::web::to(redirect_to_https))
+        })
+        .bind(&bind_address);
+
+        match server {
+            Ok(server) => {
+                info!(
+                    "HTTP→HTTPS redirect server listening on http://{}",
+                    bind_address
+                );
+                if let Err(e) = server.run().await {
+                    error!(error = %e, "HTTP redirect server failed");
+                }
+            }
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    address = %bind_address,
+                    "Could not bind HTTP redirect server — HTTPS redirect is unavailable. \
+                     This is expected in development or when port {} requires elevated privileges.",
+                    HTTP_REDIRECT_PORT
+                );
+            }
+        }
+    });
+}
 
 fn tls_config() -> Result<ServerConfig, crate::errors::Error> {
     let cert_path = "localhost.pem";
@@ -216,6 +304,23 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         .pg
         .create_pool(Some(Runtime::Tokio1), db_tls_connector(&settings))?;
 
+    // Run database migrations before accepting requests
+    {
+        let mut client = pool.get().await?;
+        let report = db::migrate::run_migrations(&mut *client)
+            .await
+            .map_err(|e| {
+                error!(error = %e, "Database migration failed — refusing to start");
+                std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+            })?;
+        let applied = report.applied_migrations().len();
+        if applied > 0 {
+            info!(applied = applied, "Applied database migrations");
+        } else {
+            info!("Database schema is up to date (no pending migrations)");
+        }
+    }
+
     // Application state
     let state = Data::new(State {
         pool,
@@ -223,8 +328,8 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         jwtsecret: settings.server.jwtsecret.clone(),
         s3_key_id: settings.server.s3_key_id.clone(),
         s3_key_secret: settings.server.s3_key_secret.clone(),
-        cache: HashMap::new(),
-        token_blacklist: HashMap::new(),
+        cache: DashMap::new(),
+        token_blacklist: DashMap::new(),
     });
 
     // Swagger UI config
@@ -259,11 +364,14 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Start background task: periodic token blacklist cleanup
-    spawn_token_cleanup_task(state.pool.clone());
+    spawn_token_cleanup_task(state.clone());
     info!(
         "Token blacklist cleanup task started (interval: {:?})",
         TOKEN_CLEANUP_INTERVAL
     );
+
+    // Start HTTP→HTTPS redirect server as a background task
+    spawn_http_redirect_server(host.clone(), port);
 
     info!("Starting server at https://{}:{}", host, port);
 
@@ -321,6 +429,274 @@ mod tests {
     #[test]
     fn token_cleanup_interval_is_one_hour() {
         assert_eq!(TOKEN_CLEANUP_INTERVAL, Duration::from_secs(3600));
+    }
+
+    #[test]
+    fn http_redirect_port_is_80() {
+        assert_eq!(HTTP_REDIRECT_PORT, 80);
+    }
+
+    #[actix_web::test]
+    async fn redirect_handler_returns_301_with_location() {
+        let app = actix_web::test::init_service(
+            App::new()
+                .app_data(Data::new(8080u16))
+                .default_service(actix_web::web::to(redirect_to_https)),
+        )
+        .await;
+
+        let req = actix_web::test::TestRequest::get()
+            .uri("/some/path?q=1")
+            .insert_header(("Host", "example.com:80"))
+            .to_request();
+        let resp = actix_web::test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), 301);
+        let location = resp
+            .headers()
+            .get("Location")
+            .expect("should have Location header")
+            .to_str()
+            .unwrap();
+        assert_eq!(location, "https://example.com:8080/some/path?q=1");
+    }
+
+    #[actix_web::test]
+    async fn redirect_handler_omits_port_for_443() {
+        let app = actix_web::test::init_service(
+            App::new()
+                .app_data(Data::new(443u16))
+                .default_service(actix_web::web::to(redirect_to_https)),
+        )
+        .await;
+
+        let req = actix_web::test::TestRequest::get()
+            .uri("/health")
+            .insert_header(("Host", "example.com"))
+            .to_request();
+        let resp = actix_web::test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), 301);
+        let location = resp.headers().get("Location").unwrap().to_str().unwrap();
+        assert_eq!(location, "https://example.com/health");
+    }
+
+    #[actix_web::test]
+    async fn redirect_handler_preserves_root_path() {
+        let app = actix_web::test::init_service(
+            App::new()
+                .app_data(Data::new(8080u16))
+                .default_service(actix_web::web::to(redirect_to_https)),
+        )
+        .await;
+
+        let req = actix_web::test::TestRequest::get()
+            .uri("/")
+            .insert_header(("Host", "localhost:80"))
+            .to_request();
+        let resp = actix_web::test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), 301);
+        let location = resp.headers().get("Location").unwrap().to_str().unwrap();
+        assert_eq!(location, "https://localhost:8080/");
+    }
+
+    #[actix_web::test]
+    async fn redirect_handler_uses_localhost_when_no_host_header() {
+        let app = actix_web::test::init_service(
+            App::new()
+                .app_data(Data::new(8080u16))
+                .default_service(actix_web::web::to(redirect_to_https)),
+        )
+        .await;
+
+        let req = actix_web::test::TestRequest::get()
+            .uri("/api/v1.0/users")
+            .to_request();
+        let resp = actix_web::test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), 301);
+        let location = resp.headers().get("Location").unwrap().to_str().unwrap();
+        assert_eq!(location, "https://localhost:8080/api/v1.0/users");
+    }
+
+    // ── CORS configuration tests ────────────────────────────────────────
+
+    /// Build a test app with the same CORS config used in production.
+    /// Uses a fixed host/port so assertions are predictable.
+    fn cors_test_app() -> App<
+        impl actix_web::dev::ServiceFactory<
+            actix_web::dev::ServiceRequest,
+            Config = (),
+            Response = actix_web::dev::ServiceResponse<impl actix_web::body::MessageBody>,
+            Error = actix_web::Error,
+            InitError = (),
+        >,
+    > {
+        let host = "localhost";
+        let port = 8080u16;
+        let cors = Cors::default()
+            .allowed_origin(&format!("https://{}:{}", host, port))
+            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+            .allowed_headers(vec![
+                actix_web::http::header::AUTHORIZATION,
+                actix_web::http::header::CONTENT_TYPE,
+                actix_web::http::header::ACCEPT,
+            ])
+            .max_age(3600);
+
+        App::new().wrap(cors).route(
+            "/test",
+            actix_web::web::get().to(|| async { HttpResponse::Ok().finish() }),
+        )
+    }
+
+    #[actix_web::test]
+    async fn cors_allows_same_origin() {
+        let app = actix_web::test::init_service(cors_test_app()).await;
+
+        let req = actix_web::test::TestRequest::get()
+            .uri("/test")
+            .insert_header(("Origin", "https://localhost:8080"))
+            .to_request();
+        let resp = actix_web::test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), 200, "same-origin request should succeed");
+        let acao = resp
+            .headers()
+            .get("access-control-allow-origin")
+            .expect("should have ACAO header for allowed origin");
+        assert_eq!(acao.to_str().unwrap(), "https://localhost:8080");
+    }
+
+    #[actix_web::test]
+    async fn cors_rejects_disallowed_origin() {
+        let app = actix_web::test::init_service(cors_test_app()).await;
+
+        // Preflight from a disallowed origin
+        let req = actix_web::test::TestRequest::default()
+            .method(actix_web::http::Method::OPTIONS)
+            .uri("/test")
+            .insert_header(("Origin", "https://evil.example.com"))
+            .insert_header(("Access-Control-Request-Method", "GET"))
+            .to_request();
+        let resp = actix_web::test::call_service(&app, req).await;
+
+        // actix-cors returns 200 for preflight but without ACAO header for
+        // disallowed origins, effectively blocking the browser from reading
+        // the response.
+        let acao = resp.headers().get("access-control-allow-origin");
+        assert!(
+            acao.is_none(),
+            "disallowed origin should NOT receive ACAO header, got: {:?}",
+            acao
+        );
+    }
+
+    #[actix_web::test]
+    async fn cors_allows_configured_methods() {
+        let app = actix_web::test::init_service(cors_test_app()).await;
+
+        // Preflight for an allowed method (DELETE)
+        let req = actix_web::test::TestRequest::default()
+            .method(actix_web::http::Method::OPTIONS)
+            .uri("/test")
+            .insert_header(("Origin", "https://localhost:8080"))
+            .insert_header(("Access-Control-Request-Method", "DELETE"))
+            .to_request();
+        let resp = actix_web::test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), 200, "preflight for DELETE should succeed");
+        let methods = resp
+            .headers()
+            .get("access-control-allow-methods")
+            .expect("should have allow-methods header")
+            .to_str()
+            .unwrap()
+            .to_uppercase();
+        assert!(
+            methods.contains("DELETE"),
+            "allowed methods should include DELETE, got: {}",
+            methods
+        );
+    }
+
+    #[actix_web::test]
+    async fn cors_rejects_disallowed_method() {
+        let app = actix_web::test::init_service(cors_test_app()).await;
+
+        // Preflight for PATCH which is not in the allowed methods list
+        let req = actix_web::test::TestRequest::default()
+            .method(actix_web::http::Method::OPTIONS)
+            .uri("/test")
+            .insert_header(("Origin", "https://localhost:8080"))
+            .insert_header(("Access-Control-Request-Method", "PATCH"))
+            .to_request();
+        let resp = actix_web::test::call_service(&app, req).await;
+
+        // actix-cors returns 200 for preflight but the allow-methods header
+        // should NOT include PATCH
+        let methods = resp
+            .headers()
+            .get("access-control-allow-methods")
+            .map(|v| v.to_str().unwrap_or("").to_uppercase());
+        if let Some(ref m) = methods {
+            assert!(
+                !m.contains("PATCH"),
+                "PATCH should NOT be in allowed methods, got: {}",
+                m
+            );
+        }
+    }
+
+    #[actix_web::test]
+    async fn cors_allows_configured_headers() {
+        let app = actix_web::test::init_service(cors_test_app()).await;
+
+        // Preflight requesting the Authorization header
+        let req = actix_web::test::TestRequest::default()
+            .method(actix_web::http::Method::OPTIONS)
+            .uri("/test")
+            .insert_header(("Origin", "https://localhost:8080"))
+            .insert_header(("Access-Control-Request-Method", "GET"))
+            .insert_header(("Access-Control-Request-Headers", "authorization"))
+            .to_request();
+        let resp = actix_web::test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), 200);
+        let headers = resp
+            .headers()
+            .get("access-control-allow-headers")
+            .expect("should have allow-headers")
+            .to_str()
+            .unwrap()
+            .to_lowercase();
+        assert!(
+            headers.contains("authorization"),
+            "allowed headers should include authorization, got: {}",
+            headers
+        );
+    }
+
+    #[actix_web::test]
+    async fn cors_max_age_is_3600() {
+        let app = actix_web::test::init_service(cors_test_app()).await;
+
+        let req = actix_web::test::TestRequest::default()
+            .method(actix_web::http::Method::OPTIONS)
+            .uri("/test")
+            .insert_header(("Origin", "https://localhost:8080"))
+            .insert_header(("Access-Control-Request-Method", "GET"))
+            .to_request();
+        let resp = actix_web::test::call_service(&app, req).await;
+
+        let max_age = resp
+            .headers()
+            .get("access-control-max-age")
+            .expect("should have max-age header")
+            .to_str()
+            .unwrap();
+        assert_eq!(max_age, "3600", "max-age should be 3600 seconds");
     }
 
     #[test]

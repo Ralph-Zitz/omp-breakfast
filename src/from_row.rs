@@ -305,3 +305,128 @@ impl FromRow for OrderEntry {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── FromRowError Display ────────────────────────────────────────────
+
+    #[test]
+    fn column_not_found_error_displays_column_name() {
+        let err = FromRowError::ColumnNotFound("email".to_string());
+        assert_eq!(format!("{}", err), "Column not found: email");
+    }
+
+    #[test]
+    fn conversion_error_displays_message() {
+        let err = FromRowError::Conversion("user_id: invalid type".to_string());
+        assert_eq!(
+            format!("{}", err),
+            "Conversion error: user_id: invalid type"
+        );
+    }
+
+    #[test]
+    fn from_row_error_implements_std_error() {
+        let err: Box<dyn std::error::Error> =
+            Box::new(FromRowError::ColumnNotFound("x".to_string()));
+        // Should be usable as a trait object
+        assert!(err.to_string().contains("Column not found"));
+    }
+
+    #[test]
+    fn from_row_error_debug_format() {
+        let err = FromRowError::ColumnNotFound("team_id".to_string());
+        let debug = format!("{:?}", err);
+        assert!(
+            debug.contains("ColumnNotFound"),
+            "debug format should contain variant name"
+        );
+        assert!(
+            debug.contains("team_id"),
+            "debug format should contain column name"
+        );
+    }
+
+    // ── map_err helper ──────────────────────────────────────────────────
+
+    #[test]
+    fn map_err_returns_conversion_for_non_column_errors() {
+        // tokio_postgres::Error::__private_api_timeout() produces an error
+        // whose message does NOT contain "column" or "not found", so map_err
+        // should classify it as a Conversion error.
+        let pg_err = tokio_postgres::Error::__private_api_timeout();
+        let result = map_err("my_column", pg_err);
+        match result {
+            FromRowError::Conversion(msg) => {
+                assert!(
+                    msg.starts_with("my_column:"),
+                    "Conversion message should start with the column name, got: {}",
+                    msg
+                );
+            }
+            other => panic!("expected Conversion, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn map_err_column_not_found_variant_is_constructable() {
+        // We can't easily create a tokio_postgres error whose message
+        // contains "column" or "not found" without a live Row, so we
+        // verify the ColumnNotFound variant directly.
+        let err = FromRowError::ColumnNotFound("missing_col".to_string());
+        assert_eq!(format!("{}", err), "Column not found: missing_col");
+    }
+
+    #[test]
+    fn map_err_conversion_variant_includes_column_and_detail() {
+        let err = FromRowError::Conversion("price: expected numeric, got text".to_string());
+        let display = format!("{}", err);
+        assert!(display.contains("price"));
+        assert!(display.contains("numeric"));
+    }
+
+    // ── FromRow trait: from_row delegates to from_row_ref ───────────────
+
+    // We can't easily construct tokio_postgres::Row in unit tests (it requires
+    // internal binary protocol state), so the FromRow implementations are
+    // validated via DB integration tests. Here we verify the error types and
+    // the public trait contract at the type level.
+
+    #[test]
+    fn from_row_trait_is_object_safe_for_user_entry() {
+        // Verify that FromRow is implemented for UserEntry by checking
+        // the associated function signatures exist at compile time.
+        fn _assert_from_row<T: FromRow>() {}
+        _assert_from_row::<UserEntry>();
+        _assert_from_row::<UpdateUserEntry>();
+        _assert_from_row::<CreateUserEntry>();
+    }
+
+    #[test]
+    fn from_row_trait_is_implemented_for_all_entry_types() {
+        fn _assert_from_row<T: FromRow>() {}
+        _assert_from_row::<TeamEntry>();
+        _assert_from_row::<CreateTeamEntry>();
+        _assert_from_row::<UpdateTeamEntry>();
+        _assert_from_row::<RoleEntry>();
+        _assert_from_row::<CreateRoleEntry>();
+        _assert_from_row::<UpdateRoleEntry>();
+        _assert_from_row::<ItemEntry>();
+        _assert_from_row::<CreateItemEntry>();
+        _assert_from_row::<UpdateItemEntry>();
+        _assert_from_row::<TeamOrderEntry>();
+        _assert_from_row::<OrderEntry>();
+    }
+
+    // ── FromRowError variants are distinct ──────────────────────────────
+
+    #[test]
+    fn column_not_found_and_conversion_are_distinct_variants() {
+        let err1 = FromRowError::ColumnNotFound("col".to_string());
+        let err2 = FromRowError::Conversion("col".to_string());
+        // They should produce different Display output
+        assert_ne!(format!("{}", err1), format!("{}", err2));
+    }
+}

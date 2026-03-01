@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
+use dashmap::DashMap;
 use deadpool_postgres::Pool;
-use flurry::HashMap;
 use serde::{Deserialize, Serialize};
 use std::{fmt, fmt::Display};
 
@@ -45,8 +45,10 @@ pub struct State {
     pub jwtsecret: String,
     pub s3_key_id: String,
     pub s3_key_secret: String,
-    pub cache: HashMap<String, CachedUser>,
-    pub token_blacklist: HashMap<String, bool>,
+    pub cache: DashMap<String, CachedUser>,
+    /// Revoked token JTIs mapped to their original expiry time.
+    /// Entries are evicted by the background cleanup task once expired.
+    pub token_blacklist: DashMap<String, DateTime<Utc>>,
 }
 
 #[derive(Serialize, ToSchema)]

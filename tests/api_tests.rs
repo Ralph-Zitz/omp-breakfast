@@ -53,8 +53,8 @@ async fn test_state() -> Data<State> {
         jwtsecret: "Very Secret".to_string(),
         s3_key_id: String::new(),
         s3_key_secret: String::new(),
-        cache: flurry::HashMap::new(),
-        token_blacklist: flurry::HashMap::new(),
+        cache: dashmap::DashMap::new(),
+        token_blacklist: dashmap::DashMap::new(),
     })
 }
 

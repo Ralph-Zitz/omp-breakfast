@@ -11,7 +11,7 @@ You are a QA engineer specializing in Rust. Examine the entire codebase — back
 1. **Inventory existing tests** — List all test functions, what module they're in, and what they cover
 2. **Map code paths** — For each public function in `src/`, determine whether it has test coverage
 3. **Identify gaps** — Focus on:
-   - `db.rs` — No unit tests exist (DB-dependent). Suggest how to test with mocks or test containers
+   - `src/db/` — No unit tests exist (DB-dependent). Suggest how to test with mocks or test containers
    - `handlers/*.rs` — No handler-level tests. Suggest actix-web test harness patterns
    - `errors.rs` — Check if all `Error` variants are tested in `ResponseError` impl
    - `middleware/auth.rs` — Are edge cases covered (malformed tokens, empty passwords, expired by 1 second)?

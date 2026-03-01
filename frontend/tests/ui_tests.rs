@@ -1062,3 +1062,151 @@ async fn test_authed_get_retries_after_401_with_token_refresh() {
     // Clean up the counter
     let _ = js_sys::eval("delete window.__user_fetch_count");
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  10 · authed_get double-failure (refresh also fails → back to login)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Install a fetch mock where:
+/// - POST /auth       → 200 with tokens (initial login succeeds)
+/// - GET /api/v1.0/users/* → always 401 (token revoked server-side)
+/// - POST /auth/refresh → 401 (refresh token also invalid/expired)
+///
+/// This simulates a double-failure: the access token is rejected, and the
+/// refresh token is also rejected. `authed_get` should return `None`,
+/// tokens should be cleared, and the user should land on the login page.
+fn install_mock_fetch_double_failure() {
+    let token = mock_token("12345678-1234-1234-1234-1234567890ab");
+    let far_future_token = {
+        use base64::Engine;
+        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
+        let exp = (js_sys::Date::now() / 1000.0) as u64 + 3600;
+        let payload_json = format!(
+            r#"{{"sub":"12345678-1234-1234-1234-1234567890ab","exp":{}}}"#,
+            exp
+        );
+        let payload =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload_json.as_bytes());
+        format!("{}.{}.nosig", header, payload)
+    };
+    let js = format!(
+        r#"(() => {{
+            window.__original_fetch = window.fetch;
+            window.__double_fail_user_count = 0;
+            window.__double_fail_refresh_count = 0;
+            window.fetch = function(input, init) {{
+                var url = (typeof input === 'string') ? input : input.url;
+                var method = 'GET';
+                if (init && init.method) {{ method = init.method; }}
+                else if (typeof input !== 'string' && input.method) {{ method = input.method; }}
+
+                // POST /auth (initial login — succeeds)
+                if (url.endsWith('/auth') && method === 'POST' && !url.includes('/refresh') && !url.includes('/revoke')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{
+                            access_token: "{initial_token}",
+                            refresh_token: "mock_refresh_will_fail",
+                            token_type: "Bearer",
+                            expires_in: 900
+                        }}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // POST /auth/refresh — ALWAYS 401 (double failure)
+                if (url.includes('/auth/refresh') && method === 'POST') {{
+                    window.__double_fail_refresh_count++;
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"error":"Invalid or expired refresh token"}}),
+                        {{ status: 401, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // POST /auth/revoke — accept silently (fire-and-forget)
+                if (url.includes('/auth/revoke')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up": true}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/users/* — ALWAYS 401 (access token invalid)
+                if (url.includes('/api/v1.0/users/') && method === 'GET') {{
+                    window.__double_fail_user_count++;
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"error":"Unauthorized"}}),
+                        {{ status: 401, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                return Promise.resolve(new Response("Not Found", {{ status: 404 }}));
+            }};
+        }})()"#,
+        initial_token = far_future_token,
+    );
+    js_sys::eval(&js).expect("install_mock_fetch_double_failure failed");
+}
+
+#[wasm_bindgen_test]
+async fn test_authed_get_double_failure_falls_back_to_login() {
+    let id = "t-double-fail";
+    clear_tokens();
+    install_mock_fetch_double_failure();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    // Fill in login form and submit
+    set_input(id, "input#username", "test@example.com");
+    set_input(id, "input#password", "password123");
+    flush(50).await;
+    submit_form(id);
+
+    // Wait for: login → fetch_user_details → authed_get (401) → refresh (401) → fallback
+    flush(1500).await;
+
+    let html = inner_html(id);
+
+    // Should NOT show the dashboard — double failure means no user data
+    assert!(
+        !html.contains("Welcome!"),
+        "dashboard should NOT render after double failure"
+    );
+
+    // Should be back on the login page
+    assert!(
+        html.contains("Sign In") || has_element(id, "input#username"),
+        "should fall back to login page after double failure"
+    );
+
+    // Tokens should have been cleared from sessionStorage by try_refresh_token
+    let access = get_storage_item("access_token");
+    let refresh = get_storage_item("refresh_token");
+    assert!(
+        access.is_none() || access.as_deref() == Some(""),
+        "access_token should be cleared after refresh failure, got: {:?}",
+        access
+    );
+    assert!(
+        refresh.is_none() || refresh.as_deref() == Some(""),
+        "refresh_token should be cleared after refresh failure, got: {:?}",
+        refresh
+    );
+
+    // Verify the refresh endpoint was actually called (proving the retry path was exercised)
+    let refresh_count = js_sys::eval("window.__double_fail_refresh_count")
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0) as u32;
+    assert!(
+        refresh_count >= 1,
+        "refresh endpoint should have been called at least once, got: {}",
+        refresh_count
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+    let _ = js_sys::eval("delete window.__double_fail_user_count");
+    let _ = js_sys::eval("delete window.__double_fail_refresh_count");
+}

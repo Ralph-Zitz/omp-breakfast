@@ -90,8 +90,8 @@ pub async fn revoke_token(
         Uuid::parse_str(jti).map_err(|e| Error::Validation(format!("Invalid jti: {}", e)))?;
     // Persist to DB (source of truth)
     db::revoke_token_db(client, jti_uuid, expires_at).await?;
-    // Update in-memory cache for fast-path lookups
-    state.token_blacklist.pin().insert(jti.to_string(), true);
+    // Update in-memory cache for fast-path lookups (store expiry for eviction)
+    state.token_blacklist.insert(jti.to_string(), expires_at);
     Ok(())
 }
 
@@ -103,7 +103,7 @@ pub async fn is_token_revoked(
     jti: &str,
 ) -> Result<bool, Error> {
     // Fast path: check in-memory cache
-    if state.token_blacklist.pin().contains_key(jti) {
+    if state.token_blacklist.contains_key(jti) {
         return Ok(true);
     }
     // Slow path: check DB
@@ -113,8 +113,14 @@ pub async fn is_token_revoked(
     };
     let revoked = db::is_token_revoked_db(client, jti_uuid).await?;
     if revoked {
-        // Populate in-memory cache for future fast-path hits
-        state.token_blacklist.pin().insert(jti.to_string(), true);
+        // Populate in-memory cache for future fast-path hits.
+        // Use a conservative expiry (max token lifetime) since the DB
+        // fallback doesn't return the exact expiry time.
+        let estimated_expiry =
+            Utc::now() + Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration");
+        state
+            .token_blacklist
+            .insert(jti.to_string(), estimated_expiry);
     }
     Ok(revoked)
 }
@@ -122,7 +128,7 @@ pub async fn is_token_revoked(
 #[instrument(skip(state), level = "debug")]
 pub fn invalidate_cache(state: Data<State>, key: &str) -> bool {
     let cache = &state.cache;
-    cache.pin().remove(key).is_some()
+    cache.remove(key).is_some()
 }
 
 #[instrument(skip(credentials, req), level = "debug")]
@@ -303,8 +309,7 @@ pub async fn basic_validator(
         }
     };
     let user = {
-        let guard = cache.pin();
-        guard
+        cache
             .get(&credentials.user_id().to_string())
             .filter(|cached| {
                 // TTL check: reject entries older than CACHE_TTL_SECONDS
@@ -314,34 +319,33 @@ pub async fn basic_validator(
     };
     // Evict expired entry if TTL expired
     if user.is_none() {
-        let guard = cache.pin();
-        if let Some(cached) = guard.get(&credentials.user_id().to_string())
-            && (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS
-        {
-            guard.remove(&credentials.user_id().to_string());
+        if let Some(cached) = cache.get(&credentials.user_id().to_string()) {
+            if (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS {
+                drop(cached);
+                cache.remove(&credentials.user_id().to_string());
+            }
         }
     }
     let user = match user {
         Some(u) => u,
         None => {
             // Enforce max cache size before inserting
-            if cache.pin().len() >= CACHE_MAX_SIZE {
+            if cache.len() >= CACHE_MAX_SIZE {
                 // Evict oldest entries
-                let guard = cache.pin();
-                let mut entries: Vec<(String, i64)> = guard
+                let mut entries: Vec<(String, i64)> = cache
                     .iter()
-                    .map(|(k, v)| (k.clone(), v.cached_at.timestamp()))
+                    .map(|entry| (entry.key().clone(), entry.value().cached_at.timestamp()))
                     .collect();
                 entries.sort_by_key(|(_, ts)| *ts);
                 // Remove oldest 10% to avoid evicting on every request
                 let to_remove = (CACHE_MAX_SIZE / 10).max(1);
                 for (key, _) in entries.into_iter().take(to_remove) {
-                    guard.remove(&key);
+                    cache.remove(&key);
                 }
             }
             match get_user_by_email(&client, credentials.user_id()).await {
                 Ok(u) => {
-                    cache.pin().insert(
+                    cache.insert(
                         credentials.user_id().to_string(),
                         CachedUser {
                             user: u.clone(),
@@ -412,19 +416,22 @@ mod tests {
             jwtsecret: TEST_SECRET.to_string(),
             s3_key_id: String::new(),
             s3_key_secret: String::new(),
-            cache: flurry::HashMap::new(),
-            token_blacklist: flurry::HashMap::new(),
+            cache: dashmap::DashMap::new(),
+            token_blacklist: dashmap::DashMap::new(),
         })
     }
 
     // Helper: directly insert into the in-memory blacklist for unit tests
     // (DB-backed revocation is tested via integration tests)
     fn revoke_token_in_memory(state: &Data<State>, jti: &str) {
-        state.token_blacklist.pin().insert(jti.to_string(), true);
+        state.token_blacklist.insert(
+            jti.to_string(),
+            Utc::now() + Duration::try_days(1).expect("valid duration"),
+        );
     }
 
     fn is_token_in_memory_blacklist(state: &Data<State>, jti: &str) -> bool {
-        state.token_blacklist.pin().contains_key(jti)
+        state.token_blacklist.contains_key(jti)
     }
 
     // -- Token generation & verification --
@@ -607,18 +614,18 @@ mod tests {
             email: "test@example.com".to_string(),
             password: "password123".to_string(),
         };
-        state.cache.pin().insert(
+        state.cache.insert(
             "test@example.com".to_string(),
             CachedUser {
                 user,
                 cached_at: Utc::now(),
             },
         );
-        assert!(state.cache.pin().contains_key("test@example.com"));
+        assert!(state.cache.contains_key("test@example.com"));
 
         let removed = invalidate_cache(state.clone(), "test@example.com");
         assert!(removed);
-        assert!(!state.cache.pin().contains_key("test@example.com"));
+        assert!(!state.cache.contains_key("test@example.com"));
     }
 
     #[actix_web::test]

@@ -170,7 +170,7 @@ mod tests {
     use super::*;
     use crate::models::State;
     use actix_web::{App, test, web::Data};
-    use flurry::HashMap;
+    use dashmap::DashMap;
     use std::net::SocketAddr;
 
     /// Fake peer address required by actix-governor's PeerIpKeyExtractor.
@@ -200,8 +200,8 @@ mod tests {
             jwtsecret: "test".into(),
             s3_key_id: String::new(),
             s3_key_secret: String::new(),
-            cache: HashMap::new(),
-            token_blacklist: HashMap::new(),
+            cache: DashMap::new(),
+            token_blacklist: DashMap::new(),
         })
     }
 

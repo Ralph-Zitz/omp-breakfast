@@ -65,7 +65,7 @@ pub async fn get_user(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
 #[instrument(skip(basic, state), level = "debug")]
 pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Responder, Error> {
     let cache = &state.cache;
-    if let Some(cached) = cache.pin().get(&basic.user_id().to_string()) {
+    if let Some(cached) = cache.get(&basic.user_id().to_string()) {
         let auth = generate_token_pair(cached.user.user_id, state.jwtsecret.clone()).await?;
         Ok(HttpResponse::Ok().json(auth))
     } else {

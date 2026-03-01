@@ -46,4 +46,4 @@ Provide:
 
 ### Scope
 
-Read `database.sql`, `src/models.rs`, `src/db.rs`, `src/handlers/`, `src/routes.rs`, `src/middleware/openapi.rs`, and `frontend/src/app.rs`. Do NOT modify any files — this is analysis only.
+Read `database.sql`, `src/models.rs`, `src/db/`, `src/handlers/`, `src/routes.rs`, `src/middleware/openapi.rs`, and `frontend/src/app.rs`. Do NOT modify any files — this is analysis only.

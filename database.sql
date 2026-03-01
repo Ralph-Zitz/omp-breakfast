@@ -1,3 +1,14 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   WARNING: This script is for DEVELOPMENT and TESTING only.
+
+   It drops ALL tables and recreates them from scratch, destroying all data.
+   DO NOT run this against a production database.
+
+   Production deployments use refinery migrations (see migrations/ directory).
+   This file is used by docker-compose's postgres-setup service to provide a
+   clean database with seed data for local development and integration tests.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 /* Drop Tables */
 DROP TABLE IF EXISTS memberof;
 

@@ -9,8 +9,8 @@ A breakfast ordering application for teams, built in Rust with an actix-web REST
 - **Language:** Rust 2024 edition
 - **Web framework:** actix-web 4 (with rustls TLS) + `actix-cors` for CORS policy
 - **Database:** PostgreSQL via `deadpool-postgres` connection pool + `tokio-postgres`
-- **ORM/mapping:** Custom `FromRow` trait in `src/from_row.rs` (manual row mapping, no external dependency)
-- **Auth:** JWT (access + refresh tokens via `jsonwebtoken`) + Basic Auth (Argon2 password hashing) + RBAC (Admin/Team Admin/Member/Guest roles, admin bypass)
+- **ORM/mapping:** Custom `FromRow` trait in `src/from_row.rs` (manual row mapping, no external dependency); DB functions organized in `src/db/` module directory by domain
+- **Auth:** JWT (access + refresh tokens via `jsonwebtoken`) + Basic Auth (Argon2 password hashing) + RBAC (Admin/Team Admin/Member/Guest roles, admin bypass); in-memory caching via `dashmap` (concurrent HashMap)
 - **Rate limiting:** `actix-governor` on auth endpoints (6s per request, burst size 10)
 - **Validation:** `validator` crate with derive macros
 - **Error handling:** `thiserror` for typed error enum, `color-eyre` for colorized panic/error reports
@@ -53,7 +53,17 @@ src/
     healthcheck.rs – Minimal TLS healthcheck binary for distroless Docker containers
   config.rs        – Settings loaded from config/*.yml + env vars
   models.rs        – All data structs (User, Team, Role, Order, Claims, State)
-  db.rs            – All database query functions (one per operation)
+  db/
+    mod.rs         – Module declarations + re-exports of all public DB functions
+    health.rs      – Database health check (check_db)
+    users.rs       – User CRUD (get_users, get_user, get_user_by_email, create_user, update_user, delete_user, delete_user_by_email)
+    teams.rs       – Team CRUD + user-team queries (get_teams, get_team, create_team, update_team, delete_team, get_user_teams, get_team_users)
+    roles.rs       – Role CRUD (get_roles, get_role, create_role, update_role, delete_role)
+    items.rs       – Item CRUD (get_items, get_item, create_item, update_item, delete_item)
+    orders.rs      – Team order CRUD (get_team_orders, get_team_order, create_team_order, update_team_order, delete_team_order, delete_team_orders)
+    order_items.rs – Order item CRUD + closed-order check (is_team_order_closed, get_order_items, get_order_item, create_order_item, update_order_item, delete_order_item)
+    membership.rs  – Team membership + RBAC queries (is_admin, is_admin_or_team_admin, is_team_admin_of_user, get_member_role, add_team_member, remove_team_member, update_member_role)
+    tokens.rs      – Token blacklist persistence (revoke_token_db, is_token_revoked_db, cleanup_expired_tokens)
   errors.rs        – Error enum with thiserror + ResponseError impl (maps to HTTP status codes)
   validate.rs      – Generic validation wrapper using validator crate
   routes.rs        – All route definitions with auth middleware wiring
@@ -255,7 +265,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 79 unit tests across `config`, `errors`, `handlers`, `middleware::auth`, `routes`, `server`, and `validate` modules
+- 136 unit tests across `config`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `routes`, `server`, `validate` modules and the `healthcheck` binary
 - 65 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - 86 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
