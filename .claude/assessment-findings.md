@@ -2,7 +2,7 @@
 
 Last assessed: 2026-03-01 (updated)
 
-This file is **generated and maintained by the project assessment process** defined in the "Project Assessment" section of `CLAUDE.md`. Each time `assess the project` is run, critical and important findings are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
+This file is **generated and maintained by the project assessment process** defined in the "Project Assessment" section of `CLAUDE.md`. Each time `assess the project` is run, findings of all severities (critical, important, minor, informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
 **Do not edit manually** unless you are checking off a completed item. The assessment process will preserve completed items, update open items (file/line references may shift), remove items no longer surfaced, and append new findings.
 
@@ -14,7 +14,50 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
-No open items. All findings have been resolved and moved to "Completed Items" below.
+No open important items. All important findings have been resolved and moved to "Completed Items" below.
+
+## Minor Items
+
+### Backend — Redundant Token-Type Check
+
+- [ ] **#45 — `refresh_token` handler duplicates token-type check already enforced by middleware**
+  - File: `src/handlers/users.rs` lines 95–99, `src/middleware/auth.rs` lines 223–230
+  - Problem: The `refresh_token` handler manually checks `claims.claims.token_type != "refresh"` and returns `Error::Unauthorized`. However, the `refresh_validator` middleware (which guards the `/auth/refresh` route) already performs the same check and rejects non-refresh tokens before the handler is ever reached. The handler-level check is dead code under normal request flow.
+  - Fix: Remove the `token_type` check from the `refresh_token` handler (lines 95–99 of `src/handlers/users.rs`) since `refresh_validator` already enforces it. Alternatively, keep it as defence-in-depth but add a comment explaining the redundancy.
+  - Source commands: `review`, `security-audit`
+
+### Frontend — Clippy Warning in Test File
+
+- [ ] **#46 — Useless `format!` in frontend test `ui_tests.rs`**
+  - File: `frontend/tests/ui_tests.rs` line 842
+  - Problem: `cargo clippy --tests` warns about a `format!()` call that contains no format arguments — it should be a plain string with `.to_string()`. This is the only clippy warning in the frontend crate.
+  - Fix: Replace `format!(r#"..."#)` with `r#"..."#.to_string()` as suggested by clippy, or run `cargo clippy --fix --test "ui_tests" -p breakfast-frontend`.
+  - Source command: `review`
+
+### Testing — Flaky DB Test
+
+- [ ] **#47 — `cleanup_expired_tokens_removes_old_entries` is flaky under parallel test execution**
+  - File: `tests/db_tests.rs` lines 1987–2011
+  - Problem: This test inserts an expired token, runs `cleanup_expired_tokens`, and asserts `deleted >= 1`. When other tests running in parallel also insert expired tokens, the count may vary. More critically, if the test database retains expired tokens from a previous failed run, the assertion `!revoked_after` can fail because `cleanup_expired_tokens` uses `DELETE ... WHERE expires_at < NOW()` and timing can be tight with a 1-hour-ago expiry.
+  - Fix: Use a unique `jti` (already done via `Uuid::now_v7()`) and assert specifically on whether that token was cleaned up, rather than relying on global count. Alternatively, wrap the test in a transaction that rolls back, isolating it from other tests.
+  - Source command: `test-gaps`
+
+### Security — Missing CSP Headers for Static Files
+
+- [ ] **#48 — No Content-Security-Policy header on static file responses**
+  - File: `src/server.rs` line 295
+  - Problem: `actix-files` serves the frontend SPA from `frontend/dist/` without any `Content-Security-Policy` header. While the app uses `sessionStorage` (not cookies) and has no inline scripts in the built output, adding a CSP header would provide defence-in-depth against XSS. This is a hardening measure, not a vulnerability.
+  - Fix: Add a middleware (e.g., `actix_web::middleware::DefaultHeaders`) that sets a `Content-Security-Policy` header with at minimum `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'`. Tune the policy to match the frontend's actual resource loading patterns.
+  - Source commands: `security-audit`
+
+## Informational Items
+
+### Architecture — Defence-in-Depth Notes
+
+- [ ] **#49 — RBAC, OpenAPI sync, and dependency health all verified correct**
+  - Problem: No issues found. The RBAC enforcement matches the documented role policy table. OpenAPI spec is in sync with routes and frontend API usage. Dependencies are current with no known vulnerabilities (note: `cargo-audit` is not installed locally, so automated vulnerability scanning is skipped by `make test-all`).
+  - Source commands: `rbac-rules`, `openapi-sync`, `dependency-check`
+  - Action: No code changes needed. Consider installing `cargo-audit` for automated vulnerability scanning.
 
 ## Completed Items
 
@@ -101,9 +144,6 @@ Items moved here after being resolved:
 
 ## Notes
 
-- Full assessment also identified Minor and Informational findings not tracked here.
-- Minor findings include: redundant token-type check in `refresh_token` handler (already enforced by middleware), one clippy warning in frontend tests, flaky `cleanup_expired_tokens_removes_old_entries` DB test, and missing CSP headers for static file serving.
-- RBAC enforcement, OpenAPI sync, and dependency health were all verified correct — no issues found.
-- All 79 unit tests pass; 65 API integration tests pass; 86 DB integration tests pass (1 flaky); 22 WASM tests pass.
-- Clippy is clean on the backend; 1 minor warning on the frontend test file.
-- `cargo-audit` is not installed locally; `make test-all` skips the audit step gracefully.
+- All 79 unit tests pass; 65 API integration tests pass; 86 DB integration tests pass (1 flaky — see #47); 22 WASM tests pass.
+- Clippy is clean on the backend; 1 minor warning on the frontend test file (see #46).
+- `cargo-audit` is not installed locally; `make test-all` skips the audit step gracefully (see #49).
