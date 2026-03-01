@@ -15,7 +15,6 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 # Stage 2 - build dependencies
 FROM rust:1.93.1 AS cacher
-RUN apt-get update && apt-get install -y cmake clang llvm-dev libclang-dev
 WORKDIR /app
 RUN cargo install cargo-chef
 COPY --from=planner /app/recipe.json recipe.json

@@ -41,9 +41,9 @@ opentelemetry = { version = "0.31.0", features = ["default"] }
 opentelemetry-stdout = { version = "0.31.0", features = ["trace"] }
 opentelemetry_sdk = { version = "0.31.0", features = ["default", "rt-tokio-current-thread"] }
 tracing-opentelemetry = { version = "0.32.1" }
-jsonwebtoken = { version = "10.3.0", features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "10.3.0", default-features = false, features = ["rust_crypto"] }
 webpki-roots = "1.0.6"
-rustls = "0.23.37"
+rustls = { version = "0.23.37", default-features = false, features = ["ring", "logging", "std", "tls12"] }
 rustls-pemfile = "2.2.0"
 rustls-pki-types = { version = "1.14.0" }
 actix-files = "0.6"
