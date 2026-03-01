@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-01 (re-assessed — no new findings; #77, #79, #80, #81, #82 completed earlier this session)
+Last assessed: 2026-03-01 (#69 completed — UUID v7 defaults migration)
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -37,14 +37,6 @@ _No important items remaining._
   - Problem: The `Database` struct contains a single `url` field marked `#[allow(dead_code)]`. The DB pool is created from the `pg.*` config fields (`deadpool_postgres::Config`), not from `database.url`. The only reference to `database.url` is in a config unit test assertion (`config.rs` line 150). The field and its config entries serve no purpose and could confuse developers.
   - Fix: Remove the `Database` struct and its `database` field from `Settings`. Remove `database:` sections from `config/default.yml` and `config/development.yml`. Update the config test to remove the `database.url` assertion.
   - Source commands: `review`, `practices-audit`
-
-### Database — UUID Version Mismatch Between Schema and Application
-
-- [ ] **#69 — Schema defaults to UUID v4 but Rust code generates UUID v7**
-  - Files: `migrations/V1__initial_schema.sql` lines 13, 29, 38, 47, 78 (`uuid_generate_v4()`), `src/handlers/mod.rs` line 155 and test helpers (`Uuid::now_v7()`)
-  - Problem: The migration schema sets `DEFAULT uuid_generate_v4()` (random UUIDs) on all primary key columns, but the Rust application generates `Uuid::now_v7()` (time-ordered UUIDs). Since server-generated IDs are passed via `INSERT ... VALUES` and returned via `RETURNING`, the DB default is never triggered in practice. However, the inconsistency is confusing and would cause mixed UUID versions if rows were ever inserted directly via SQL.
-  - Fix: Update `migrations/V1__initial_schema.sql` to use `uuid_generate_v7()` (available in PostgreSQL 17+) or `gen_random_uuid()` as the default — or document the intentional mismatch. If using PostgreSQL < 17, keep `uuid_generate_v4()` and add a comment noting that the application overrides it with v7. Would require a V2 migration.
-  - Source commands: `db-review`, `review`
 
 ### Security — Seed Data Uses Hardcoded Argon2 Salt
 
@@ -115,6 +107,13 @@ _No important items remaining._
 ## Completed Items
 
 Items moved here after being resolved:
+
+### Database — UUID Version Mismatch Between Schema and Application
+
+- [x] **#69 — Schema defaults to UUID v4 but Rust code generates UUID v7**
+  - Files: `migrations/V2__uuid_v7_defaults.sql` (new), `database.sql`, `init_dev_db.sh`
+  - Resolution: Created V2 migration (`migrations/V2__uuid_v7_defaults.sql`) that `ALTER TABLE ... SET DEFAULT uuidv7()` on all five UUID primary key columns (users, teams, roles, items, teamorders), using PostgreSQL 18's built-in `uuidv7()` function. Updated `database.sql` dev reset script to use `uuidv7()` instead of `uuid_generate_v4()`. Updated `init_dev_db.sh` to run the V2 migration and record it in the refinery tracking table. All 136 unit tests and 151 integration tests pass.
+  - Source commands: `db-review`, `review`
 
 ### Documentation — CLAUDE.md Test Counts and References Are Stale
 

@@ -40,7 +40,7 @@ SET timezone = 'Europe/Copenhagen';
 
 /* Users table */
 CREATE TABLE users (
-  user_id uuid DEFAULT uuid_generate_v4 () PRIMARY KEY,
+  user_id uuid DEFAULT uuidv7 () PRIMARY KEY,
   firstname varchar(50) NOT NULL,
   lastname varchar(50) NOT NULL,
   email varchar(75) NOT NULL,
@@ -56,7 +56,7 @@ CREATE INDEX idx_users_email ON users (email);
 
 /* Teams table */
 CREATE TABLE teams (
-  team_id uuid DEFAULT uuid_generate_v4 () PRIMARY KEY,
+  team_id uuid DEFAULT uuidv7 () PRIMARY KEY,
   tname text NOT NULL,
   descr text,
   created timestamptz DEFAULT CURRENT_TIMESTAMP,
@@ -68,7 +68,7 @@ CREATE INDEX idx_teams_name ON teams (tname);
 
 /* Roles table */
 CREATE TABLE roles (
-  role_id uuid DEFAULT uuid_generate_v4 () PRIMARY KEY,
+  role_id uuid DEFAULT uuidv7 () PRIMARY KEY,
   title text NOT NULL,
   created timestamptz DEFAULT CURRENT_TIMESTAMP,
   changed timestamptz DEFAULT CURRENT_TIMESTAMP,
@@ -77,7 +77,7 @@ CREATE TABLE roles (
 
 /* Items table */
 CREATE TABLE items (
-  item_id uuid DEFAULT uuid_generate_v4 () PRIMARY KEY,
+  item_id uuid DEFAULT uuidv7 () PRIMARY KEY,
   descr text NOT NULL,
   price numeric(10, 2) CHECK (price >= 0),
   created timestamptz DEFAULT CURRENT_TIMESTAMP,
@@ -103,7 +103,7 @@ CREATE INDEX idx_memberof_role ON memberof (memberof_role_id);
 
 /* Team order table */
 CREATE TABLE teamorders (
-  teamorders_id uuid DEFAULT uuid_generate_v4 () PRIMARY KEY,
+  teamorders_id uuid DEFAULT uuidv7 () PRIMARY KEY,
   teamorders_team_id uuid NOT NULL,
   teamorders_user_id uuid,
   duedate date,
