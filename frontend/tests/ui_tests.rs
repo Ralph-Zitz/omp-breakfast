@@ -894,3 +894,172 @@ async fn test_loading_page_shown_during_session_restore() {
     clear_tokens();
     restore_fetch();
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  9 · authed_get token refresh retry
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Install a stateful fetch mock that:
+/// - POST /auth       → 200 with tokens (initial login)
+/// - GET /api/v1.0/users/* → 401 on the FIRST call, 200 on subsequent calls
+///   (simulates a server-side revoked token that triggers `authed_get` retry)
+/// - POST /auth/refresh → 200 with a new token pair (refresh succeeds)
+fn install_mock_fetch_refresh_retry() {
+    let token = mock_token("12345678-1234-1234-1234-1234567890ab");
+    // Build a token with a far-future exp so token_needs_refresh() won't
+    // pre-emptively refresh before the GET request is made.
+    let far_future_token = {
+        use base64::Engine;
+        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
+        let exp = (js_sys::Date::now() / 1000.0) as u64 + 3600; // 1 hour from now
+        let payload_json = format!(
+            r#"{{"sub":"12345678-1234-1234-1234-1234567890ab","exp":{}}}"#,
+            exp
+        );
+        let payload =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload_json.as_bytes());
+        format!("{}.{}.nosig", header, payload)
+    };
+    let js = format!(
+        r#"(() => {{
+            window.__original_fetch = window.fetch;
+            window.__user_fetch_count = 0;
+            window.fetch = function(input, init) {{
+                var url = (typeof input === 'string') ? input : input.url;
+                var method = 'GET';
+                if (init && init.method) {{ method = init.method; }}
+                else if (typeof input !== 'string' && input.method) {{ method = input.method; }}
+
+                // POST /auth (initial login)
+                if (url.endsWith('/auth') && method === 'POST' && !url.includes('/refresh')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{
+                            access_token: "{initial_token}",
+                            refresh_token: "mock_refresh_initial",
+                            token_type: "Bearer",
+                            expires_in: 900
+                        }}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // POST /auth/refresh
+                if (url.includes('/auth/refresh') && method === 'POST') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{
+                            access_token: "{refreshed_token}",
+                            refresh_token: "mock_refresh_new",
+                            token_type: "Bearer",
+                            expires_in: 900
+                        }}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/users/* — 401 on first call, 200 on subsequent
+                if (url.includes('/api/v1.0/users/') && method === 'GET') {{
+                    window.__user_fetch_count++;
+                    if (window.__user_fetch_count === 1) {{
+                        return Promise.resolve(new Response(
+                            JSON.stringify({{"error":"Unauthorized"}}),
+                            {{ status: 401, headers: {{ "Content-Type": "application/json" }} }}
+                        ));
+                    }}
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{
+                            user_id: "12345678-1234-1234-1234-1234567890ab",
+                            firstname: "Refreshed",
+                            lastname: "User",
+                            email: "refreshed@example.com"
+                        }}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // POST /auth/revoke (fire-and-forget from logout — accept silently)
+                if (url.includes('/auth/revoke')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up": true}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                return Promise.resolve(new Response("Not Found", {{ status: 404 }}));
+            }};
+        }})()"#,
+        initial_token = token,
+        refreshed_token = far_future_token,
+    );
+    js_sys::eval(&js).expect("install_mock_fetch_refresh_retry failed");
+}
+
+#[wasm_bindgen_test]
+async fn test_authed_get_retries_after_401_with_token_refresh() {
+    let id = "t-authed-get-retry";
+    clear_tokens();
+    install_mock_fetch_refresh_retry();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    // Fill in login form and submit
+    set_input(id, "input#username", "test@example.com");
+    set_input(id, "input#password", "password123");
+    flush(50).await;
+    submit_form(id);
+
+    // Wait for: login → fetch_user_details → authed_get (401) → refresh → retry (200)
+    flush(1000).await;
+
+    let html = inner_html(id);
+
+    // The dashboard should render with the refreshed user details
+    assert!(
+        html.contains("Welcome!"),
+        "should reach dashboard after token refresh retry"
+    );
+    assert!(
+        html.contains("Refreshed User"),
+        "should show user name from the retried (refreshed) request"
+    );
+    assert!(
+        html.contains("refreshed@example.com"),
+        "should show email from the retried request"
+    );
+
+    // Verify that sessionStorage was updated with the new (refreshed) token
+    let new_token = get_storage_item("access_token");
+    assert!(
+        new_token.is_some(),
+        "access_token should be stored after refresh"
+    );
+    let new_token_val = new_token.unwrap();
+    // The refreshed token should be the far-future one, not the initial mock
+    assert!(
+        new_token_val.contains('.'),
+        "stored token should look like a JWT"
+    );
+
+    let new_refresh = get_storage_item("refresh_token");
+    assert_eq!(
+        new_refresh.as_deref(),
+        Some("mock_refresh_new"),
+        "refresh_token should be updated to the new one from the refresh response"
+    );
+
+    // Verify the mock was called the expected number of times
+    let count = js_sys::eval("window.__user_fetch_count")
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0) as u32;
+    assert_eq!(
+        count, 2,
+        "user endpoint should have been called twice (initial 401 + retry 200)"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+    // Clean up the counter
+    let _ = js_sys::eval("delete window.__user_fetch_count");
+}

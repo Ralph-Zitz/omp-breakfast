@@ -1,7 +1,7 @@
 use base64::Engine;
 use gloo_net::http::Request;
 use leptos::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use web_sys::wasm_bindgen::JsCast;
 
 // ── API response types ──────────────────────────────────────────────────────
@@ -153,6 +153,29 @@ async fn authed_get(url: &str) -> Option<gloo_net::http::Response> {
     }
 
     Some(resp)
+}
+
+// ── Token revocation ────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct TokenRequest {
+    token: String,
+}
+
+/// Revoke a token server-side via `POST /auth/revoke`. Fire-and-forget: errors
+/// are silently ignored so that logout always succeeds from the user's perspective.
+async fn revoke_token_server_side(bearer: &str, token_to_revoke: &str) {
+    let req = Request::post("/auth/revoke")
+        .header("Authorization", &format!("Bearer {}", bearer))
+        .header("Content-Type", "application/json")
+        .json(&TokenRequest {
+            token: token_to_revoke.to_string(),
+        });
+
+    if let Ok(req) = req {
+        // Intentionally ignoring the response — best-effort revocation.
+        let _ = req.send().await;
+    }
 }
 
 // ── Application state ───────────────────────────────────────────────────────
@@ -504,11 +527,35 @@ fn DashboardPage(name: String, email: String, set_page: WriteSignal<Page>) -> im
         .to_uppercase();
 
     let on_logout = move |_| {
+        // Grab tokens before clearing storage so we can revoke them server-side
+        let access = session_storage()
+            .and_then(|s| s.get_item("access_token").ok())
+            .flatten();
+        let refresh = session_storage()
+            .and_then(|s| s.get_item("refresh_token").ok())
+            .flatten();
+
+        // Clear storage immediately so the user is logged out even if revocation fails
         if let Some(storage) = session_storage() {
             let _ = storage.remove_item("access_token");
             let _ = storage.remove_item("refresh_token");
         }
         set_page.set(Page::Login);
+
+        // Fire-and-forget: revoke both tokens server-side
+        if let Some(bearer) = &access {
+            let bearer = bearer.clone();
+            let access_clone = access.clone();
+            let refresh_clone = refresh.clone();
+            leptos::task::spawn_local(async move {
+                if let Some(at) = access_clone {
+                    revoke_token_server_side(&bearer, &at).await;
+                }
+                if let Some(rt) = refresh_clone {
+                    revoke_token_server_side(&bearer, &rt).await;
+                }
+            });
+        }
     };
 
     view! {

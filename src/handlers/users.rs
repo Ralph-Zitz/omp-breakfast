@@ -69,7 +69,7 @@ pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Resp
         let auth = generate_token_pair(cached.user.user_id, state.jwtsecret.clone()).await?;
         Ok(HttpResponse::Ok().json(auth))
     } else {
-        Ok(HttpResponse::Unauthorized().json("Unauthorized"))
+        return Err(Error::Unauthorized("Unauthorized".to_string()));
     }
 }
 
@@ -92,9 +92,9 @@ pub async fn refresh_token(
 
     // Verify it's a refresh token
     if claims.claims.token_type != "refresh" {
-        return Ok(HttpResponse::Unauthorized().json(ErrorResponse {
-            error: "Invalid token type, refresh token required".to_string(),
-        }));
+        return Err(Error::Unauthorized(
+            "Invalid token type, refresh token required".to_string(),
+        ));
     }
 
     // Verify that the user still exists (also need client for revocation checks)
@@ -102,9 +102,7 @@ pub async fn refresh_token(
 
     // Check if revoked
     if is_token_revoked(&client, &state, &claims.claims.jti.to_string()).await? {
-        return Ok(HttpResponse::Unauthorized().json(ErrorResponse {
-            error: "Token has been revoked".to_string(),
-        }));
+        return Err(Error::Unauthorized("Token has been revoked".to_string()));
     }
 
     db::get_user(&client, claims.claims.sub).await?;

@@ -41,6 +41,8 @@ pub enum Error {
     Utoipa(String),
     #[error("{0}")]
     Forbidden(String),
+    #[error("{0}")]
+    Unauthorized(String),
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
@@ -221,6 +223,12 @@ impl ResponseError for Error {
                     error: e.to_string(),
                 })
             }
+            Error::Unauthorized(e) => {
+                warn!(error = %e, "Unauthorized");
+                HttpResponse::Unauthorized().json(ErrorResponse {
+                    error: e.to_string(),
+                })
+            }
         }
     }
 }
@@ -335,6 +343,13 @@ mod tests {
         let err = Error::Forbidden("not allowed".into());
         let resp = err.error_response();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn unauthorized_error_returns_401() {
+        let err = Error::Unauthorized("bad credentials".into());
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[test]
