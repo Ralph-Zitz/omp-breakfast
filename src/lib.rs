@@ -1,6 +1,7 @@
 pub mod config;
 pub mod db;
 pub mod errors;
+pub mod from_row;
 pub mod handlers;
 pub mod middleware;
 pub mod models;

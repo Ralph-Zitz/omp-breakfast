@@ -1,3 +1,4 @@
+use crate::from_row::FromRow;
 use crate::{errors::Error, models::*};
 use argon2::{
     Argon2,
@@ -5,7 +6,6 @@ use argon2::{
 };
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Client;
-use tokio_pg_mapper::FromTokioPostgresRow;
 use tracing::warn;
 use uuid::Uuid;
 

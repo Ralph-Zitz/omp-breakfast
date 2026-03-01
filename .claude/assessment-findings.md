@@ -1,8 +1,8 @@
 # Assessment Findings
 
-Last assessed: 2026-03-01 (resume-assessment session, resolved #57 and #58)
+Last assessed: 2026-03-01 (full project assessment — all 10 commands run)
 
-This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
+This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
 **Do not edit manually** unless you are checking off a completed item. The assessment process will preserve completed items, update open items (file/line references may shift), remove items no longer surfaced, and append new findings.
 
@@ -12,13 +12,15 @@ This file is **generated and maintained by the project assessment process** defi
 - Or say: "Read `.claude/assessment-findings.md` and help me work through the remaining open items."
 - Check off items as they are completed by changing `[ ]` to `[x]`
 
-## Important Items
-
-No open important items. All important findings have been resolved and moved to "Completed Items" below.
-
 ## Minor Items
 
-No open minor items. All minor findings have been resolved and moved to "Completed Items" below.
+### Code Quality — Dead S3 Config Fields
+
+- [ ] **#59 — `s3_key_id` and `s3_key_secret` are loaded and stored but never used**
+  - Files: `src/models.rs` lines 46–47 (`State` struct), `src/config.rs` lines 13–14 (`ServerConfig` struct), `src/server.rs` lines 224–225 (state construction), `config/default.yml` lines 6–7, `config/development.yml` lines 5–6, `config/production.yml` lines 6–7
+  - Problem: The `s3_key_id` and `s3_key_secret` fields are defined in `ServerConfig`, loaded from config files, stored in `State`, and propagated through all test helpers (`routes.rs`, `server.rs`, `middleware/auth.rs`), but no handler, middleware, or DB function ever reads them. They add confusion and unnecessary config surface area.
+  - Fix: Either remove the fields entirely from `ServerConfig`, `State`, all config files, and all test helpers — or, if S3 integration is planned, document the intent in CLAUDE.md's Unfinished Work section.
+  - Source commands: `review`, `practices-audit`
 
 ## Informational Items
 
@@ -33,9 +35,17 @@ No open minor items. All minor findings have been resolved and moved to "Complet
 
 - [ ] **#54 — Test counts in CLAUDE.md will drift as tests are added**
   - File: `CLAUDE.md` lines 256–258, 264
-  - Problem: CLAUDE.md hard-codes specific test counts (79 unit, 65 API integration, 86 DB, 22 WASM). These go stale every time a test is added or removed. The counts were just verified and are currently accurate, but they will drift again with the next code change that adds tests.
+  - Problem: CLAUDE.md hard-codes specific test counts (79 unit, 65 API integration, 86 DB, 22 WASM). These go stale every time a test is added or removed. The counts were verified as accurate on 2026-03-01, but they will drift again with the next code change that adds tests.
   - Source command: `practices-audit`
   - Action: No code change needed. This is an inherent maintenance cost of documenting exact counts. The assessment process updates them each time it runs.
+
+### API Design — No Pagination on List Endpoints
+
+- [ ] **#61 — List endpoints return all records without pagination**
+  - Files: `src/db.rs` (`get_users`, `get_teams`, `get_roles`, `get_items`, `get_team_orders`, `get_order_items`), `src/handlers/` (corresponding GET collection handlers)
+  - Problem: All list/collection endpoints (`GET /api/v1.0/users`, `GET /api/v1.0/teams`, `GET /api/v1.0/items`, `GET /api/v1.0/roles`, `GET /api/v1.0/teams/{id}/orders`, `GET /api/v1.0/teams/{id}/orders/{id}/items`) return all rows from the database. This works at current scale (internal team app) but would become a performance problem with growth. Standard REST pagination (e.g., `?page=1&limit=20` or cursor-based) is not implemented.
+  - Source commands: `review`, `api-completeness`
+  - Action: No immediate change needed for current usage. When implementing pagination, add `limit`/`offset` parameters to DB functions, query parameter extraction in handlers, and pagination metadata in responses. Update OpenAPI annotations to document query parameters.
 
 ## Completed Items
 
@@ -206,17 +216,26 @@ Items moved here after being resolved:
   - Resolution: Added `#[deprecated(note = "Use require_self_or_admin_or_team_admin instead")]` attribute to make the intent explicit. The function is kept for potential future use but callers will now see a deprecation warning. CLAUDE.md already documents the legacy status.
   - Source command: `review`
 
+### Dependencies — `tokio-pg-mapper` Is Archived
+
+- [x] **#60 — `tokio-pg-mapper` crate is unmaintained/archived**
+  - File: `Cargo.toml` line 26, `src/models.rs`, `src/db.rs`, `src/errors.rs`
+  - Resolution: Removed `tokio-pg-mapper` dependency entirely. Created a custom `FromRow` trait and `FromRowError` enum in `src/from_row.rs` with manual implementations for all 15 model structs that previously used `#[derive(PostgresMapper)]`. Updated `src/db.rs` to import `crate::from_row::FromRow` instead of `tokio_pg_mapper::FromTokioPostgresRow`. Updated `src/errors.rs` to use `crate::from_row::FromRowError` in the `DbMapper` variant and match arms. Removed all `#[pg_mapper(table = "...")]` attributes and `PostgresMapper` derive from `src/models.rs`. Updated `CLAUDE.md` tech stack description. All 79 unit tests, 65 API integration tests, and 86 DB integration tests pass.
+  - Source command: `dependency-check`
+
 ## Notes
 
 - All 79 unit tests pass; 65 API integration tests pass; 86 DB integration tests pass; 22 WASM tests pass.
 - Clippy is clean on both backend and frontend.
 - `cargo-audit` reports 1 unfixable vulnerability (`rsa` 0.9.10 via `jsonwebtoken`, RUSTSEC-2023-0071) and 0 warnings. All other advisories resolved via `cargo update` and the `rustls-pemfile` → `rustls-pki-types` migration.
 - `actix-files` CVE (GHSA-8v2v-wjwg-vx6r, GHSA-gcqf-3g44-vc9p) verified patched — `Cargo.lock` resolves to 0.6.10 (fixed version).
+- No direct dependency CVEs found via CVE validation of all 21 direct dependencies.
 - CSP white-screen bug fixed in commit `5ae1f07`: added `'unsafe-inline'` to `script-src` so Trunk's inline WASM bootstrap script is not blocked by Chrome.
 - All 25 completed items (#1, #6, #7, #15, #16, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, #56, #57, #58) confirmed in place. No regressions.
-- No critical, important, or minor findings remain open. Only 2 informational items (#54, #55) are open — both require no code changes.
+- No critical or important findings remain open. 1 minor item (#59) and 4 informational items (#54, #55, #60, #61) are open.
 - All 10 assessment commands verified: `api-completeness`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment`.
 - RBAC enforcement is correct across all handlers per the policy table in `rbac-rules.md`.
 - OpenAPI spec (`middleware/openapi.rs`) is fully synchronized with `routes.rs` — all 37 handler paths present, all request/response schemas registered.
 - CLAUDE.md conventions are followed consistently: error handling pattern, `#[instrument]` annotations, validation before DB calls, logging severity levels.
 - CSP header documented in CLAUDE.md Key Conventions (completed item #57) and enforced in `server.rs` (completed item #48).
+- Test counts verified on 2026-03-01: 79 unit (config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 6, middleware/auth: 12), 65 API integration, 86 DB integration, 22 WASM.

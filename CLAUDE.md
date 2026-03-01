@@ -9,7 +9,7 @@ A breakfast ordering application for teams, built in Rust with an actix-web REST
 - **Language:** Rust 2024 edition
 - **Web framework:** actix-web 4 (with rustls TLS) + `actix-cors` for CORS policy
 - **Database:** PostgreSQL via `deadpool-postgres` connection pool + `tokio-postgres`
-- **ORM/mapping:** `tokio-pg-mapper` (derive-based row mapping)
+- **ORM/mapping:** Custom `FromRow` trait in `src/from_row.rs` (manual row mapping, no external dependency)
 - **Auth:** JWT (access + refresh tokens via `jsonwebtoken`) + Basic Auth (Argon2 password hashing) + RBAC (Admin/Team Admin/Member/Guest roles, admin bypass)
 - **Rate limiting:** `actix-governor` on auth endpoints (6s per request, burst size 10)
 - **Validation:** `validator` crate with derive macros

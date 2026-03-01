@@ -24,7 +24,7 @@ pub enum Error {
     #[error(transparent)]
     Db(#[from] tokio_postgres::error::Error),
     #[error(transparent)]
-    DbMapper(#[from] tokio_pg_mapper::Error),
+    DbMapper(#[from] crate::from_row::FromRowError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -120,20 +120,14 @@ impl ResponseError for Error {
             Error::DbMapper(e) => {
                 // Keep these for a rainy day - i.e. for fine grained error handling
                 match e {
-                    tokio_pg_mapper::Error::Conversion(q) => {
-                        error!(error = %q, "DB mapper conversion error");
-                        HttpResponse::InternalServerError().json(ErrorResponse {
-                            error: "Internal server error".to_string(),
-                        })
-                    }
-                    tokio_pg_mapper::Error::ColumnNotFound => {
-                        warn!(error = %e, "DB mapper column not found");
+                    crate::from_row::FromRowError::ColumnNotFound(col) => {
+                        warn!(error = %e, column = %col, "DB mapper column not found");
                         HttpResponse::NotFound().json(ErrorResponse {
                             error: e.to_string(),
                         })
                     }
-                    tokio_pg_mapper::Error::UnknownTokioPG(s) => {
-                        error!(error = %s, "DB mapper unknown error");
+                    crate::from_row::FromRowError::Conversion(msg) => {
+                        error!(error = %msg, "DB mapper conversion error");
                         HttpResponse::InternalServerError().json(ErrorResponse {
                             error: "Internal server error".to_string(),
                         })
@@ -325,7 +319,7 @@ mod tests {
 
     #[test]
     fn db_mapper_column_not_found_returns_404() {
-        let err = Error::DbMapper(tokio_pg_mapper::Error::ColumnNotFound);
+        let err = Error::DbMapper(crate::from_row::FromRowError::ColumnNotFound("test".into()));
         let resp = err.error_response();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }

@@ -3,7 +3,7 @@ use deadpool_postgres::Pool;
 use flurry::HashMap;
 use serde::{Deserialize, Serialize};
 use std::{fmt, fmt::Display};
-use tokio_pg_mapper::PostgresMapper;
+
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
@@ -59,8 +59,7 @@ pub struct DeletedResponse {
     pub deleted: bool,
 }
 
-#[derive(Serialize, PostgresMapper, ToSchema)]
-#[pg_mapper(table = "users")]
+#[derive(Serialize, ToSchema)]
 pub struct UserEntry {
     pub user_id: Uuid,
     pub firstname: String,
@@ -70,8 +69,7 @@ pub struct UserEntry {
     pub changed: DateTime<Utc>,
 }
 
-#[derive(Deserialize, Serialize, PostgresMapper, Clone, Validate, ToSchema, IntoParams)]
-#[pg_mapper(table = "users")]
+#[derive(Deserialize, Serialize, Clone, Validate, ToSchema, IntoParams)]
 pub struct UpdateUserEntry {
     pub user_id: Uuid,
     #[validate(length(
@@ -140,8 +138,7 @@ fn validate_optional_password(password: &String) -> Result<(), validator::Valida
     Ok(())
 }
 
-#[derive(Deserialize, Serialize, PostgresMapper, Clone, Validate, Debug, ToSchema, IntoParams)]
-#[pg_mapper(table = "users")]
+#[derive(Deserialize, Serialize, Clone, Validate, Debug, ToSchema, IntoParams)]
 pub struct CreateUserEntry {
     #[validate(length(
         min = 2,
@@ -173,8 +170,7 @@ pub struct UsersInTeam {
     pub title: String,
 }
 
-#[derive(Serialize, PostgresMapper, ToSchema)]
-#[pg_mapper(table = "teams")]
+#[derive(Serialize, ToSchema)]
 pub struct TeamEntry {
     pub team_id: Uuid,
     pub tname: String,
@@ -183,8 +179,7 @@ pub struct TeamEntry {
     pub changed: DateTime<Utc>,
 }
 
-#[derive(Deserialize, Serialize, PostgresMapper, Clone, Validate, Debug, ToSchema)]
-#[pg_mapper(table = "teams")]
+#[derive(Deserialize, Serialize, Clone, Validate, Debug, ToSchema)]
 pub struct CreateTeamEntry {
     #[validate(length(
         min = 1,
@@ -194,8 +189,7 @@ pub struct CreateTeamEntry {
     pub descr: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, PostgresMapper, Clone, Validate, Debug, ToSchema)]
-#[pg_mapper(table = "teams")]
+#[derive(Deserialize, Serialize, Clone, Validate, Debug, ToSchema)]
 pub struct UpdateTeamEntry {
     #[validate(length(
         min = 1,
@@ -213,8 +207,7 @@ pub struct UserInTeams {
     pub lastname: String,
 }
 
-#[derive(Serialize, PostgresMapper, ToSchema)]
-#[pg_mapper(table = "roles")]
+#[derive(Serialize, ToSchema)]
 pub struct RoleEntry {
     pub role_id: Uuid,
     pub title: String,
@@ -222,8 +215,7 @@ pub struct RoleEntry {
     pub changed: DateTime<Utc>,
 }
 
-#[derive(Deserialize, Serialize, PostgresMapper, Validate, Clone, Debug, ToSchema)]
-#[pg_mapper(table = "roles")]
+#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct CreateRoleEntry {
     #[validate(length(
         min = 1,
@@ -232,8 +224,7 @@ pub struct CreateRoleEntry {
     pub title: String,
 }
 
-#[derive(Deserialize, Serialize, PostgresMapper, Validate, Clone, Debug, ToSchema)]
-#[pg_mapper(table = "roles")]
+#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct UpdateRoleEntry {
     #[validate(length(
         min = 1,
@@ -244,8 +235,7 @@ pub struct UpdateRoleEntry {
 
 // ── Item models ─────────────────────────────────────────────────────────────
 
-#[derive(Serialize, PostgresMapper, ToSchema)]
-#[pg_mapper(table = "items")]
+#[derive(Serialize, ToSchema)]
 pub struct ItemEntry {
     pub item_id: Uuid,
     pub descr: String,
@@ -254,8 +244,7 @@ pub struct ItemEntry {
     pub changed: DateTime<Utc>,
 }
 
-#[derive(Deserialize, Serialize, PostgresMapper, Validate, Clone, Debug, ToSchema)]
-#[pg_mapper(table = "items")]
+#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct CreateItemEntry {
     #[validate(length(
         min = 1,
@@ -265,8 +254,7 @@ pub struct CreateItemEntry {
     pub price: Option<rust_decimal::Decimal>,
 }
 
-#[derive(Deserialize, Serialize, PostgresMapper, Validate, Clone, Debug, ToSchema)]
-#[pg_mapper(table = "items")]
+#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct UpdateItemEntry {
     #[validate(length(
         min = 1,
@@ -278,8 +266,7 @@ pub struct UpdateItemEntry {
 
 // ── Team order models ───────────────────────────────────────────────────────
 
-#[derive(Serialize, PostgresMapper, ToSchema)]
-#[pg_mapper(table = "teamorders")]
+#[derive(Serialize, ToSchema)]
 pub struct TeamOrderEntry {
     pub teamorders_id: Uuid,
     pub teamorders_team_id: Uuid,
@@ -318,8 +305,7 @@ pub struct UpdateMemberRoleEntry {
 
 // ── Order models (individual items within a team order) ─────────────────────
 
-#[derive(Serialize, PostgresMapper, ToSchema)]
-#[pg_mapper(table = "orders")]
+#[derive(Serialize, ToSchema)]
 pub struct OrderEntry {
     pub orders_teamorders_id: Uuid,
     pub orders_item_id: Uuid,
