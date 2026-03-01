@@ -53,32 +53,57 @@ fn spawn_token_cleanup_task(pool: Pool) {
 
 const FRONTEND_DIR: &str = "frontend/dist";
 
-fn tls_config() -> ServerConfig {
+fn tls_config() -> Result<ServerConfig, crate::errors::Error> {
     let cert_path = "localhost.pem";
     let key_path = "localhost_key.pem";
 
-    let cert_file = &mut BufReader::new(File::open(cert_path).unwrap_or_else(|e| {
-        panic!("Failed to open TLS certificate file '{}': {}", cert_path, e);
-    }));
-    let key_file = &mut BufReader::new(File::open(key_path).unwrap_or_else(|e| {
-        panic!("Failed to open TLS private key file '{}': {}", key_path, e);
-    }));
+    let cert_file = &mut BufReader::new(File::open(cert_path).map_err(|e| {
+        error!("Failed to open TLS certificate file '{}': {}", cert_path, e);
+        crate::errors::Error::Io(e)
+    })?);
+    let key_file = &mut BufReader::new(File::open(key_path).map_err(|e| {
+        error!("Failed to open TLS private key file '{}': {}", key_path, e);
+        crate::errors::Error::Io(e)
+    })?);
 
-    let cert_chain = certs(cert_file).map(|f| f.unwrap()).collect();
+    let cert_chain: Vec<_> = certs(cert_file)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| {
+            error!("Failed to parse TLS certificate from '{}': {}", cert_path, e);
+            crate::errors::Error::Io(e)
+        })?;
     info!("TLS certificate loaded successfully from '{}'", cert_path);
 
-    let keys = pkcs8_private_keys(key_file).next().unwrap().unwrap();
+    let keys = pkcs8_private_keys(key_file)
+        .next()
+        .ok_or_else(|| {
+            error!("No PKCS8 private key found in '{}'", key_path);
+            crate::errors::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("No PKCS8 private key found in '{}'", key_path),
+            ))
+        })?
+        .map_err(|e| {
+            error!("Failed to parse TLS private key from '{}': {}", key_path, e);
+            crate::errors::Error::Io(e)
+        })?;
     info!("TLS private key loaded successfully from '{}'", key_path);
 
     let mut config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(cert_chain, PrivateKeyDer::Pkcs8(keys))
-        .unwrap();
+        .map_err(|e| {
+            error!("Failed to build TLS configuration: {}", e);
+            crate::errors::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            ))
+        })?;
     config.alpn_protocols.push(b"http/1.1".to_vec());
     config.alpn_protocols.push(b"h2".to_vec());
 
     info!("TLS configuration initialized successfully");
-    config
+    Ok(config)
 }
 
 fn db_tls_connector(settings: &Settings) -> MakeRustlsConnect {
@@ -208,7 +233,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     let swagger_config = Data::new(SwaggerConfig::from("/explorer/swagger.json"));
 
     // TLS
-    let ssl_config = tls_config();
+    let ssl_config = tls_config()?;
 
     // Verify frontend assets
     let frontend_path = Path::new(FRONTEND_DIR);
@@ -300,7 +325,7 @@ mod tests {
             return;
         }
 
-        let config = tls_config();
+        let config = tls_config().expect("tls_config() should succeed when cert files are present");
 
         // Verify ALPN protocols are configured for HTTP/1.1 and h2
         assert!(

@@ -5,7 +5,7 @@ use crate::{
     models::*,
     validate::validate,
 };
-use actix_web::{web::Data, web::Json, web::Path, HttpRequest, HttpResponse, Responder};
+use actix_web::{HttpRequest, HttpResponse, Responder, web::Data, web::Json, web::Path};
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -27,9 +27,9 @@ pub async fn get_order_items(
     state: Data<State>,
     path: Path<(Uuid, Uuid)>,
 ) -> Result<impl Responder, Error> {
-    let (_team_id, order_id) = path.into_inner();
+    let (team_id, order_id) = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
-    let items = db::get_order_items(&client, order_id).await?;
+    let items = db::get_order_items(&client, order_id, team_id).await?;
     Ok(HttpResponse::Ok().json(items))
 }
 
@@ -53,9 +53,9 @@ pub async fn get_order_item(
     state: Data<State>,
     path: Path<(Uuid, Uuid, Uuid)>,
 ) -> Result<impl Responder, Error> {
-    let (_team_id, order_id, item_id) = path.into_inner();
+    let (team_id, order_id, item_id) = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
-    let item = db::get_order_item(&client, order_id, item_id).await?;
+    let item = db::get_order_item(&client, order_id, item_id, team_id).await?;
     Ok(HttpResponse::Ok().json(item))
 }
 
@@ -86,6 +86,11 @@ pub async fn create_order_item(
     let (team_id, order_id) = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
     require_team_member(&client, &req, team_id).await?;
+    if db::is_team_order_closed(&client, order_id, team_id).await? {
+        return Err(Error::Forbidden(
+            "Cannot add items to a closed order".to_string(),
+        ));
+    }
     let order = db::create_order_item(&client, order_id, team_id, json.into_inner()).await?;
     Ok(HttpResponse::Created().json(order))
 }
@@ -118,7 +123,13 @@ pub async fn update_order_item(
     let (team_id, order_id, item_id) = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
     require_team_member(&client, &req, team_id).await?;
-    let order = db::update_order_item(&client, order_id, item_id, json.into_inner()).await?;
+    if db::is_team_order_closed(&client, order_id, team_id).await? {
+        return Err(Error::Forbidden(
+            "Cannot modify items in a closed order".to_string(),
+        ));
+    }
+    let order =
+        db::update_order_item(&client, order_id, item_id, team_id, json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(order))
 }
 
@@ -147,7 +158,12 @@ pub async fn delete_order_item(
     let (team_id, order_id, item_id) = path.into_inner();
     let client: Client = get_client(state.pool.clone()).await?;
     require_team_member(&client, &req, team_id).await?;
-    let deleted = db::delete_order_item(&client, order_id, item_id).await?;
+    if db::is_team_order_closed(&client, order_id, team_id).await? {
+        return Err(Error::Forbidden(
+            "Cannot remove items from a closed order".to_string(),
+        ));
+    }
+    let deleted = db::delete_order_item(&client, order_id, item_id, team_id).await?;
     if deleted {
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
     } else {

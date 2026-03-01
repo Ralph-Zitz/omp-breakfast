@@ -1137,13 +1137,16 @@ async fn get_order_items_returns_list() {
     let client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
 
-    // Seed data has at least one team order with items
+    // Seed data has at least one team order with items.
+    // Use `last()` because orders are sorted by `created desc` so the seed-data
+    // order (created first) appears last; other concurrently-running tests may
+    // create newer (empty) orders for the same team.
     let orders = db::get_team_orders(&client, team_id).await.unwrap();
     let seed_order = orders
-        .first()
+        .last()
         .expect("seed data should have at least one order");
 
-    let items = db::get_order_items(&client, seed_order.teamorders_id)
+    let items = db::get_order_items(&client, seed_order.teamorders_id, team_id)
         .await
         .expect("get_order_items should succeed");
     assert!(
@@ -1193,7 +1196,7 @@ async fn get_order_item_by_id() {
     .await
     .unwrap();
 
-    let fetched = db::get_order_item(&client, order.teamorders_id, item.item_id)
+    let fetched = db::get_order_item(&client, order.teamorders_id, item.item_id, team_id)
         .await
         .expect("get_order_item should succeed");
     assert_eq!(fetched.orders_item_id, item.item_id);
@@ -1252,6 +1255,7 @@ async fn update_order_item_changes_amt() {
         &client,
         order.teamorders_id,
         item.item_id,
+        team_id,
         UpdateOrderEntry { amt: Some(42) },
     )
     .await
@@ -1308,12 +1312,12 @@ async fn delete_order_item_returns_true_then_false() {
     .await
     .unwrap();
 
-    let deleted = db::delete_order_item(&client, order.teamorders_id, item.item_id)
+    let deleted = db::delete_order_item(&client, order.teamorders_id, item.item_id, team_id)
         .await
         .unwrap();
     assert!(deleted);
 
-    let deleted_again = db::delete_order_item(&client, order.teamorders_id, item.item_id)
+    let deleted_again = db::delete_order_item(&client, order.teamorders_id, item.item_id, team_id)
         .await
         .unwrap();
     assert!(!deleted_again);
@@ -2130,6 +2134,7 @@ async fn update_order_item_nonexistent_returns_error() {
         &client,
         Uuid::now_v7(),
         Uuid::now_v7(),
+        Uuid::now_v7(),
         UpdateOrderEntry { amt: Some(1) },
     )
     .await;
@@ -2154,7 +2159,7 @@ async fn get_team_order_nonexistent_returns_error() {
 #[ignore]
 async fn get_order_item_nonexistent_returns_error() {
     let client = test_client().await;
-    let result = db::get_order_item(&client, Uuid::now_v7(), Uuid::now_v7()).await;
+    let result = db::get_order_item(&client, Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7()).await;
     assert!(
         result.is_err(),
         "nonexistent order item should return error"

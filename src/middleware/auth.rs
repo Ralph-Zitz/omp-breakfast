@@ -13,7 +13,7 @@ use chrono::{DateTime, Duration, Utc};
 use deadpool_postgres::Client;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode};
 use serde_json::json;
-use tracing::{instrument, warn};
+use tracing::{error, instrument, warn};
 use uuid::Uuid;
 
 // Access token lifetime: 15 minutes
@@ -130,9 +130,18 @@ pub async fn jwt_validator(
     req: ServiceRequest,
     credentials: BearerAuth,
 ) -> Result<ServiceRequest, (actix_web::Error, ServiceRequest)> {
-    let state = req
-        .app_data::<Data<State>>()
-        .expect("State must be configured");
+    let state = match req.app_data::<Data<State>>() {
+        Some(s) => s,
+        None => {
+            error!("Application state not configured");
+            return Err((
+                actix_web::error::ErrorInternalServerError(
+                    json!({"error":"Internal server error"}),
+                ),
+                req,
+            ));
+        }
+    };
     let client = match get_client(state.pool.clone()).await {
         Ok(c) => c,
         Err(_) => {
@@ -197,9 +206,18 @@ pub async fn refresh_validator(
     req: ServiceRequest,
     credentials: BearerAuth,
 ) -> Result<ServiceRequest, (actix_web::Error, ServiceRequest)> {
-    let state = req
-        .app_data::<Data<State>>()
-        .expect("State must be configured");
+    let state = match req.app_data::<Data<State>>() {
+        Some(s) => s,
+        None => {
+            error!("Application state not configured");
+            return Err((
+                actix_web::error::ErrorInternalServerError(
+                    json!({"error":"Internal server error"}),
+                ),
+                req,
+            ));
+        }
+    };
     let jwt_secret = &state.jwtsecret;
     let claims = verify_jwt(credentials.token().to_string(), jwt_secret.clone()).await;
     if let Ok(c) = claims {
@@ -260,9 +278,18 @@ pub async fn basic_validator(
     req: ServiceRequest,
     credentials: BasicAuth,
 ) -> Result<ServiceRequest, (actix_web::Error, ServiceRequest)> {
-    let state = req
-        .app_data::<Data<State>>()
-        .expect("State must be configured");
+    let state = match req.app_data::<Data<State>>() {
+        Some(s) => s,
+        None => {
+            error!("Application state not configured");
+            return Err((
+                actix_web::error::ErrorInternalServerError(
+                    json!({"error":"Internal server error"}),
+                ),
+                req,
+            ));
+        }
+    };
     let cache = &state.cache;
     let client = match get_client(state.pool.clone()).await {
         Ok(c) => c,

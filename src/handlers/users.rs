@@ -166,7 +166,7 @@ pub async fn revoke_user_token(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state, req), level = "debug")]
+#[instrument(skip(state, req, json), level = "debug")]
 pub async fn create_user(
     state: Data<State>,
     json: Json<CreateUserEntry>,
@@ -286,7 +286,7 @@ pub async fn delete_user_by_email(
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state, req), level = "debug")]
+#[instrument(skip(state, req, json), level = "debug")]
 pub async fn update_user(
     state: Data<State>,
     path: Path<Uuid>,

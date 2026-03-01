@@ -906,19 +906,44 @@ pub async fn update_member_role(
 
 // ── Order CRUD (items within a team order) ──────────────────────────────────
 
+/// Check whether a team order is closed. Returns `true` if the order exists
+/// and has `closed = true`. Returns `Error::NotFound` if the order doesn't
+/// exist for the given team.
+pub async fn is_team_order_closed(
+    client: &Client,
+    teamorder_id: Uuid,
+    team_id: Uuid,
+) -> Result<bool, Error> {
+    let statement = client
+        .prepare(
+            "select closed from teamorders where teamorders_id = $1 and teamorders_team_id = $2 limit 1",
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    let row = client
+        .query_opt(&statement, &[&teamorder_id, &team_id])
+        .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("Team order not found".to_string()))?;
+
+    Ok(row.get::<_, bool>("closed"))
+}
+
 pub async fn get_order_items(
     client: &Client,
     teamorder_id: Uuid,
+    team_id: Uuid,
 ) -> Result<Vec<OrderEntry>, Error> {
     let statement = client
         .prepare(
-            "select orders_teamorders_id, orders_item_id, orders_team_id, amt from orders where orders_teamorders_id = $1 order by orders_item_id",
+            "select orders_teamorders_id, orders_item_id, orders_team_id, amt from orders where orders_teamorders_id = $1 and orders_team_id = $2 order by orders_item_id",
         )
         .await
         .map_err(Error::Db)?;
 
     let items = client
-        .query(&statement, &[&teamorder_id])
+        .query(&statement, &[&teamorder_id, &team_id])
         .await
         .map_err(Error::Db)?
         .iter()
@@ -938,16 +963,17 @@ pub async fn get_order_item(
     client: &Client,
     teamorder_id: Uuid,
     item_id: Uuid,
+    team_id: Uuid,
 ) -> Result<OrderEntry, Error> {
     let statement = client
         .prepare(
-            "select orders_teamorders_id, orders_item_id, orders_team_id, amt from orders where orders_teamorders_id = $1 and orders_item_id = $2 limit 1",
+            "select orders_teamorders_id, orders_item_id, orders_team_id, amt from orders where orders_teamorders_id = $1 and orders_item_id = $2 and orders_team_id = $3 limit 1",
         )
         .await
         .map_err(Error::Db)?;
 
     client
-        .query_one(&statement, &[&teamorder_id, &item_id])
+        .query_one(&statement, &[&teamorder_id, &item_id, &team_id])
         .await
         .map(OrderEntry::from_row)?
         .map_err(Error::DbMapper)
@@ -984,13 +1010,14 @@ pub async fn update_order_item(
     client: &Client,
     teamorder_id: Uuid,
     item_id: Uuid,
+    team_id: Uuid,
     order: UpdateOrderEntry,
 ) -> Result<OrderEntry, Error> {
     let statement = client
         .prepare(
             r#"
                update orders set amt = $1
-               where orders_teamorders_id = $2 and orders_item_id = $3
+               where orders_teamorders_id = $2 and orders_item_id = $3 and orders_team_id = $4
                returning orders_teamorders_id, orders_item_id, orders_team_id, amt
             "#,
         )
@@ -998,7 +1025,7 @@ pub async fn update_order_item(
         .map_err(Error::Db)?;
 
     client
-        .query_one(&statement, &[&order.amt, &teamorder_id, &item_id])
+        .query_one(&statement, &[&order.amt, &teamorder_id, &item_id, &team_id])
         .await
         .map(OrderEntry::from_row)?
         .map_err(Error::DbMapper)
@@ -1008,14 +1035,15 @@ pub async fn delete_order_item(
     client: &Client,
     teamorder_id: Uuid,
     item_id: Uuid,
+    team_id: Uuid,
 ) -> Result<bool, Error> {
     let statement = client
-        .prepare("delete from orders where orders_teamorders_id = $1 and orders_item_id = $2")
+        .prepare("delete from orders where orders_teamorders_id = $1 and orders_item_id = $2 and orders_team_id = $3")
         .await
         .map_err(Error::Db)?;
 
     let result = client
-        .execute(&statement, &[&teamorder_id, &item_id])
+        .execute(&statement, &[&teamorder_id, &item_id, &team_id])
         .await
         .map_err(Error::Db)?;
 
