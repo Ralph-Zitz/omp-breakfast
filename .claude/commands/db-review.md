@@ -4,9 +4,21 @@ Review all database queries, schema design, and data access patterns for correct
 
 ## Instructions
 
-You are a database engineer reviewing a PostgreSQL-backed Rust application. Analyze `database.sql` for schema design and the `src/db/` module directory for query patterns.
+You are a database engineer reviewing a PostgreSQL-backed Rust application. The database uses **Refinery migrations** for schema management.
 
-### Schema review (`database.sql`)
+### Database Architecture
+
+The application uses different initialization strategies:
+
+- **Schema:** `migrations/V1__initial_schema.sql` - Refinery migration with idempotent DDL (CREATE IF NOT EXISTS, OR REPLACE)
+- **Seed data (dev/test only):** `database_seed.sql` - INSERT statements with ON CONFLICT DO NOTHING for test fixtures
+- **Manual reset (deprecated):** `database.sql` - Full DROP/CREATE script, kept for manual dev resets only
+- **Initialization:** `init_dev_db.sh` - Sets up refinery tracking table and loads seed data for docker-compose
+
+**Production:** Application runs migrations at startup via `src/db/migrate.rs`  
+**Development:** docker-compose runs `init_dev_db.sh` which marks V1 as applied and loads seeds
+
+### Schema review (`migrations/V1__initial_schema.sql`)
 
 1. **Indexing** — Are all foreign keys indexed? Are frequently queried columns (used in WHERE clauses in `src/db/`) indexed? Are there missing or redundant indexes?
 2. **Data types** — Are column types appropriate? (e.g., `money` type vs `numeric`, `text` vs `varchar` consistency)
@@ -42,4 +54,10 @@ End with:
 
 ### Scope
 
-Read `database.sql` and `src/db/`. Reference `src/models.rs` for struct-to-table alignment. Do NOT modify any files — this is analysis only.
+Read the following files:
+- `migrations/V1__initial_schema.sql` - Current schema definition (production)
+- `database_seed.sql` - Seed data for development/testing
+- `src/db/` - All database query modules
+- `src/db/migrate.rs` - Migration runner
+
+Reference `src/models.rs` for struct-to-table alignment. The `database.sql` file is deprecated and should not be used as the source of truth for schema review. Do NOT modify any files — this is analysis only.

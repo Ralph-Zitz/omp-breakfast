@@ -27,14 +27,10 @@ services:
     restart: "no"
     links:
       - postgres
-    entrypoint:
-      [
-        "bash",
-        "-c",
-        "PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /database.sql",
-      ]
+    entrypoint: ["bash", "/init_dev_db.sh"]
     volumes:
-      - ./database.sql:/database.sql
+      - ./database_seed.sql:/database_seed.sql
+      - ./init_dev_db.sh:/init_dev_db.sh
   postgres:
     build:
       dockerfile: Dockerfile.postgres

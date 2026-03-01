@@ -1,12 +1,19 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   WARNING: This script is for DEVELOPMENT and TESTING only.
+   WARNING: This script is for DEVELOPMENT and TESTING only - MANUAL RESET
+
+   ⚠️  DEPRECATED for docker-compose workflows ⚠️
+
+   docker-compose now uses:
+     - migrations/V1__initial_schema.sql (via Refinery migrations)
+     - database_seed.sql (for test data)
+
+   This file is kept ONLY for manual database resets during development:
+     $ PGPASSWORD=actix psql -h localhost -p 5432 -U actix actix < database.sql
 
    It drops ALL tables and recreates them from scratch, destroying all data.
    DO NOT run this against a production database.
 
    Production deployments use refinery migrations (see migrations/ directory).
-   This file is used by docker-compose's postgres-setup service to provide a
-   clean database with seed data for local development and integration tests.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Drop Tables */

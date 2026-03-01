@@ -42,9 +42,10 @@ make test-integration
 ```
 This automatically:
 1. Starts an isolated Postgres container on port 5433 (via `Dockerfile.postgres`)
-2. Seeds it with `database.sql`
-3. Runs the 15 integration tests
-4. Tears down the container
+2. Runs the V1 migration (creates schema) via init script
+3. Seeds it with `database_seed.sql`
+4. Runs the 15 integration tests
+5. Tears down the container
 
 **All tests** — run unit and integration tests in sequence:
 ```bash
@@ -60,3 +61,31 @@ You can also manage the test database manually:
 make db-up         # start test DB on port 5433
 make db-down       # stop and remove test DB
 ```
+
+### Database Initialization
+
+The application uses **different initialization strategies** for development vs production:
+
+**Production (and docker-compose):**
+- The application runs Refinery migrations at startup (`migrations/V1__initial_schema.sql`)
+- Migrations are tracked in the `refinery_schema_history` table
+- No seed data is inserted in production
+
+**Development (docker-compose):**
+- `docker compose up` starts the `postgres-setup` service
+- This service runs `init_dev_db.sh` which:
+  1. Creates the migration tracking table
+  2. Marks V1 migration as applied (so app doesn't re-run it)
+  3. Loads seed data from `database_seed.sql`
+- The application sees the schema is already at V1 and continues normally
+
+**Manual database reset (development only):**
+```bash
+# If you need to completely reset your local database from scratch:
+docker compose down -v
+PGPASSWORD=actix psql -h localhost -p 5432 -U actix actix < database.sql
+# Or just restart docker-compose which will reinitialize:
+docker compose up -d
+```
+
+The `database.sql` file is kept for manual resets but is no longer used by docker-compose.
