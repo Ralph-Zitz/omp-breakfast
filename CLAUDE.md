@@ -124,8 +124,9 @@ The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via 
   - `LoadingPage`: Displayed during session restoration from stored JWT token
   - `DashboardPage` uses: `SuccessBadge`, `UserCard`
 - **Page routing:** Manual via `Page` enum (`Login` / `Loading` / `Dashboard`) + Leptos signals (no router crate)
-- **Auth flow:** Basic Auth POST to `/auth` → receive JWT tokens → store `access_token` in `sessionStorage` → decode JWT payload for `user_id` → GET `/api/v1.0/users/{id}` for user details → render dashboard
-- **Session restore:** On startup, checks `sessionStorage` for existing `access_token` → shows `LoadingPage` → validates token via user fetch → restores dashboard or falls back to login
+- **Auth flow:** Basic Auth POST to `/auth` → receive JWT tokens → store `access_token` and `refresh_token` in `sessionStorage` → decode JWT payload for `user_id` → GET `/api/v1.0/users/{id}` for user details → render dashboard
+- **Session restore:** On startup, checks `sessionStorage` for existing `access_token` → shows `LoadingPage` → if token is expired, attempts refresh via `POST /auth/refresh` → validates token via user fetch → restores dashboard or falls back to login
+- **Token refresh:** Transparent refresh via `try_refresh_token()` — when the access token is expired or within 60 seconds of expiry, the frontend automatically calls `POST /auth/refresh` with the stored refresh token, stores the new token pair, and retries the original request. If refresh fails, tokens are cleared and the user is redirected to login.
 - **Client-side validation:** Both username and password required before form submission
 - **Error display:** HTTP 401 → "Invalid username or password"; network failure → "Unable to reach the server"
 - **Dev proxying:** Trunk proxies `/auth`, `/api`, `/health` to `https://127.0.0.1:8080` (configured in `Trunk.toml`)
@@ -135,8 +136,9 @@ The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via 
 - Components use `#[component]` macro and return `impl IntoView`
 - Reactive state uses `ReadSignal` / `WriteSignal` pairs
 - `pub` items (`JwtPayload`, `decode_jwt_payload`) are exposed via `lib.rs` for test access
-- Token is stored in `sessionStorage` under the key `access_token` (chosen over `localStorage` to limit token exposure — tokens are cleared when the browser tab closes, reducing the window for XSS-based token theft)
-- HTTP requests use `gloo_net::http::Request` (wraps `window.fetch`)
+- Tokens are stored in `sessionStorage` under the keys `access_token` and `refresh_token` (chosen over `localStorage` to limit token exposure — tokens are cleared when the browser tab closes, reducing the window for XSS-based token theft)
+- HTTP requests use `gloo_net::http::Request` (wraps `window.fetch`); authenticated requests use `authed_get()` helper which transparently refreshes expired tokens
+- `js-sys` is used for `Date::now()` to check token expiry on the client side
 
 ## Frontend Roadmap
 
@@ -230,7 +232,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 - Frontend only has login + dashboard pages; remaining pages are tracked in the **Frontend Roadmap** section
 - No client-side routing library (manual signal-based page switching, by design)
-- Frontend does not yet consume the team, role, item, or order APIs
+- Frontend does not yet consume the team, role, item, or order APIs (auth and user-detail endpoints are consumed, including token refresh)
 - Dark/light mode toggle not yet implemented
 - Toast notifications and confirmation modals not yet implemented
 
@@ -239,8 +241,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### Backend
 
 - 78 unit tests across `config`, `errors`, `handlers`, `middleware::auth`, `routes`, `server`, and `validate` modules
-- 55 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
-- 83 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 62 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 86 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
 - Test DB uses `docker-compose.test.yml` overlay to expose port 5433 (avoids conflicts with dev DB on 5432)
@@ -257,7 +259,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
   - Full end-to-end cycle (1 test): login → validation → success → dashboard → logout
   - Session persistence (2 tests): session persists across refresh, logout clears tokens
   - Session restore edge cases (3 tests): malformed token fallback, expired token fallback, loading page display
-- Mocking strategy: overrides `window.fetch` via `js_sys::eval` to intercept `gloo-net` HTTP calls
+- Mocking strategy: overrides `window.fetch` via `js_sys::eval` to intercept `gloo-net` HTTP calls; uses `Promise`-based `setTimeout` wrapper for async timing (no `gloo-timers` dependency)
 - Run frontend tests: `make test-frontend` or `cd frontend && wasm-pack test --headless --chrome`
 - Note: ChromeDriver version must match installed Chrome version
 

@@ -68,7 +68,16 @@
       "Bash(cargo fmt*)",
       "Bash(cargo audit*)",
       "Bash(cargo outdated*)",
-      "Bash(make*)"
+      "Bash(make*)",
+      "Bash(wasm-pack *)",
+      "Bash(wasm-pack*)",
+      "Bash(trunk *)",
+      "Bash(trunk*)",
+      "Bash(docker *)",
+      "Bash(docker compose *)",
+      "Bash(docker-compose *)",
+      "Bash(psql *)",
+      "Bash(PGPASSWORD=*)"
     ]
   }
 }

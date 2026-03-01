@@ -2436,3 +2436,484 @@ async fn admin_can_manage_order_items_on_any_team() {
         .to_request();
     let _ = test::call_service(&app, req).await;
 }
+
+// ---------------------------------------------------------------------------
+// Closed order enforcement
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn closed_order_rejects_add_item() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Find the "League of Cool Coders" team
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a team order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2026-12-25"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // Close the order
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"closed": true}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "should close the order");
+    let updated: Value = test::read_body_json(resp).await;
+    assert_eq!(updated["closed"], json!(true));
+
+    // Get an item ID from the catalog
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let items: Vec<Value> = test::read_body_json(resp).await;
+    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
+
+    // Try to add an item to the closed order → should be 403
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"orders_item_id": item_id, "amt": 2}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "adding items to a closed order should return 403"
+    );
+
+    // Cleanup: delete the order
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn closed_order_rejects_update_item() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Find the "League of Cool Coders" team
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a team order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2026-12-26"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // Get an item ID from the catalog
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let items: Vec<Value> = test::read_body_json(resp).await;
+    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
+
+    // Add an item while the order is still open
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"orders_item_id": item_id, "amt": 3}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201, "should add item to open order");
+
+    // Close the order
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"closed": true}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Try to update the item on the closed order → should be 403
+    let req = test::TestRequest::put()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items/{}",
+            team_id, order_id, item_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"amt": 10}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "updating items on a closed order should return 403"
+    );
+
+    // Cleanup: reopen and delete
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"closed": false}))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn closed_order_rejects_delete_item() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Find the "League of Cool Coders" team
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a team order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2026-12-27"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // Get an item ID from the catalog
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let items: Vec<Value> = test::read_body_json(resp).await;
+    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
+
+    // Add an item while the order is still open
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"orders_item_id": item_id, "amt": 1}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201, "should add item to open order");
+
+    // Close the order
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"closed": true}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Try to delete the item from the closed order → should be 403
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items/{}",
+            team_id, order_id, item_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "deleting items from a closed order should return 403"
+    );
+
+    // Cleanup: reopen and delete
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"closed": false}))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn reopened_order_allows_item_mutations() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Find the "League of Cool Coders" team
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a team order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2026-12-28"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // Close the order
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"closed": true}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Reopen the order
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"closed": false}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Get an item ID from the catalog
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let items: Vec<Value> = test::read_body_json(resp).await;
+    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
+
+    // Adding items to the reopened order should succeed
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"orders_item_id": item_id, "amt": 5}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201, "should add items to a reopened order");
+
+    // Cleanup: delete the order (cascades to order items)
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+}
+
+// ---------------------------------------------------------------------------
+// Team Admin user scoping: can only modify users in shared teams
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn team_admin_can_update_user_in_shared_team() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U4_F is Team Admin of "League of Cool Coders"
+    // U1_F is Member of "League of Cool Coders" — shared team
+    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let ta_token = &ta_auth.access_token;
+
+    // Get U1_F's user ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+    let u1 = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("U1_F.U1_L@LEGO.com"))
+        .expect("seed user U1_F should exist");
+    let u1_id = u1["user_id"].as_str().unwrap();
+
+    // Team Admin updates U1_F → should succeed (shared team)
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}", u1_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .set_json(json!({
+            "firstname": "U1_F",
+            "lastname": "U1_L",
+            "email": "U1_F.U1_L@LEGO.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "team admin should update users in their team"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn team_admin_cannot_update_user_outside_shared_team() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U4_F is Team Admin of "League of Cool Coders" and Member of "Pixel Bakers"
+    // Create a user that is NOT in any of U4_F's teams
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "Isolated",
+            "lastname": "User",
+            "email": "isolated.user@test.com",
+            "password": "securepassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let isolated_user: Value = test::read_body_json(resp).await;
+    let isolated_id = isolated_user["user_id"].as_str().unwrap().to_string();
+
+    // U4_F tries to update isolated user → should be 403
+    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let ta_token = &ta_auth.access_token;
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}", isolated_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .set_json(json!({
+            "firstname": "Hacked",
+            "lastname": "User",
+            "email": "isolated.user@test.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "team admin should NOT update users outside their teams"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", isolated_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+}
+
+// ---------------------------------------------------------------------------
+// Member cannot create users (requires admin or team admin)
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn member_cannot_create_user() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U1_F is a regular Member
+    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .set_json(json!({
+            "firstname": "Forbidden",
+            "lastname": "User",
+            "email": "forbidden.create@test.com",
+            "password": "securepassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "regular member should not be able to create users"
+    );
+}

@@ -87,7 +87,7 @@ CREATE TABLE teamorders (
   teamorders_team_id uuid NOT NULL,
   teamorders_user_id uuid,
   duedate date,
-  closed boolean DEFAULT FALSE,
+  closed boolean NOT NULL DEFAULT FALSE,
   created timestamptz DEFAULT CURRENT_TIMESTAMP,
   changed timestamptz DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (teamorders_team_id) REFERENCES teams (team_id) ON DELETE CASCADE,

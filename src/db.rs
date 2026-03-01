@@ -907,8 +907,8 @@ pub async fn update_member_role(
 // ── Order CRUD (items within a team order) ──────────────────────────────────
 
 /// Check whether a team order is closed. Returns `true` if the order exists
-/// and has `closed = true`. Returns `Error::NotFound` if the order doesn't
-/// exist for the given team.
+/// and has `closed = true`. Returns `false` if `closed` is `NULL` or `false`.
+/// Returns `Error::NotFound` if the order doesn't exist for the given team.
 pub async fn is_team_order_closed(
     client: &Client,
     teamorder_id: Uuid,
@@ -927,7 +927,7 @@ pub async fn is_team_order_closed(
         .map_err(Error::Db)?
         .ok_or_else(|| Error::NotFound("Team order not found".to_string()))?;
 
-    Ok(row.get::<_, bool>("closed"))
+    Ok(row.get::<_, Option<bool>>("closed").unwrap_or(false))
 }
 
 pub async fn get_order_items(

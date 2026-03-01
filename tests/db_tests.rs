@@ -2255,3 +2255,96 @@ async fn update_user_updates_changed_timestamp() {
         .await
         .expect("cleanup");
 }
+
+// ---------------------------------------------------------------------------
+// is_team_order_closed
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn is_team_order_closed_returns_false_for_open_order() {
+    let client = test_client().await;
+    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+
+    // Create a new order (defaults to closed = false)
+    let order = db::create_team_order(
+        &client,
+        team_id,
+        CreateTeamOrderEntry {
+            teamorders_user_id: None,
+            duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 25).unwrap()),
+        },
+    )
+    .await
+    .expect("should create team order");
+
+    let closed = db::is_team_order_closed(&client, order.teamorders_id, team_id)
+        .await
+        .expect("should check closed status");
+    assert!(!closed, "newly created order should not be closed");
+
+    // Cleanup
+    db::delete_team_order(&client, team_id, order.teamorders_id)
+        .await
+        .expect("cleanup");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn is_team_order_closed_returns_true_for_closed_order() {
+    let client = test_client().await;
+    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+
+    // Create a new order
+    let order = db::create_team_order(
+        &client,
+        team_id,
+        CreateTeamOrderEntry {
+            teamorders_user_id: None,
+            duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 26).unwrap()),
+        },
+    )
+    .await
+    .expect("should create team order");
+
+    // Close the order
+    db::update_team_order(
+        &client,
+        team_id,
+        order.teamorders_id,
+        UpdateTeamOrderEntry {
+            teamorders_user_id: None,
+            duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 26).unwrap()),
+            closed: Some(true),
+        },
+    )
+    .await
+    .expect("should close the order");
+
+    let closed = db::is_team_order_closed(&client, order.teamorders_id, team_id)
+        .await
+        .expect("should check closed status");
+    assert!(closed, "updated order should be closed");
+
+    // Cleanup
+    db::delete_team_order(&client, team_id, order.teamorders_id)
+        .await
+        .expect("cleanup");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn is_team_order_closed_returns_not_found_for_nonexistent_order() {
+    let client = test_client().await;
+    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let fake_order_id = Uuid::now_v7();
+
+    let result = db::is_team_order_closed(&client, fake_order_id, team_id).await;
+    assert!(result.is_err(), "nonexistent order should return an error");
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("not found"),
+        "error should mention 'not found', got: {}",
+        err_msg
+    );
+}

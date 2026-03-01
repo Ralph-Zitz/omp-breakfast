@@ -9,7 +9,6 @@ use web_sys::wasm_bindgen::JsCast;
 #[derive(Clone, Debug, Deserialize)]
 struct AuthResponse {
     access_token: String,
-    #[allow(dead_code)]
     refresh_token: String,
     #[allow(dead_code)]
     token_type: String,
@@ -20,6 +19,8 @@ struct AuthResponse {
 #[derive(Clone, Debug, Deserialize)]
 pub struct JwtPayload {
     pub sub: String,
+    #[serde(default)]
+    pub exp: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -48,6 +49,110 @@ fn session_storage() -> Option<web_sys::Storage> {
     web_sys::window()
         .and_then(|w| w.session_storage().ok())
         .flatten()
+}
+
+/// Returns the current time in seconds since the Unix epoch (via JS Date.now()).
+fn now_secs() -> u64 {
+    (js_sys::Date::now() / 1000.0) as u64
+}
+
+/// Check whether the access token is expired or will expire within the given
+/// margin (in seconds). Returns `true` when a refresh is needed.
+fn token_needs_refresh(token: &str, margin_secs: u64) -> bool {
+    match decode_jwt_payload(token) {
+        Some(payload) => match payload.exp {
+            Some(exp) => now_secs() + margin_secs >= exp,
+            // No `exp` claim — assume it's still valid (server will reject if not)
+            None => false,
+        },
+        // Can't decode — treat as needing refresh
+        None => true,
+    }
+}
+
+/// Attempt to refresh the access token using the stored refresh token.
+/// On success, stores the new token pair in sessionStorage and returns
+/// the new access token. On failure, clears stored tokens and returns `None`.
+async fn try_refresh_token() -> Option<String> {
+    let refresh_token = session_storage()
+        .and_then(|s| s.get_item("refresh_token").ok())
+        .flatten()?;
+
+    if refresh_token.is_empty() {
+        return None;
+    }
+
+    let resp = Request::post("/auth/refresh")
+        .header("Authorization", &format!("Bearer {}", refresh_token))
+        .send()
+        .await
+        .ok()?;
+
+    if !resp.ok() {
+        // Refresh token is invalid/expired — clear everything
+        if let Some(storage) = session_storage() {
+            let _ = storage.remove_item("access_token");
+            let _ = storage.remove_item("refresh_token");
+        }
+        return None;
+    }
+
+    let auth: AuthResponse = resp.json().await.ok()?;
+    if let Some(storage) = session_storage() {
+        let _ = storage.set_item("access_token", &auth.access_token);
+        let _ = storage.set_item("refresh_token", &auth.refresh_token);
+    }
+    Some(auth.access_token)
+}
+
+/// Get a valid access token, refreshing it if it's expired or about to expire.
+/// Returns `None` if no token is available and refresh fails.
+async fn get_valid_token() -> Option<String> {
+    let token = session_storage()
+        .and_then(|s| s.get_item("access_token").ok())
+        .flatten()?;
+
+    if token.is_empty() {
+        return None;
+    }
+
+    // Refresh if the token will expire within 60 seconds
+    if token_needs_refresh(&token, 60) {
+        return try_refresh_token().await;
+    }
+
+    Some(token)
+}
+
+/// Perform an authenticated GET request with automatic token refresh.
+/// If the initial request returns 401, attempts a token refresh and retries once.
+/// Returns `None` if the request fails after retry or if no token is available.
+async fn authed_get(url: &str) -> Option<gloo_net::http::Response> {
+    let token = match get_valid_token().await {
+        Some(t) => t,
+        None => return None,
+    };
+
+    let resp = Request::get(url)
+        .header("Authorization", &format!("Bearer {}", token))
+        .send()
+        .await
+        .ok()?;
+
+    if resp.status() == 401 {
+        // Token may have been revoked server-side — try refresh
+        if let Some(new_token) = try_refresh_token().await {
+            let retry = Request::get(url)
+                .header("Authorization", &format!("Bearer {}", new_token))
+                .send()
+                .await
+                .ok()?;
+            return Some(retry);
+        }
+        return None;
+    }
+
+    Some(resp)
 }
 
 // ── Application state ───────────────────────────────────────────────────────
@@ -121,9 +226,22 @@ async fn restore_session() -> Page {
         }
     };
 
+    // If the access token is expired, try to refresh before fetching user details
+    let active_token = if token_needs_refresh(&token, 0) {
+        match try_refresh_token().await {
+            Some(t) => t,
+            None => return Page::Login,
+        }
+    } else {
+        token
+    };
+
+    // Re-decode payload in case the token changed after refresh
+    let active_payload = decode_jwt_payload(&active_token).unwrap_or(payload);
+
     // Validate token by fetching user details (backend checks expiry)
-    let resp = Request::get(&format!("/api/v1.0/users/{}", payload.sub))
-        .header("Authorization", &format!("Bearer {}", token))
+    let resp = Request::get(&format!("/api/v1.0/users/{}", active_payload.sub))
+        .header("Authorization", &format!("Bearer {}", active_token))
         .send()
         .await;
 
@@ -356,6 +474,7 @@ fn SubmitButton(loading: ReadSignal<bool>) -> impl IntoView {
 }
 
 /// Fetch user details from the API after authentication.
+/// Uses `authed_get` for automatic token refresh on 401.
 async fn fetch_user_details(access_token: &str, fallback_email: &str) -> (String, String) {
     let payload = decode_jwt_payload(access_token);
     let user_id = match &payload {
@@ -363,13 +482,9 @@ async fn fetch_user_details(access_token: &str, fallback_email: &str) -> (String
         None => return ("User".into(), fallback_email.into()),
     };
 
-    let resp = Request::get(&format!("/api/v1.0/users/{}", user_id))
-        .header("Authorization", &format!("Bearer {}", access_token))
-        .send()
-        .await;
-
-    match resp {
-        Ok(r) if r.ok() => match r.json::<UserEntry>().await {
+    let url = format!("/api/v1.0/users/{}", user_id);
+    match authed_get(&url).await {
+        Some(r) if r.ok() => match r.json::<UserEntry>().await {
             Ok(user) => (format!("{} {}", user.firstname, user.lastname), user.email),
             Err(_) => ("User".into(), fallback_email.into()),
         },

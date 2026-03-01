@@ -6,4 +6,4 @@ server:
   s3_key_id: "set me"
   s3_key_secret: "set me"
 
-db_ca_cert: rds-ca-2019-root.pem
+db_ca_cert: rds-ca-rsa2048-g1.pem

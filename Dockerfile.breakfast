@@ -33,7 +33,7 @@ RUN adduser \
     --no-create-home \
     --uid "${UID}" \
     "${USER}"
-COPY rds-ca-2019-root.pem /usr/local/share/ca-certificates/
+COPY rds-ca-rsa2048-g1.pem /usr/local/share/ca-certificates/
 COPY localhost_ca.pem /usr/local/share/ca-certificates/
 RUN update-ca-certificates
 COPY . /app
@@ -70,8 +70,8 @@ COPY --chown=web:web localhost.pem localhost.pem
 COPY --chown=web:web localhost_key.pem localhost_key.pem
 COPY --chown=web:web localhost_ca.pem localhost_ca.pem
 COPY localhost_ca.pem /etc/ssl/certs/
-COPY --chown=web:web rds-ca-2019-root.pem rds-ca-2019-root.pem
-COPY rds-ca-2019-root.pem /etc/ssl/certs/
+COPY --chown=web:web rds-ca-rsa2048-g1.pem rds-ca-rsa2048-g1.pem
+COPY rds-ca-rsa2048-g1.pem /etc/ssl/certs/
 COPY --from=builder --chown=web:web /app/target/release/breakfast /breakfast
 COPY --from=builder --chown=web:web /app/target/release/healthcheck /healthcheck
 COPY --chown=web:web config/default.yml /config/default.yml
