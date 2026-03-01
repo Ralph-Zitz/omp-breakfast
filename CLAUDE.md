@@ -225,6 +225,19 @@ When asked to **assess the project** (or "project assessment"), perform the foll
    - Severity (critical / important / minor / informational)
 4. **Do not apply any changes** — only present the plan for approval
 5. If no actionable findings are discovered, state that the project is in good shape
+6. **Persist findings** — after presenting the plan, write all findings rated **critical** or **important** to `.claude/assessment-findings.md` using the format described below. This file is the bridge between the assessment and the `/resume-assessment` command, which loads it in future sessions to continue work.
+
+### Assessment findings file format (`.claude/assessment-findings.md`)
+
+When writing to the findings file, follow these rules:
+
+- **Do not overwrite completed items.** Read the existing file first. Any item marked `[x]` or listed under "Completed Items" must be preserved exactly as-is.
+- **Update open items.** If a previously tracked `[ ]` item is still found by the current assessment, update its description, file references, and line numbers to reflect the current state of the code (lines may have shifted).
+- **Remove resolved items.** If a previously tracked `[ ]` item is no longer surfaced by any command (i.e., it was fixed but not checked off), move it to "Completed Items" with a note: "Resolved — no longer surfaced by assessment."
+- **Append new items.** If the assessment surfaces new critical/important findings not already in the file, append them under the appropriate category heading (or create a new heading).
+- **Update metadata.** Set the "Last assessed" date at the top of the file to the current date.
+- **Preserve the file structure.** The file must always contain these sections in order: preamble with date, "How to use", "Important Items" (with sub-headings by category), "Completed Items", "Notes".
+- **Item format.** Each item must include: checkbox (`- [ ]`), finding number and title in bold, file path and line range, problem description, fix instructions, and source command(s). Follow the format already established in the file.
 
 This assessment must consider **all** commands in `.claude/commands/` at the time it is run, including any added after this rule was written.
 
