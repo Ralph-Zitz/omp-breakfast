@@ -1,30 +1,43 @@
 use refinery::embed_migrations;
+use siphasher::sip::SipHasher13;
+use std::hash::{Hash, Hasher};
 use tracing::{info, warn};
 
 embed_migrations!("migrations");
 
-/// Ensure every `applied_on` value in `refinery_schema_history` is valid
-/// RFC 3339 so that `refinery-core`'s strict `time` crate parser does not
-/// panic on [`OffsetDateTime::parse(&applied_on, &Rfc3339).unwrap()`][1].
+/// Compute the checksum for a migration the same way `refinery-core` does:
+/// `SipHasher13::new()` seeded with `(name, version, sql)`.
 ///
-/// Known problematic formats that PostgreSQL or older `time` versions may
-/// have produced:
+/// `name` is the migration name without the prefix/version (e.g. `"initial_schema"`
+/// for `V1__initial_schema.sql`).  `version` is the integer version number.
+fn compute_checksum(name: &str, version: i32, sql: &str) -> u64 {
+    let mut hasher = SipHasher13::new();
+    name.hash(&mut hasher);
+    version.hash(&mut hasher);
+    sql.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Sanitize the `refinery_schema_history` table so that `refinery-core`'s
+/// strict parsers do not panic on `.unwrap()` calls.
 ///
-/// | Stored value                        | Problem                              |
-/// | ----------------------------------- | ------------------------------------ |
-/// | `2025-01-15 12:30:00+00:00`         | Space separator instead of `T`       |
-/// | `2025-01-15T12:30:00+00`            | Offset missing minutes               |
-/// | `2025-01-15 12:30:00+00`            | Both of the above                    |
-/// | `2025-01-15 12:30:00.123456+00`     | Both + microseconds                  |
-/// | `2025-01-15T12:30:00.123456+0000`   | Compact offset (no colon)            |
-/// | `2025-01-15 12:30:00.123456+00:00 ` | Trailing whitespace                  |
+/// This fixes two known bugs in `refinery-core` ≤ 0.9:
 ///
-/// The function rewrites every non-conforming value into canonical RFC 3339
-/// (`YYYY-MM-DDTHH:MM:SS[.f]+HH:MM` or `…Z`).  Rows that already parse
-/// correctly are left untouched.
+/// 1. **`applied_on` timestamps** — [`OffsetDateTime::parse(&applied_on, &Rfc3339).unwrap()`][ts]
+///    panics when the stored value is not valid RFC 3339 (the `time` crate
+///    tightened its parser in 0.3.37+).
 ///
-/// [1]: https://github.com/rust-db/refinery/blob/0.8.16/refinery_core/src/drivers/tokio_postgres.rs#L19
-async fn fix_migration_timestamps(
+/// 2. **`checksum` values** — [`checksum.parse::<u64>().expect(…)`][ck] panics
+///    when the stored value is not a valid `u64` (e.g. the placeholder
+///    `"unused"` inserted by `init_dev_db.sh`).
+///
+/// For checksums, the correct value is recomputed using the same
+/// `SipHasher13(name, version, sql)` algorithm that refinery uses internally.
+/// The embedded migration SQL is matched by version number.
+///
+/// [ts]: https://github.com/rust-db/refinery/blob/0.8.16/refinery_core/src/drivers/tokio_postgres.rs#L19
+/// [ck]: https://github.com/rust-db/refinery/blob/0.8.16/refinery_core/src/drivers/tokio_postgres.rs#L28
+async fn fix_migration_history(
     client: &tokio_postgres::Client,
 ) -> Result<(), tokio_postgres::Error> {
     // If the table does not exist yet (first run), there is nothing to fix.
@@ -43,58 +56,114 @@ async fn fix_migration_timestamps(
         return Ok(());
     }
 
+    // Build a lookup of embedded migrations: version → (name, sql).
+    // `migrations::runner().get_migrations()` returns the compiled-in list.
+    let embedded = migrations::runner().get_migrations().to_vec();
+
     let rows = client
         .query(
-            "SELECT version, applied_on FROM refinery_schema_history ORDER BY version",
+            "SELECT version, name, applied_on, checksum \
+             FROM refinery_schema_history ORDER BY version",
             &[],
         )
         .await?;
 
     for row in &rows {
         let version: i32 = row.get(0);
-        let applied_on: String = row.get(1);
+        let name: String = row.get(1);
+        let applied_on: String = row.get(2);
+        let checksum: String = row.get(3);
 
-        // Quick validation: try the same parse that refinery-core will attempt.
+        let mut needs_update = false;
+
+        // ── Fix applied_on ──────────────────────────────────────────
         // `time` 0.3's Rfc3339 requires:
         //   - exactly 4-digit year
         //   - `T` (or any single char) separator between date and time
         //   - offset as `Z`, `+HH:MM`, or `-HH:MM`
-        //
-        // Rather than pulling in the `time` crate ourselves, we do a
-        // lightweight structural check and rewrite when needed.
-        if is_valid_rfc3339(&applied_on) {
-            continue;
-        }
-
-        let fixed = match normalize_to_rfc3339(&applied_on) {
-            Some(f) => f,
-            None => {
-                warn!(
-                    version,
-                    applied_on,
-                    "Cannot normalize refinery_schema_history.applied_on to RFC 3339 — \
-                     replacing with current time to unblock migrations"
-                );
-                // Last resort: replace with the current UTC time in a known-good format.
-                chrono::Utc::now()
-                    .format("%Y-%m-%dT%H:%M:%S%.fZ")
-                    .to_string()
+        let fixed_applied_on = if is_valid_rfc3339(&applied_on) {
+            applied_on.clone()
+        } else {
+            needs_update = true;
+            match normalize_to_rfc3339(&applied_on) {
+                Some(f) => {
+                    info!(
+                        version,
+                        from = applied_on.as_str(),
+                        to = f.as_str(),
+                        "Rewriting refinery_schema_history.applied_on to valid RFC 3339"
+                    );
+                    f
+                }
+                None => {
+                    let fallback = chrono::Utc::now()
+                        .format("%Y-%m-%dT%H:%M:%S%.fZ")
+                        .to_string();
+                    warn!(
+                        version,
+                        applied_on,
+                        to = fallback.as_str(),
+                        "Cannot normalize applied_on to RFC 3339 — using current time"
+                    );
+                    fallback
+                }
             }
         };
 
-        info!(
-            version,
-            from = applied_on.as_str(),
-            to = fixed.as_str(),
-            "Rewriting refinery_schema_history.applied_on to valid RFC 3339"
-        );
+        // ── Fix checksum ────────────────────────────────────────────
+        // refinery-core does `checksum.parse::<u64>().expect(…)` which
+        // panics on non-numeric values like "unused".
+        let fixed_checksum = if checksum.parse::<u64>().is_ok() {
+            checksum.clone()
+        } else {
+            needs_update = true;
 
-        client
-            .execute(
-                "UPDATE refinery_schema_history SET applied_on = $1 WHERE version = $2",
-                &[&fixed, &version],
-            )
-            .await?;
+            // Try to find the embedded migration with a matching version so
+            // we can recompute the correct checksum.
+            let recomputed = embedded
+                .iter()
+                .find(|m| m.version() as i32 == version)
+                .map(|m| {
+                    let correct = compute_checksum(m.name(), version, m.sql().unwrap_or(""));
+                    info!(
+                        version,
+                        name = name.as_str(),
+                        from = checksum.as_str(),
+                        to = correct,
+                        "Rewriting refinery_schema_history.checksum to valid u64"
+                    );
+                    correct.to_string()
+                });
+
+            match recomputed {
+                Some(c) => c,
+                None => {
+                    // Migration is not in the embedded set (e.g. it was removed
+                    // from the filesystem).  Use a deterministic placeholder
+                    // that is at least a valid u64 so refinery won't panic.
+                    let fallback = compute_checksum(&name, version, "");
+                    warn!(
+                        version,
+                        name = name.as_str(),
+                        from = checksum.as_str(),
+                        to = fallback,
+                        "Embedded migration not found — using fallback checksum"
+                    );
+                    fallback.to_string()
+                }
+            }
+        };
+
+        if needs_update {
+            client
+                .execute(
+                    "UPDATE refinery_schema_history \
+                     SET applied_on = $1, checksum = $2 \
+                     WHERE version = $3",
+                    &[&fixed_applied_on, &fixed_checksum, &version],
+                )
+                .await?;
+        }
     }
 
     Ok(())
@@ -316,22 +385,26 @@ fn normalize_to_rfc3339(s: &str) -> Option<String> {
 /// them as applied.
 ///
 /// Before invoking refinery, this function sanitizes any previously stored
-/// `applied_on` timestamps in `refinery_schema_history` that are not valid
-/// RFC 3339.  This works around a bug in `refinery-core` ≤ 0.9 where
-/// [`OffsetDateTime::parse(…, &Rfc3339).unwrap()`][bug] panics when the
-/// stored value doesn't match the `time` crate's strict parser (tightened
-/// in `time` 0.3.37+).
+/// rows in `refinery_schema_history` that would cause `refinery-core` to
+/// panic.  This works around two bugs in `refinery-core` ≤ 0.9:
 ///
-/// [bug]: https://github.com/rust-db/refinery/blob/0.8.16/refinery_core/src/drivers/tokio_postgres.rs#L19
+/// 1. [`OffsetDateTime::parse(…, &Rfc3339).unwrap()`][ts] panics on
+///    non-RFC-3339 `applied_on` values (the `time` crate tightened its
+///    parser in 0.3.37+).
+/// 2. [`checksum.parse::<u64>().expect(…)`][ck] panics on non-numeric
+///    `checksum` values (e.g. placeholder `"unused"`).
+///
+/// [ts]: https://github.com/rust-db/refinery/blob/0.8.16/refinery_core/src/drivers/tokio_postgres.rs#L19
+/// [ck]: https://github.com/rust-db/refinery/blob/0.8.16/refinery_core/src/drivers/tokio_postgres.rs#L28
 pub async fn run_migrations(
     client: &mut tokio_postgres::Client,
 ) -> Result<refinery::Report, refinery::Error> {
-    // Fix any previously stored timestamps that would cause refinery to panic.
-    if let Err(e) = fix_migration_timestamps(client).await {
+    // Fix any previously stored values that would cause refinery to panic.
+    if let Err(e) = fix_migration_history(client).await {
         warn!(
             error = %e,
-            "Failed to pre-check refinery_schema_history timestamps — \
-             migration may still succeed if timestamps are already valid"
+            "Failed to pre-check refinery_schema_history — \
+             migration may still succeed if stored values are already valid"
         );
     }
 
@@ -341,6 +414,36 @@ pub async fn run_migrations(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- compute_checksum ----
+
+    #[test]
+    fn checksum_is_deterministic() {
+        let a = compute_checksum("initial_schema", 1, "CREATE TABLE foo;");
+        let b = compute_checksum("initial_schema", 1, "CREATE TABLE foo;");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn checksum_differs_for_different_sql() {
+        let a = compute_checksum("initial_schema", 1, "CREATE TABLE foo;");
+        let b = compute_checksum("initial_schema", 1, "CREATE TABLE bar;");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn checksum_differs_for_different_version() {
+        let a = compute_checksum("initial_schema", 1, "CREATE TABLE foo;");
+        let b = compute_checksum("initial_schema", 2, "CREATE TABLE foo;");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn checksum_differs_for_different_name() {
+        let a = compute_checksum("initial_schema", 1, "CREATE TABLE foo;");
+        let b = compute_checksum("add_index", 1, "CREATE TABLE foo;");
+        assert_ne!(a, b);
+    }
 
     // ---- is_valid_rfc3339 ----
 
