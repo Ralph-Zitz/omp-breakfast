@@ -115,6 +115,7 @@ tests/
 - Config is layered: default.yml → environment.yml → env vars (separator: `_`)
 - Health endpoint (`/health`) returns HTTP 503 with `{"up": false}` when the database is unreachable, and HTTP 200 with `{"up": true}` when healthy
 - Backend serves `frontend/dist/` as static files via `actix-files`, with `index_file("index.html")`
+- Static files are served with a `Content-Security-Policy` header: `default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'`. The `'unsafe-inline'` directive in `script-src` is required because Trunk generates an inline `<script type="module">` to initialize the WASM module; removing it causes a white-screen failure in Chrome.
 
 ## Frontend Architecture
 

@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-01 (full re-assessment, all 10 command areas)
+Last assessed: 2026-03-01 (resume-assessment session, resolved #57 and #58)
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -33,13 +33,27 @@ No open minor items. All minor findings have been resolved and moved to "Complet
 
 - [ ] **#54 — Test counts in CLAUDE.md will drift as tests are added**
   - File: `CLAUDE.md` lines 256–258, 264
-  - Problem: CLAUDE.md hard-codes specific test counts (79 unit, 65 API integration, 86 DB, 22 WASM). These go stale every time a test is added or removed. The counts were just corrected in the prior assessment round and are currently accurate, but they will drift again with the next code change that adds tests.
+  - Problem: CLAUDE.md hard-codes specific test counts (79 unit, 65 API integration, 86 DB, 22 WASM). These go stale every time a test is added or removed. The counts were just verified and are currently accurate, but they will drift again with the next code change that adds tests.
   - Source command: `practices-audit`
   - Action: No code change needed. This is an inherent maintenance cost of documenting exact counts. The assessment process updates them each time it runs.
 
 ## Completed Items
 
 Items moved here after being resolved:
+
+### Documentation — CLAUDE.md CSP Policy Not Documented
+
+- [x] **#57 — CLAUDE.md Key Conventions should document the CSP header on static files**
+  - File: `CLAUDE.md` line 118 (Key Conventions section)
+  - Resolution: Added a new bullet to Key Conventions documenting the full `Content-Security-Policy` header value and explaining why `'unsafe-inline'` in `script-src` is required for Trunk's inline WASM bootstrap `<script type="module">`. Notes that removing it causes a white-screen failure in Chrome.
+  - Source commands: `practices-audit`, `security-audit`
+
+### Frontend — Loading Page Spinner CSS Missing
+
+- [x] **#58 — `LoadingPage` component references undefined CSS classes**
+  - File: `frontend/style/main.css`
+  - Resolution: Added CSS rules for `.loading-page` (background), `.loading-card` (flex column centered layout with padding), `.loading-spinner` (40×40px animated spinner using `var(--color-border)` and `var(--color-primary)` with the existing `spin` keyframes), and `.loading-text` (muted text styling). All 22 WASM frontend tests pass.
+  - Source commands: `review`, `practices-audit`
 
 ### Security — actix-files CVE (Verified Patched)
 
@@ -157,8 +171,8 @@ Items moved here after being resolved:
 ### Security — Missing CSP Headers for Static Files
 
 - [x] **#48 — No Content-Security-Policy header on static file responses**
-  - File: `src/server.rs` lines 298–309
-  - Resolution: Wrapped the `actix-files` static file service in a `web::scope("")` with `DefaultHeaders` middleware that sets `Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'`. Policy allows WASM execution, inline styles, and data URIs for images while restricting everything else to same-origin. All tests pass.
+  - File: `src/server.rs` lines 293–303
+  - Resolution: Wrapped the `actix-files` static file service in a `web::scope("")` with `DefaultHeaders` middleware that sets `Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'`. Policy allows WASM execution, inline scripts (required by Trunk's bootstrap), inline styles, and data URIs for images while restricting everything else to same-origin. Initially deployed without `'unsafe-inline'` in `script-src`, which caused a white-screen bug (fixed in commit `5ae1f07`). All tests pass.
   - Source commands: `security-audit`
 
 ### Security — Credentials Logged via `#[instrument]`
@@ -198,10 +212,11 @@ Items moved here after being resolved:
 - Clippy is clean on both backend and frontend.
 - `cargo-audit` reports 1 unfixable vulnerability (`rsa` 0.9.10 via `jsonwebtoken`, RUSTSEC-2023-0071) and 0 warnings. All other advisories resolved via `cargo update` and the `rustls-pemfile` → `rustls-pki-types` migration.
 - `actix-files` CVE (GHSA-8v2v-wjwg-vx6r, GHSA-gcqf-3g44-vc9p) verified patched — `Cargo.lock` resolves to 0.6.10 (fixed version).
-- All 22 previously completed items (#1, #6, #7, #15, #16, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53) confirmed in place. No regressions.
-- New completed item #56 (actix-files CVE verified patched) added this session.
-- No critical, important, or minor findings remain open. Only informational items (#54, #55) remain — #54 requires no code changes, #55 is waiting on an upstream fix.
+- CSP white-screen bug fixed in commit `5ae1f07`: added `'unsafe-inline'` to `script-src` so Trunk's inline WASM bootstrap script is not blocked by Chrome.
+- All 25 completed items (#1, #6, #7, #15, #16, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, #56, #57, #58) confirmed in place. No regressions.
+- No critical, important, or minor findings remain open. Only 2 informational items (#54, #55) are open — both require no code changes.
 - All 10 assessment commands verified: `api-completeness`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment`.
 - RBAC enforcement is correct across all handlers per the policy table in `rbac-rules.md`.
 - OpenAPI spec (`middleware/openapi.rs`) is fully synchronized with `routes.rs` — all 37 handler paths present, all request/response schemas registered.
 - CLAUDE.md conventions are followed consistently: error handling pattern, `#[instrument]` annotations, validation before DB calls, logging severity levels.
+- CSP header documented in CLAUDE.md Key Conventions (completed item #57) and enforced in `server.rs` (completed item #48).
