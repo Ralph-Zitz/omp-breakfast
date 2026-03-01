@@ -59,7 +59,7 @@ CREATE TABLE roles (
 CREATE TABLE items (
   item_id uuid DEFAULT uuid_generate_v4 () PRIMARY KEY,
   descr text NOT NULL,
-  price numeric(10, 2),
+  price numeric(10, 2) CHECK (price >= 0),
   created timestamptz DEFAULT CURRENT_TIMESTAMP,
   changed timestamptz DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (descr)
@@ -101,13 +101,43 @@ CREATE TABLE orders (
   orders_teamorders_id uuid,
   orders_item_id uuid,
   orders_team_id uuid,
-  amt int,
+  amt int CHECK (amt >= 0),
   PRIMARY KEY (orders_teamorders_id, orders_item_id),
   FOREIGN KEY (orders_teamorders_id) REFERENCES teamorders (teamorders_id) ON DELETE CASCADE,
   FOREIGN KEY (orders_item_id) REFERENCES items (item_id) ON DELETE CASCADE,
-  FOREIGN KEY (orders_team_id) REFERENCES teams (team_id) ON DELETE CASCADE,
-  UNIQUE (orders_teamorders_id, orders_item_id)
+  FOREIGN KEY (orders_team_id) REFERENCES teams (team_id) ON DELETE CASCADE
 );
+
+/* Enforce that orders.orders_team_id matches the team on the referenced team order.
+   This prevents the denormalized team_id from drifting out of sync. */
+CREATE OR REPLACE FUNCTION enforce_order_team_consistency ()
+  RETURNS TRIGGER
+  AS $enforce_order_team_consistency$
+DECLARE
+  expected_team_id uuid;
+BEGIN
+  SELECT teamorders_team_id INTO expected_team_id
+  FROM teamorders
+  WHERE teamorders_id = NEW.orders_teamorders_id;
+
+  IF expected_team_id IS NULL THEN
+    RAISE EXCEPTION 'Team order % does not exist', NEW.orders_teamorders_id;
+  END IF;
+
+  IF NEW.orders_team_id IS DISTINCT FROM expected_team_id THEN
+    RAISE EXCEPTION 'orders_team_id (%) does not match team order team (%)',
+      NEW.orders_team_id, expected_team_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$enforce_order_team_consistency$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER enforce_order_team_id
+  BEFORE INSERT OR UPDATE ON orders
+  FOR EACH ROW
+  EXECUTE PROCEDURE enforce_order_team_consistency ();
 
 CREATE INDEX idx_orders_tid ON orders (orders_teamorders_id);
 

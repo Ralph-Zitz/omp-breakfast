@@ -3,9 +3,9 @@ use std::sync::Arc;
 use crate::errors::{Error, ErrorResponse};
 use crate::handlers::*;
 use crate::models::*;
-use actix_web::web::Bytes;
 use actix_web::Responder;
-use actix_web::{get, web::Data, web::Path, HttpResponse};
+use actix_web::web::Bytes;
+use actix_web::{HttpResponse, get, web::Data, web::Path};
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
@@ -128,13 +128,17 @@ async fn get_swagger(
     openapi_conf: Data<utoipa_swagger_ui::Config<'static>>,
 ) -> Result<impl Responder, Error> {
     if tail.as_ref() == "swagger.json" {
-        let spec = ApiDoc::openapi().to_json().unwrap();
+        let spec = ApiDoc::openapi()
+            .to_json()
+            .map_err(|e| Error::Utoipa(format!("Failed to serialize OpenAPI spec: {}", e)))?;
         return Ok(HttpResponse::Ok()
             .content_type("application/json")
             .body(spec));
     }
     let conf = Arc::new(openapi_conf.as_ref().clone());
-    match utoipa_swagger_ui::serve(&tail, conf).unwrap() {
+    match utoipa_swagger_ui::serve(&tail, conf)
+        .map_err(|e| Error::Utoipa(format!("Swagger UI error: {}", e)))?
+    {
         None => Ok(HttpResponse::from_error(Error::Utoipa(format!(
             "path not found: {}",
             tail

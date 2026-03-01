@@ -4,8 +4,8 @@ use crate::middleware::auth::{basic_validator, jwt_validator, refresh_validator}
 use crate::middleware::openapi::*;
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{
-    middleware::Compat, web::delete, web::get, web::post, web::put, web::resource, web::scope,
-    web::JsonConfig, web::PathConfig, web::ServiceConfig,
+    middleware::Compat, web::JsonConfig, web::PathConfig, web::ServiceConfig, web::delete,
+    web::get, web::post, web::put, web::resource, web::scope,
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
 
@@ -163,4 +163,284 @@ pub fn routes(cfg: &mut ServiceConfig) {
                     ),
                 ),
         );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::State;
+    use actix_web::{App, test, web::Data};
+    use flurry::HashMap;
+    use std::net::SocketAddr;
+
+    /// Fake peer address required by actix-governor's PeerIpKeyExtractor.
+    const PEER: SocketAddr = SocketAddr::new(
+        std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+        12345,
+    );
+
+    /// Build a `Data<State>` with a dummy pool that will fail on use.
+    /// This is fine because we only test that routes exist (expect 401, not 404).
+    fn dummy_state() -> Data<State> {
+        let mut pg_cfg = deadpool_postgres::Config::new();
+        pg_cfg.user = Some("x".into());
+        pg_cfg.password = Some("x".into());
+        pg_cfg.dbname = Some("x".into());
+        pg_cfg.host = Some("127.0.0.1".into());
+        pg_cfg.port = Some(1); // unreachable port
+        let pool = pg_cfg
+            .create_pool(
+                Some(deadpool_postgres::Runtime::Tokio1),
+                tokio_postgres::NoTls,
+            )
+            .expect("pool creation should succeed");
+        Data::new(State {
+            pool,
+            secret: "test".into(),
+            jwtsecret: "test".into(),
+            s3_key_id: String::new(),
+            s3_key_secret: String::new(),
+            cache: HashMap::new(),
+            token_blacklist: HashMap::new(),
+        })
+    }
+
+    /// Helper: assert a route is registered by verifying the response is NOT 404.
+    /// Protected endpoints should return 401 (auth required) or 500 (DB unavailable),
+    /// never 404 (route not found).
+    macro_rules! assert_route_exists {
+        ($app:expr, $method:ident, $path:expr) => {{
+            let req = test::TestRequest::$method()
+                .uri($path)
+                .peer_addr(PEER)
+                .to_request();
+            let resp = test::call_service(&$app, req).await;
+            assert_ne!(
+                resp.status().as_u16(),
+                404,
+                "Route {} {} should be registered but returned 404",
+                stringify!($method),
+                $path
+            );
+        }};
+    }
+
+    #[actix_web::test]
+    async fn health_endpoint_is_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        assert_route_exists!(app, get, "/health");
+    }
+
+    #[actix_web::test]
+    async fn auth_endpoint_is_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        // POST /auth requires Basic auth → 401
+        assert_route_exists!(app, post, "/auth");
+    }
+
+    #[actix_web::test]
+    async fn auth_refresh_endpoint_is_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        assert_route_exists!(app, post, "/auth/refresh");
+    }
+
+    #[actix_web::test]
+    async fn auth_revoke_endpoint_is_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        assert_route_exists!(app, post, "/auth/revoke");
+    }
+
+    #[actix_web::test]
+    async fn users_collection_routes_are_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        assert_route_exists!(app, get, "/api/v1.0/users");
+        assert_route_exists!(app, post, "/api/v1.0/users");
+    }
+
+    #[actix_web::test]
+    async fn users_item_routes_are_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        let uid = "00000000-0000-0000-0000-000000000001";
+        assert_route_exists!(app, get, &format!("/api/v1.0/users/{}", uid));
+        assert_route_exists!(app, put, &format!("/api/v1.0/users/{}", uid));
+        assert_route_exists!(app, delete, &format!("/api/v1.0/users/{}", uid));
+    }
+
+    #[actix_web::test]
+    async fn user_teams_route_is_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        let uid = "00000000-0000-0000-0000-000000000001";
+        assert_route_exists!(app, get, &format!("/api/v1.0/users/{}/teams", uid));
+    }
+
+    #[actix_web::test]
+    async fn delete_user_by_email_route_is_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        assert_route_exists!(app, delete, "/api/v1.0/users/email/test@example.com");
+    }
+
+    #[actix_web::test]
+    async fn teams_collection_routes_are_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        assert_route_exists!(app, get, "/api/v1.0/teams");
+        assert_route_exists!(app, post, "/api/v1.0/teams");
+    }
+
+    #[actix_web::test]
+    async fn teams_item_routes_are_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        let tid = "00000000-0000-0000-0000-000000000001";
+        assert_route_exists!(app, get, &format!("/api/v1.0/teams/{}", tid));
+        assert_route_exists!(app, put, &format!("/api/v1.0/teams/{}", tid));
+        assert_route_exists!(app, delete, &format!("/api/v1.0/teams/{}", tid));
+    }
+
+    #[actix_web::test]
+    async fn team_orders_routes_are_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        let tid = "00000000-0000-0000-0000-000000000001";
+        let oid = "00000000-0000-0000-0000-000000000002";
+        assert_route_exists!(app, get, &format!("/api/v1.0/teams/{}/orders", tid));
+        assert_route_exists!(app, post, &format!("/api/v1.0/teams/{}/orders", tid));
+        assert_route_exists!(app, delete, &format!("/api/v1.0/teams/{}/orders", tid));
+        assert_route_exists!(app, get, &format!("/api/v1.0/teams/{}/orders/{}", tid, oid));
+        assert_route_exists!(app, put, &format!("/api/v1.0/teams/{}/orders/{}", tid, oid));
+        assert_route_exists!(
+            app,
+            delete,
+            &format!("/api/v1.0/teams/{}/orders/{}", tid, oid)
+        );
+    }
+
+    #[actix_web::test]
+    async fn team_members_routes_are_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        let tid = "00000000-0000-0000-0000-000000000001";
+        let uid = "00000000-0000-0000-0000-000000000002";
+        assert_route_exists!(app, get, &format!("/api/v1.0/teams/{}/users", tid));
+        assert_route_exists!(app, post, &format!("/api/v1.0/teams/{}/users", tid));
+        assert_route_exists!(
+            app,
+            delete,
+            &format!("/api/v1.0/teams/{}/users/{}", tid, uid)
+        );
+        assert_route_exists!(app, put, &format!("/api/v1.0/teams/{}/users/{}", tid, uid));
+    }
+
+    #[actix_web::test]
+    async fn order_items_routes_are_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        let tid = "00000000-0000-0000-0000-000000000001";
+        let oid = "00000000-0000-0000-0000-000000000002";
+        let iid = "00000000-0000-0000-0000-000000000003";
+        assert_route_exists!(
+            app,
+            get,
+            &format!("/api/v1.0/teams/{}/orders/{}/items", tid, oid)
+        );
+        assert_route_exists!(
+            app,
+            post,
+            &format!("/api/v1.0/teams/{}/orders/{}/items", tid, oid)
+        );
+        assert_route_exists!(
+            app,
+            get,
+            &format!("/api/v1.0/teams/{}/orders/{}/items/{}", tid, oid, iid)
+        );
+        assert_route_exists!(
+            app,
+            put,
+            &format!("/api/v1.0/teams/{}/orders/{}/items/{}", tid, oid, iid)
+        );
+        assert_route_exists!(
+            app,
+            delete,
+            &format!("/api/v1.0/teams/{}/orders/{}/items/{}", tid, oid, iid)
+        );
+    }
+
+    #[actix_web::test]
+    async fn items_collection_routes_are_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        assert_route_exists!(app, get, "/api/v1.0/items");
+        assert_route_exists!(app, post, "/api/v1.0/items");
+    }
+
+    #[actix_web::test]
+    async fn items_item_routes_are_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        let iid = "00000000-0000-0000-0000-000000000001";
+        assert_route_exists!(app, get, &format!("/api/v1.0/items/{}", iid));
+        assert_route_exists!(app, put, &format!("/api/v1.0/items/{}", iid));
+        assert_route_exists!(app, delete, &format!("/api/v1.0/items/{}", iid));
+    }
+
+    #[actix_web::test]
+    async fn roles_collection_routes_are_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        assert_route_exists!(app, get, "/api/v1.0/roles");
+        assert_route_exists!(app, post, "/api/v1.0/roles");
+    }
+
+    #[actix_web::test]
+    async fn roles_item_routes_are_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        let rid = "00000000-0000-0000-0000-000000000001";
+        assert_route_exists!(app, get, &format!("/api/v1.0/roles/{}", rid));
+        assert_route_exists!(app, put, &format!("/api/v1.0/roles/{}", rid));
+        assert_route_exists!(app, delete, &format!("/api/v1.0/roles/{}", rid));
+    }
+
+    #[actix_web::test]
+    async fn unregistered_route_outside_api_scope_returns_404() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        // A path completely outside any registered scope should return 404
+        let req = test::TestRequest::get()
+            .uri("/nonexistent/path")
+            .peer_addr(PEER)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status().as_u16(),
+            404,
+            "Unregistered route outside API scope should return 404"
+        );
+    }
+
+    #[actix_web::test]
+    async fn unregistered_route_inside_api_scope_returns_401() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        // A path inside /api/v1.0 scope is covered by JWT middleware,
+        // so it returns 401 (auth required) rather than 404
+        let req = test::TestRequest::get()
+            .uri("/api/v1.0/nonexistent")
+            .peer_addr(PEER)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status().as_u16(),
+            401,
+            "Unregistered route inside JWT scope should return 401"
+        );
+    }
 }

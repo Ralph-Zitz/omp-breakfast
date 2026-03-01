@@ -238,7 +238,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 59 unit tests across `config`, `errors`, `handlers`, `middleware::auth`, `server`, and `validate` modules
+- 78 unit tests across `config`, `errors`, `handlers`, `middleware::auth`, `routes`, `server`, and `validate` modules
 - 55 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - 83 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
