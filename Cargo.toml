@@ -48,6 +48,7 @@ rustls-pemfile = "2.2.0"
 rustls-pki-types = { version = "1.14.0" }
 actix-files = "0.6"
 rust_decimal = { version = "1.40.0", features = ["db-tokio-postgres", "serde-with-str", "tokio-postgres"] }
+actix-cors = "0.7"
 
 [dev-dependencies]
 base64 = "0.22"

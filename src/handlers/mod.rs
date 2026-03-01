@@ -283,9 +283,15 @@ mod tests {
 pub async fn get_health(state: Data<State>) -> Result<impl Responder, Error> {
     //    let client: Client = get_client(state.pool.clone()).await?;
     let Ok(client) = get_client(state.pool.clone()).await else {
-        return Ok(HttpResponse::Ok().json(StatusResponse { up: false }));
+        return Ok(HttpResponse::ServiceUnavailable().json(StatusResponse { up: false }));
     };
     let result = db::check_db(&client).await;
 
-    result.map(|ok| HttpResponse::Ok().json(StatusResponse { up: ok }))
+    result.map(|ok| {
+        if ok {
+            HttpResponse::Ok().json(StatusResponse { up: true })
+        } else {
+            HttpResponse::ServiceUnavailable().json(StatusResponse { up: false })
+        }
+    })
 }

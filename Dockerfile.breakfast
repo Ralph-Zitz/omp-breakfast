@@ -1,3 +1,11 @@
+# ── SECURITY NOTE ────────────────────────────────────────────────────────────
+# This Dockerfile copies TLS certificates and private keys into the image for
+# local development convenience. In production, mount certificates at runtime
+# via Docker secrets, Kubernetes secrets, or bind-mounted volumes instead of
+# baking them into image layers. Private keys embedded in images can be
+# extracted by anyone with access to the image.
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Stage 1 - generate recipe file
 FROM rust:1.93.1 AS planner
 WORKDIR /app
@@ -55,6 +63,10 @@ FROM gcr.io/distroless/cc-debian13
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+# DEV ONLY: TLS certs baked in for local development.
+# PRODUCTION: Replace these COPY lines with runtime volume/secret mounts:
+#   docker run -v /path/to/certs:/certs:ro ...
+#   or use Docker/Kubernetes secrets
 COPY --chown=web:web localhost.pem localhost.pem
 COPY --chown=web:web localhost_key.pem localhost_key.pem
 COPY --chown=web:web localhost_ca.pem localhost_ca.pem

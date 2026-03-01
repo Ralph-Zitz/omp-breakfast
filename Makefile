@@ -1,5 +1,5 @@
 .PHONY: build check fmt test test-unit test-integration test-frontend test-all db-up db-down db-wait \
-       frontend frontend-build frontend-dev frontend-clean audit audit-install
+       frontend frontend-build frontend-dev frontend-clean audit audit-install audit-if-available
 
 COMPOSE_TEST = docker compose -f docker-compose.yml -f docker-compose.test.yml
 TEST_DB_PORT ?= 5433
@@ -44,7 +44,7 @@ test-frontend:
 	@echo "Running frontend WASM tests (headless Chrome)..."
 	cd frontend && wasm-pack test --headless --chrome
 
-test-all: test-unit test-integration test-frontend
+test-all: test-unit test-integration test-frontend audit-if-available
 
 ## Database lifecycle (test)
 db-up:
@@ -73,3 +73,11 @@ audit-install:
 audit:
 	@echo "Running security audit on dependencies..."
 	cargo audit
+
+audit-if-available:
+	@if command -v cargo-audit >/dev/null 2>&1; then \
+		echo "Running security audit on dependencies..."; \
+		cargo audit; \
+	else \
+		echo "SKIP: cargo-audit not installed (run 'make audit-install' to enable)"; \
+	fi

@@ -7,7 +7,7 @@ A breakfast ordering application for teams, built in Rust with an actix-web REST
 ## Tech Stack
 
 - **Language:** Rust 2024 edition
-- **Web framework:** actix-web 4 (with rustls TLS)
+- **Web framework:** actix-web 4 (with rustls TLS) + `actix-cors` for CORS policy
 - **Database:** PostgreSQL via `deadpool-postgres` connection pool + `tokio-postgres`
 - **ORM/mapping:** `tokio-pg-mapper` (derive-based row mapping)
 - **Auth:** JWT (access + refresh tokens via `jsonwebtoken`) + Basic Auth (Argon2 password hashing) + RBAC (Admin/Team Admin/Member/Guest roles, admin bypass)
@@ -91,6 +91,7 @@ tests/
 
 ## Key Conventions
 
+- CORS is enforced via `actix-cors` middleware with an explicit same-origin allowlist (methods: GET/POST/PUT/DELETE/OPTIONS; headers: Authorization, Content-Type, Accept; max-age: 3600s)
 - Every handler returns `Result<impl Responder, Error>` using the custom `errors::Error` enum
 - DB functions take a `&Client` and return `Result<T, Error>`, using `.map_err(Error::Db)?` pattern. Functions that perform multi-step mutations (`add_team_member`, `update_member_role`) take `&mut Client` and wrap operations in a database transaction.
 - All handlers are instrumented with `#[instrument(skip(state), level = "debug")]`
@@ -110,6 +111,7 @@ tests/
 - `get_user_teams` and `get_team_users` return an empty `[]` (200 OK) when no records are found, rather than a 404 error
 - 4xx errors log with `warn!()`, 5xx errors log with `error!()` for color-coded severity
 - Config is layered: default.yml → environment.yml → env vars (separator: `_`)
+- Health endpoint (`/health`) returns HTTP 503 with `{"up": false}` when the database is unreachable, and HTTP 200 with `{"up": true}` when healthy
 - Backend serves `frontend/dist/` as static files via `actix-files`, with `index_file("index.html")`
 
 ## Frontend Architecture
@@ -121,8 +123,8 @@ The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via 
   - `LoadingPage`: Displayed during session restoration from stored JWT token
   - `DashboardPage` uses: `SuccessBadge`, `UserCard`
 - **Page routing:** Manual via `Page` enum (`Login` / `Loading` / `Dashboard`) + Leptos signals (no router crate)
-- **Auth flow:** Basic Auth POST to `/auth` → receive JWT tokens → store `access_token` in `localStorage` → decode JWT payload for `user_id` → GET `/api/v1.0/users/{id}` for user details → render dashboard
-- **Session restore:** On startup, checks `localStorage` for existing `access_token` → shows `LoadingPage` → validates token via user fetch → restores dashboard or falls back to login
+- **Auth flow:** Basic Auth POST to `/auth` → receive JWT tokens → store `access_token` in `sessionStorage` → decode JWT payload for `user_id` → GET `/api/v1.0/users/{id}` for user details → render dashboard
+- **Session restore:** On startup, checks `sessionStorage` for existing `access_token` → shows `LoadingPage` → validates token via user fetch → restores dashboard or falls back to login
 - **Client-side validation:** Both username and password required before form submission
 - **Error display:** HTTP 401 → "Invalid username or password"; network failure → "Unable to reach the server"
 - **Dev proxying:** Trunk proxies `/auth`, `/api`, `/health` to `https://127.0.0.1:8080` (configured in `Trunk.toml`)
@@ -132,7 +134,7 @@ The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via 
 - Components use `#[component]` macro and return `impl IntoView`
 - Reactive state uses `ReadSignal` / `WriteSignal` pairs
 - `pub` items (`JwtPayload`, `decode_jwt_payload`) are exposed via `lib.rs` for test access
-- Token is stored in `localStorage` under the key `access_token`
+- Token is stored in `sessionStorage` under the key `access_token` (chosen over `localStorage` to limit token exposure — tokens are cleared when the browser tab closes, reducing the window for XSS-based token theft)
 - HTTP requests use `gloo_net::http::Request` (wraps `window.fetch`)
 
 ## Frontend Roadmap
@@ -260,7 +262,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### All Tests
 
-- Run everything: `make test-all` (backend unit + integration + frontend WASM)
+- Run everything: `make test-all` (backend unit + integration + frontend WASM + dependency audit)
+- Dependency audit: `make audit` runs `cargo audit`; `make test-all` includes it automatically via `audit-if-available` (skips gracefully if `cargo-audit` is not installed)
 
 ## Required Test Runs
 

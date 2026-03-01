@@ -1,4 +1,5 @@
 use crate::{config::Settings, db, models::State, routes::routes};
+use actix_cors::Cors;
 use actix_files::Files;
 use actix_web::{App, HttpServer, web::Data};
 use deadpool_postgres::{Pool, Runtime};
@@ -243,15 +244,32 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting server at https://{}:{}", host, port);
 
+    let bind_address = format!("{}:{}", host, port);
     HttpServer::new(move || {
+        // CORS: restrict to same-origin by default.
+        // In production the frontend is served from the same origin so
+        // `allowed_origin` matches the server's own address. For local
+        // Trunk dev-server proxying, the proxy forwards requests to the
+        // backend so no extra origin is needed.
+        let cors = Cors::default()
+            .allowed_origin(&format!("https://{}:{}", host, port))
+            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+            .allowed_headers(vec![
+                actix_web::http::header::AUTHORIZATION,
+                actix_web::http::header::CONTENT_TYPE,
+                actix_web::http::header::ACCEPT,
+            ])
+            .max_age(3600);
+
         App::new()
             .wrap(TracingLogger::default())
+            .wrap(cors)
             .app_data(state.clone())
             .app_data(swagger_config.clone())
             .configure(routes)
             .service(Files::new("/", FRONTEND_DIR).index_file("index.html"))
     })
-    .bind_rustls_0_23(format!("{}:{}", host, port), ssl_config)?
+    .bind_rustls_0_23(&bind_address, ssl_config)?
     .run()
     .await?;
 

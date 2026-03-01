@@ -44,9 +44,9 @@ pub fn decode_jwt_payload(token: &str) -> Option<JwtPayload> {
     serde_json::from_slice(&payload).ok()
 }
 
-fn local_storage() -> Option<web_sys::Storage> {
+fn session_storage() -> Option<web_sys::Storage> {
     web_sys::window()
-        .and_then(|w| w.local_storage().ok())
+        .and_then(|w| w.session_storage().ok())
         .flatten()
 }
 
@@ -98,10 +98,10 @@ pub fn App() -> impl IntoView {
     }
 }
 
-/// Attempt to restore a session from a stored JWT in localStorage.
+/// Attempt to restore a session from a stored JWT in sessionStorage.
 /// Returns the appropriate page to navigate to.
 async fn restore_session() -> Page {
-    let token = match local_storage()
+    let token = match session_storage()
         .and_then(|s| s.get_item("access_token").ok())
         .flatten()
     {
@@ -113,7 +113,7 @@ async fn restore_session() -> Page {
         Some(p) => p,
         None => {
             // Token is malformed — clear it and show login
-            if let Some(storage) = local_storage() {
+            if let Some(storage) = session_storage() {
                 let _ = storage.remove_item("access_token");
                 let _ = storage.remove_item("refresh_token");
             }
@@ -137,7 +137,7 @@ async fn restore_session() -> Page {
         },
         _ => {
             // Token expired or invalid — clear stored tokens
-            if let Some(storage) = local_storage() {
+            if let Some(storage) = session_storage() {
                 let _ = storage.remove_item("access_token");
                 let _ = storage.remove_item("refresh_token");
             }
@@ -195,7 +195,7 @@ fn LoginPage(set_page: WriteSignal<Page>) -> impl IntoView {
             match result {
                 Ok(response) if response.ok() => match response.json::<AuthResponse>().await {
                     Ok(auth) => {
-                        if let Some(storage) = local_storage() {
+                        if let Some(storage) = session_storage() {
                             let _ = storage.set_item("access_token", &auth.access_token);
                             let _ = storage.set_item("refresh_token", &auth.refresh_token);
                         }
@@ -389,7 +389,7 @@ fn DashboardPage(name: String, email: String, set_page: WriteSignal<Page>) -> im
         .to_uppercase();
 
     let on_logout = move |_| {
-        if let Some(storage) = local_storage() {
+        if let Some(storage) = session_storage() {
             let _ = storage.remove_item("access_token");
             let _ = storage.remove_item("refresh_token");
         }

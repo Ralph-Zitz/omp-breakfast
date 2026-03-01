@@ -103,10 +103,10 @@ async fn flush(ms: i32) {
     wasm_bindgen_futures::JsFuture::from(promise).await.unwrap();
 }
 
-/// Clear any stored tokens from localStorage to ensure a clean test state.
+/// Clear any stored tokens from sessionStorage to ensure a clean test state.
 fn clear_tokens() {
     if let Some(storage) = web_sys::window()
-        .and_then(|w| w.local_storage().ok())
+        .and_then(|w| w.session_storage().ok())
         .flatten()
     {
         let _ = storage.remove_item("access_token");
@@ -596,10 +596,10 @@ async fn test_full_login_validate_logout_cycle() {
 //  7 · Session persistence tests
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Helper to read a value from localStorage.
+/// Helper to read a value from sessionStorage.
 fn get_storage_item(key: &str) -> Option<String> {
     web_sys::window()
-        .and_then(|w| w.local_storage().ok())
+        .and_then(|w| w.session_storage().ok())
         .flatten()
         .and_then(|s| s.get_item(key).ok())
         .flatten()
@@ -626,7 +626,7 @@ async fn test_session_persists_across_page_refresh() {
     assert!(contains_text(id, "Welcome!"), "phase 1: on dashboard");
     assert!(contains_text(id, "John Doe"), "phase 1: user name shown");
 
-    // Verify token was stored in localStorage
+    // Verify token was stored in sessionStorage
     let stored_token = get_storage_item("access_token");
     assert!(stored_token.is_some(), "phase 1: access_token stored");
     assert!(
@@ -697,7 +697,7 @@ async fn test_logout_clears_tokens_and_prevents_session_restore() {
     assert!(contains_text(id, "Sign In"), "phase 2: back to login");
     assert!(!contains_text(id, "Welcome!"), "phase 2: dashboard gone");
 
-    // Verify tokens are cleared from localStorage
+    // Verify tokens are cleared from sessionStorage
     assert!(
         get_storage_item("access_token").is_none(),
         "phase 2: access_token cleared"
@@ -764,7 +764,7 @@ async fn test_session_restore_with_malformed_token_falls_back_to_login() {
 
     // Store a malformed token (not a valid JWT structure)
     if let Some(storage) = web_sys::window()
-        .and_then(|w| w.local_storage().ok())
+        .and_then(|w| w.session_storage().ok())
         .flatten()
     {
         let _ = storage.set_item("access_token", "not-a-valid-jwt");
@@ -802,7 +802,7 @@ async fn test_session_restore_with_expired_token_falls_back_to_login() {
     // Store a structurally valid token (so it decodes) but the fetch will return 401
     let token = mock_token("12345678-1234-1234-1234-1234567890ab");
     if let Some(storage) = web_sys::window()
-        .and_then(|w| w.local_storage().ok())
+        .and_then(|w| w.session_storage().ok())
         .flatten()
     {
         let _ = storage.set_item("access_token", &token);
@@ -867,7 +867,7 @@ async fn test_loading_page_shown_during_session_restore() {
 
     // Store a valid token so session restore triggers
     if let Some(storage) = web_sys::window()
-        .and_then(|w| w.local_storage().ok())
+        .and_then(|w| w.session_storage().ok())
         .flatten()
     {
         let _ = storage.set_item("access_token", &token);
