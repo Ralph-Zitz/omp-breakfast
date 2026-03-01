@@ -12,6 +12,7 @@ use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
 };
 use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
+use chrono::{DateTime, Utc};
 use deadpool_postgres::Client;
 use tracing::instrument;
 use uuid::Uuid;
@@ -96,19 +97,21 @@ pub async fn refresh_token(
         }));
     }
 
+    // Verify that the user still exists (also need client for revocation checks)
+    let client: Client = get_client(state.pool.clone()).await?;
+
     // Check if revoked
-    if is_token_revoked(&state, &claims.claims.jti.to_string()) {
+    if is_token_revoked(&client, &state, &claims.claims.jti.to_string()).await? {
         return Ok(HttpResponse::Unauthorized().json(ErrorResponse {
             error: "Token has been revoked".to_string(),
         }));
     }
 
-    // Verify that the user still exists
-    let client: Client = get_client(state.pool.clone()).await?;
     db::get_user(&client, claims.claims.sub).await?;
 
     // Revoke the old refresh token (rotation)
-    revoke_token(&state, &claims.claims.jti.to_string());
+    let expires_at = DateTime::<Utc>::from_timestamp(claims.claims.exp, 0).unwrap_or_else(Utc::now);
+    revoke_token(&client, &state, &claims.claims.jti.to_string(), expires_at).await?;
 
     // Issue a new token pair
     let auth = generate_token_pair(claims.claims.sub, jwt_secret).await?;
@@ -133,8 +136,17 @@ pub async fn revoke_user_token(
     let jwt_secret = state.jwtsecret.clone();
     let token_data = verify_jwt(json.into_inner().token, jwt_secret).await?;
 
-    // Revoke by jti
-    revoke_token(&state, &token_data.claims.jti.to_string());
+    // Revoke by jti — persist to DB
+    let client: Client = get_client(state.pool.clone()).await?;
+    let expires_at =
+        DateTime::<Utc>::from_timestamp(token_data.claims.exp, 0).unwrap_or_else(Utc::now);
+    revoke_token(
+        &client,
+        &state,
+        &token_data.claims.jti.to_string(),
+        expires_at,
+    )
+    .await?;
 
     Ok(HttpResponse::Ok().json(StatusResponse { up: true }))
 }
@@ -232,8 +244,15 @@ pub async fn delete_user_by_email(
     let client: Client = get_client(state.pool.clone()).await?;
 
     // RBAC: self or global admin — look up user_id from email first
-    if let Ok(user) = db::get_user_by_email(&client, &email).await {
-        require_self_or_admin(&client, &req, user.user_id).await?;
+    match db::get_user_by_email(&client, &email).await {
+        Ok(user) => {
+            require_self_or_admin(&client, &req, user.user_id).await?;
+        }
+        Err(_) => {
+            // User not found — still enforce admin check to prevent info leakage
+            require_admin(&client, &req).await?;
+            return Ok(HttpResponse::NotFound().json(DeletedResponse { deleted: false }));
+        }
     }
 
     let deleted = db::delete_user_by_email(&client, &email).await?;

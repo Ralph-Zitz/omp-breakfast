@@ -1,6 +1,6 @@
 use actix_web::{
-    error::{JsonPayloadError, PathError, ResponseError},
     Error as AError, HttpRequest, HttpResponse,
+    error::{JsonPayloadError, PathError, ResponseError},
 };
 use color_eyre::eyre::Error as EError;
 use serde::{Deserialize, Serialize};
@@ -80,11 +80,18 @@ impl ResponseError for Error {
             // TODO: Fine grained query errors, or revert to general
             Error::Db(e) => {
                 match e.code() {
-                    // Unique/Foreign key constraint violation
-                    Some(st) if st.code() == "23505" || st.code() == "23503" => {
-                        warn!(error = %e, code = %st.code(), "DB constraint violation");
+                    // Unique constraint violation
+                    Some(st) if st.code() == "23505" => {
+                        warn!(error = %e, code = %st.code(), "DB unique constraint violation");
                         HttpResponse::Conflict().json(ErrorResponse {
-                            error: e.to_string(),
+                            error: "A record with that value already exists".to_string(),
+                        })
+                    }
+                    // Foreign key constraint violation
+                    Some(st) if st.code() == "23503" => {
+                        warn!(error = %e, code = %st.code(), "DB foreign key constraint violation");
+                        HttpResponse::Conflict().json(ErrorResponse {
+                            error: "Operation conflicts with an existing relationship".to_string(),
                         })
                     }
                     Some(st) => {
@@ -301,9 +308,8 @@ mod tests {
     #[test]
     fn pool_error_returns_500() {
         // PoolError can be constructed via a timeout
-        let pool_err = deadpool_postgres::PoolError::Backend(
-            tokio_postgres::Error::__private_api_timeout(),
-        );
+        let pool_err =
+            deadpool_postgres::PoolError::Backend(tokio_postgres::Error::__private_api_timeout());
         let err = Error::Pool(pool_err);
         let resp = err.error_response();
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);

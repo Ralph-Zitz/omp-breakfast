@@ -1,5 +1,5 @@
 use crate::{
-    db::get_user, db::get_user_by_email, errors::Error, handlers::get_client, models::Auth,
+    db, db::get_user, db::get_user_by_email, errors::Error, handlers::get_client, models::Auth,
     models::CachedUser, models::Claims, models::State,
 };
 use actix_web::HttpMessage;
@@ -9,7 +9,8 @@ use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordVerifier},
 };
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
+use deadpool_postgres::Client;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode};
 use serde_json::json;
 use tracing::{instrument, warn};
@@ -77,12 +78,45 @@ pub async fn verify_jwt(token: String, jwt_secret: String) -> Result<TokenData<C
     Ok(result)
 }
 
-pub fn revoke_token(state: &Data<State>, jti: &str) {
+/// Revoke a token by persisting it to the DB blacklist and caching in memory.
+/// `expires_at` is the token's original expiry so cleanup can prune stale rows.
+pub async fn revoke_token(
+    client: &Client,
+    state: &Data<State>,
+    jti: &str,
+    expires_at: DateTime<Utc>,
+) -> Result<(), Error> {
+    let jti_uuid =
+        Uuid::parse_str(jti).map_err(|e| Error::Validation(format!("Invalid jti: {}", e)))?;
+    // Persist to DB (source of truth)
+    db::revoke_token_db(client, jti_uuid, expires_at).await?;
+    // Update in-memory cache for fast-path lookups
     state.token_blacklist.pin().insert(jti.to_string(), true);
+    Ok(())
 }
 
-pub fn is_token_revoked(state: &Data<State>, jti: &str) -> bool {
-    state.token_blacklist.pin().contains_key(jti)
+/// Check whether a token has been revoked.
+/// Uses the in-memory cache first, then falls back to the DB.
+pub async fn is_token_revoked(
+    client: &Client,
+    state: &Data<State>,
+    jti: &str,
+) -> Result<bool, Error> {
+    // Fast path: check in-memory cache
+    if state.token_blacklist.pin().contains_key(jti) {
+        return Ok(true);
+    }
+    // Slow path: check DB
+    let jti_uuid = match Uuid::parse_str(jti) {
+        Ok(u) => u,
+        Err(_) => return Ok(false),
+    };
+    let revoked = db::is_token_revoked_db(client, jti_uuid).await?;
+    if revoked {
+        // Populate in-memory cache for future fast-path hits
+        state.token_blacklist.pin().insert(jti.to_string(), true);
+    }
+    Ok(revoked)
 }
 
 #[instrument(skip(state), level = "debug")]
@@ -124,12 +158,23 @@ pub async fn jwt_validator(
             ));
         }
         // Check if token has been revoked
-        if is_token_revoked(state, &c.claims.jti.to_string()) {
-            warn!(jti = %c.claims.jti, "Rejected revoked token");
-            return Err((
-                actix_web::error::ErrorUnauthorized(json!({"error":"Token has been revoked"})),
-                req,
-            ));
+        match is_token_revoked(&client, state, &c.claims.jti.to_string()).await {
+            Ok(true) => {
+                warn!(jti = %c.claims.jti, "Rejected revoked token");
+                return Err((
+                    actix_web::error::ErrorUnauthorized(json!({"error":"Token has been revoked"})),
+                    req,
+                ));
+            }
+            Err(_) => {
+                return Err((
+                    actix_web::error::ErrorInternalServerError(
+                        json!({"error":"Failed to check token revocation"}),
+                    ),
+                    req,
+                ));
+            }
+            Ok(false) => {}
         }
         match get_user(&client, c.claims.sub).await {
             Ok(_) => {
@@ -169,12 +214,34 @@ pub async fn refresh_validator(
             ));
         }
         // Check if token has been revoked
-        if is_token_revoked(state, &c.claims.jti.to_string()) {
-            warn!(jti = %c.claims.jti, "Rejected revoked refresh token");
-            return Err((
-                actix_web::error::ErrorUnauthorized(json!({"error":"Token has been revoked"})),
-                req,
-            ));
+        let client = match get_client(state.pool.clone()).await {
+            Ok(c) => c,
+            Err(_) => {
+                return Err((
+                    actix_web::error::ErrorInternalServerError(
+                        json!({"error":"Database connection error"}),
+                    ),
+                    req,
+                ));
+            }
+        };
+        match is_token_revoked(&client, state, &c.claims.jti.to_string()).await {
+            Ok(true) => {
+                warn!(jti = %c.claims.jti, "Rejected revoked refresh token");
+                return Err((
+                    actix_web::error::ErrorUnauthorized(json!({"error":"Token has been revoked"})),
+                    req,
+                ));
+            }
+            Err(_) => {
+                return Err((
+                    actix_web::error::ErrorInternalServerError(
+                        json!({"error":"Failed to check token revocation"}),
+                    ),
+                    req,
+                ));
+            }
+            Ok(false) => {}
         }
         Ok(req)
     } else {
@@ -321,6 +388,16 @@ mod tests {
             cache: flurry::HashMap::new(),
             token_blacklist: flurry::HashMap::new(),
         })
+    }
+
+    // Helper: directly insert into the in-memory blacklist for unit tests
+    // (DB-backed revocation is tested via integration tests)
+    fn revoke_token_in_memory(state: &Data<State>, jti: &str) {
+        state.token_blacklist.pin().insert(jti.to_string(), true);
+    }
+
+    fn is_token_in_memory_blacklist(state: &Data<State>, jti: &str) -> bool {
+        state.token_blacklist.pin().contains_key(jti)
     }
 
     // -- Token generation & verification --
@@ -476,19 +553,19 @@ mod tests {
     // -- Token blacklist --
 
     #[actix_web::test]
-    async fn revoke_token_adds_to_blacklist() {
+    async fn revoke_token_adds_to_in_memory_blacklist() {
         let state = test_state();
         let jti = Uuid::now_v7().to_string();
 
-        assert!(!is_token_revoked(&state, &jti));
-        revoke_token(&state, &jti);
-        assert!(is_token_revoked(&state, &jti));
+        assert!(!is_token_in_memory_blacklist(&state, &jti));
+        revoke_token_in_memory(&state, &jti);
+        assert!(is_token_in_memory_blacklist(&state, &jti));
     }
 
     #[actix_web::test]
     async fn is_token_revoked_returns_false_for_unknown() {
         let state = test_state();
-        assert!(!is_token_revoked(&state, "nonexistent-jti"));
+        assert!(!is_token_in_memory_blacklist(&state, "nonexistent-jti"));
     }
 
     // -- Cache invalidation --

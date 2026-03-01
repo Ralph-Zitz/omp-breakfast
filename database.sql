@@ -111,6 +111,15 @@ CREATE TABLE orders (
 
 CREATE INDEX idx_orders_tid ON orders (orders_teamorders_id);
 
+/* Token blacklist table — persists revoked JWT tokens across server restarts */
+CREATE TABLE token_blacklist (
+  jti uuid PRIMARY KEY,
+  revoked_at timestamptz DEFAULT CURRENT_TIMESTAMP,
+  expires_at timestamptz NOT NULL
+);
+
+CREATE INDEX idx_token_blacklist_expires ON token_blacklist (expires_at);
+
 /* Create on-update/change function */
 CREATE OR REPLACE FUNCTION update_changed_timestamp ()
   RETURNS TRIGGER

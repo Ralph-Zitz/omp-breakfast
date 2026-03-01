@@ -94,7 +94,7 @@ tests/
 - All handlers are instrumented with `#[instrument(skip(state), level = "debug")]`
 - Validation uses `validate(&json)?` before any DB call
 - JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation
-- Token revocation uses an in-memory `flurry::HashMap` blacklist (not persisted)
+- Token revocation uses a DB-backed `token_blacklist` table (persisted across restarts) with an in-memory `flurry::HashMap` cache for fast-path lookups
 - Auth cache uses TTL (5min) and max-size (1000 entries) with FIFO eviction
 - RBAC: Four roles — Admin (global superuser), Team Admin (team-scoped), Member, Guest. JWT claims stored in request extensions.
 - Global Admin RBAC: `require_admin` helper checks if user holds "Admin" role in any team (via `db::is_admin`); gates team CUD, items CUD, roles CUD. Admin bypasses all team-scoped and self-only checks.
@@ -102,7 +102,7 @@ tests/
 - Self-or-Admin RBAC: `require_self_or_admin` helper gates user mutations (update, delete); allows the user themselves or a global Admin.
 - `Error::Forbidden` variant maps to HTTP 403 for authorization failures
 - Production safety: server panics at startup if JWT secret is still the default value when `ENV=production`
-- Error responses are JSON `{"error": "..."}` via `ErrorResponse` struct
+- Error responses are JSON `{"error": "..."}` via `ErrorResponse` struct; DB constraint violations return sanitized messages (never raw SQL)
 - 4xx errors log with `warn!()`, 5xx errors log with `error!()` for color-coded severity
 - Config is layered: default.yml → environment.yml → env vars (separator: `_`)
 - Backend serves `frontend/dist/` as static files via `actix-files`, with `index_file("index.html")`
