@@ -79,7 +79,7 @@ frontend/
   style/
     main.css       – Modern CSS (custom properties, responsive, animations)
   tests/
-    ui_tests.rs    – 21 WASM integration tests (headless Chrome)
+    ui_tests.rs    – 22 WASM integration tests (headless Chrome)
 config/
   default.yml      – Base config
   development.yml  – Dev overrides (local DB)
@@ -106,6 +106,7 @@ tests/
 - Team RBAC: `require_team_member` and `require_team_admin` helpers gate team-scoped mutations; both allow global Admin bypass. `require_team_admin` checks for "Team Admin" role in the specific team.
 - Self-or-Admin-or-Team-Admin RBAC: `require_self_or_admin_or_team_admin` helper gates user mutations (update, delete); allows the user themselves, a global Admin, or a Team Admin of any team where the target user is also a member (checked via `db::is_team_admin_of_user` — a self-join on `memberof`). The legacy `require_self_or_admin` helper is retained but no longer used by any handler.
 - `Error::Forbidden` variant maps to HTTP 403 for authorization failures
+- `Error::Unauthorized` variant maps to HTTP 401 for authentication failures
 - Production safety: server panics at startup if `server.secret` or `server.jwtsecret` is still the default value when `ENV=production`
 - Error responses are JSON `{"error": "..."}` via `ErrorResponse` struct; DB constraint violations return sanitized messages (never raw SQL)
 - List queries (`get_users`, `get_teams`, `get_roles`, `get_items`, `get_team_orders`, `get_order_items`) log a `warn!()` when a row fails to map instead of silently dropping it
@@ -124,7 +125,7 @@ The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via 
   - `LoadingPage`: Displayed during session restoration from stored JWT token
   - `DashboardPage` uses: `SuccessBadge`, `UserCard`
 - **Page routing:** Manual via `Page` enum (`Login` / `Loading` / `Dashboard`) + Leptos signals (no router crate)
-- **Auth flow:** Basic Auth POST to `/auth` → receive JWT tokens → store `access_token` and `refresh_token` in `sessionStorage` → decode JWT payload for `user_id` → GET `/api/v1.0/users/{id}` for user details → render dashboard
+- **Auth flow:** Basic Auth POST to `/auth` → receive JWT tokens → store `access_token` and `refresh_token` in `sessionStorage` → decode JWT payload for `user_id` → GET `/api/v1.0/users/{id}` for user details → render dashboard. On logout, both access and refresh tokens are revoked server-side via `POST /auth/revoke` (fire-and-forget).
 - **Session restore:** On startup, checks `sessionStorage` for existing `access_token` → shows `LoadingPage` → if token is expired, attempts refresh via `POST /auth/refresh` → validates token via user fetch → restores dashboard or falls back to login
 - **Token refresh:** Transparent refresh via `try_refresh_token()` — when the access token is expired or within 60 seconds of expiry, the frontend automatically calls `POST /auth/refresh` with the stored refresh token, stores the new token pair, and retries the original request. If refresh fails, tokens are cleared and the user is redirected to login.
 - **Client-side validation:** Both username and password required before form submission
@@ -245,7 +246,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 - Frontend only has login + dashboard pages; remaining pages are tracked in the **Frontend Roadmap** section
 - No client-side routing library (manual signal-based page switching, by design)
-- Frontend does not yet consume the team, role, item, or order APIs (auth and user-detail endpoints are consumed, including token refresh)
+- Frontend does not yet consume the team, role, item, or order APIs (auth and user-detail endpoints are consumed, including token refresh and token revocation)
 - Dark/light mode toggle not yet implemented
 - Toast notifications and confirmation modals not yet implemented
 
@@ -253,8 +254,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 78 unit tests across `config`, `errors`, `handlers`, `middleware::auth`, `routes`, `server`, and `validate` modules
-- 62 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 79 unit tests across `config`, `errors`, `handlers`, `middleware::auth`, `routes`, `server`, and `validate` modules
+- 65 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - 86 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
@@ -262,7 +263,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Frontend
 
-- 21 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
+- 22 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
 - Test categories:
   - JWT decode (4 tests): valid token, missing segments, bad base64, invalid JSON
   - Login page rendering (3 tests): brand/form elements, email attributes, password attributes

@@ -2917,3 +2917,138 @@ async fn member_cannot_create_user() {
         "regular member should not be able to create users"
     );
 }
+
+// ---------------------------------------------------------------------------
+// delete_user_by_email RBAC fallback — non-admin cannot discover whether an
+// email exists; admin gets a proper 404 for a nonexistent email.
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn non_admin_delete_by_email_nonexistent_returns_403() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U1_F is a regular Member, not an Admin
+    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+
+    let req = test::TestRequest::delete()
+        .uri("/api/v1.0/users/email/nonexistent@example.com")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "non-admin should get 403 even when email does not exist (prevents info leakage)"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn admin_delete_by_email_nonexistent_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    let req = test::TestRequest::delete()
+        .uri("/api/v1.0/users/email/nonexistent@example.com")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        404,
+        "admin should get 404 for a nonexistent email"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Create-user → authenticate round-trip (validates Argon2 hashing in create)
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn create_user_then_authenticate_round_trip() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let test_email = "roundtrip.test@example.com";
+    let test_password = "RoundTrip!Pass123";
+
+    // 1. Create a new user via the API
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "RoundTrip",
+            "lastname": "Test",
+            "email": test_email,
+            "password": test_password
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        201,
+        "admin should be able to create a new user"
+    );
+    let user: Value = test::read_body_json(resp).await;
+    let new_user_id = user["user_id"].as_str().unwrap();
+
+    // 2. Authenticate the newly created user via Basic Auth
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:{}", test_email, test_password))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "newly created user should authenticate successfully (password must be Argon2 hashed)"
+    );
+    let new_user_auth: Auth = test::read_body_json(resp).await;
+    assert!(
+        !new_user_auth.access_token.is_empty(),
+        "should receive a non-empty access token"
+    );
+    assert!(
+        !new_user_auth.refresh_token.is_empty(),
+        "should receive a non-empty refresh token"
+    );
+
+    // 3. Use the new user's token to access a protected endpoint
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/users/{}", new_user_id))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", new_user_auth.access_token),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "new user should access their own profile with the issued token"
+    );
+    let fetched_user: Value = test::read_body_json(resp).await;
+    assert_eq!(fetched_user["email"].as_str().unwrap(), test_email);
+
+    // Clean up: admin deletes the created user
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", new_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "cleanup: admin should delete temp user");
+}
