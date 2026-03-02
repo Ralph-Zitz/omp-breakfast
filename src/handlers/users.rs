@@ -231,7 +231,7 @@ pub async fn delete_user(
 
     // Fetch user email before deletion to invalidate the auth cache
     if let Ok(user) = db::get_user(&client, uid).await {
-        invalidate_cache(state.clone(), &user.email);
+        let _ = invalidate_cache(state.clone(), &user.email);
     }
 
     let deleted = db::delete_user(&client, uid).await?;
@@ -280,7 +280,7 @@ pub async fn delete_user_by_email(
     let deleted = db::delete_user_by_email(&client, &email).await?;
     if deleted {
         // Invalidate the auth cache so the deleted user cannot authenticate
-        invalidate_cache(state.clone(), &email);
+        let _ = invalidate_cache(state.clone(), &email);
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
     } else {
         Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
@@ -318,7 +318,7 @@ pub async fn update_user(
 
     validate(&json)?;
     let user = db::update_user(&client, uid, json.into_inner()).await?;
-    invalidate_cache(state, &user.email);
+    let _ = invalidate_cache(state, &user.email);
     Ok(HttpResponse::Ok().json(user))
 }
 
