@@ -36,8 +36,10 @@ pub async fn get_item(client: &Client, item_id: Uuid) -> Result<ItemEntry, Error
         .map_err(Error::Db)?;
 
     client
-        .query_one(&statement, &[&item_id])
+        .query_opt(&statement, &[&item_id])
         .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("Item not found".to_string()))
         .map(ItemEntry::from_row)?
         .map_err(Error::DbMapper)
 }

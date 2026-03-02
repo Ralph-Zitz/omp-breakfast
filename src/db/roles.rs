@@ -35,8 +35,10 @@ pub async fn get_role(client: &Client, role_id: Uuid) -> Result<RoleEntry, Error
         .map_err(Error::Db)?;
 
     client
-        .query_one(&statement, &[&role_id])
+        .query_opt(&statement, &[&role_id])
         .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("Role not found".to_string()))
         .map(RoleEntry::from_row)?
         .map_err(Error::DbMapper)
 }

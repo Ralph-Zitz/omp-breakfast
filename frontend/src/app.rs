@@ -459,9 +459,8 @@ fn UsernameField(username: ReadSignal<String>, set_username: WriteSignal<String>
                 required=true
                 prop:value=move || username.get()
                 on:input=move |ev| {
-                    let target = ev
-                        .target()
-                        .unwrap()
+                    let Some(target) = ev.target() else { return; };
+                    let target = target
                         .unchecked_into::<web_sys::HtmlInputElement>();
                     set_username.set(target.value());
                 }
@@ -483,9 +482,8 @@ fn PasswordField(password: ReadSignal<String>, set_password: WriteSignal<String>
                 required=true
                 prop:value=move || password.get()
                 on:input=move |ev| {
-                    let target = ev
-                        .target()
-                        .unwrap()
+                    let Some(target) = ev.target() else { return; };
+                    let target = target
                         .unchecked_into::<web_sys::HtmlInputElement>();
                     set_password.set(target.value());
                 }

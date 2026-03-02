@@ -69,8 +69,10 @@ pub async fn get_team(client: &Client, team_id: Uuid) -> Result<TeamEntry, Error
         .map_err(Error::Db)?;
 
     client
-        .query_one(&statement, &[&team_id])
+        .query_opt(&statement, &[&team_id])
         .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("Team not found".to_string()))
         .map(TeamEntry::from_row)?
         .map_err(Error::DbMapper)
 }

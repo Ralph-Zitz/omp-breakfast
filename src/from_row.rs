@@ -165,6 +165,8 @@ impl FromRow for OrderEntry {
                 .try_get("orders_team_id")
                 .map_err(|e| map_err("orders_team_id", e))?,
             amt: row.try_get("amt").map_err(|e| map_err("amt", e))?,
+            created: row.try_get("created").map_err(|e| map_err("created", e))?,
+            changed: row.try_get("changed").map_err(|e| map_err("changed", e))?,
         })
     }
 }

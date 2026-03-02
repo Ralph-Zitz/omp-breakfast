@@ -23,7 +23,7 @@ use uuid::Uuid;
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn get_roles(state: Data<State>) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     let roles = db::get_roles(&client).await?;
     Ok(HttpResponse::Ok().json(roles))
 }
@@ -43,7 +43,7 @@ pub async fn get_roles(state: Data<State>) -> Result<impl Responder, Error> {
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn get_role(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     let role = db::get_role(&client, path.into_inner()).await?;
     Ok(HttpResponse::Ok().json(role))
 }
@@ -57,6 +57,7 @@ pub async fn get_role(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 409, description = "Role already exists", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
@@ -67,7 +68,7 @@ pub async fn create_role(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
     let role = db::create_role(&client, json.into_inner()).await?;
     let mut response = HttpResponse::Created();
@@ -97,7 +98,7 @@ pub async fn delete_role(
     rid: Path<Uuid>,
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
     let deleted = db::delete_role(&client, rid.into_inner()).await?;
     if deleted {
@@ -116,6 +117,7 @@ pub async fn delete_role(
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 404, description = "Role not updated", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     params(
         ("role_id", description = "Unique UUID of the Role")
@@ -130,7 +132,7 @@ pub async fn update_role(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
     let role = db::update_role(&client, path.into_inner(), json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(role))

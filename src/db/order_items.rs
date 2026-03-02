@@ -69,7 +69,7 @@ pub async fn get_order_items(
 ) -> Result<Vec<OrderEntry>, Error> {
     let statement = client
         .prepare(
-            "select orders_teamorders_id, orders_item_id, orders_team_id, amt from orders where orders_teamorders_id = $1 and orders_team_id = $2 order by orders_item_id",
+            "select orders_teamorders_id, orders_item_id, orders_team_id, amt, created, changed from orders where orders_teamorders_id = $1 and orders_team_id = $2 order by orders_item_id",
         )
         .await
         .map_err(Error::Db)?;
@@ -99,14 +99,16 @@ pub async fn get_order_item(
 ) -> Result<OrderEntry, Error> {
     let statement = client
         .prepare(
-            "select orders_teamorders_id, orders_item_id, orders_team_id, amt from orders where orders_teamorders_id = $1 and orders_item_id = $2 and orders_team_id = $3 limit 1",
+            "select orders_teamorders_id, orders_item_id, orders_team_id, amt, created, changed from orders where orders_teamorders_id = $1 and orders_item_id = $2 and orders_team_id = $3 limit 1",
         )
         .await
         .map_err(Error::Db)?;
 
     client
-        .query_one(&statement, &[&teamorder_id, &item_id, &team_id])
+        .query_opt(&statement, &[&teamorder_id, &item_id, &team_id])
         .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("Order item not found".to_string()))
         .map(OrderEntry::from_row)?
         .map_err(Error::DbMapper)
 }
@@ -126,7 +128,7 @@ pub async fn create_order_item(
             r#"
                insert into orders (orders_teamorders_id, orders_item_id, orders_team_id, amt)
                values ($1, $2, $3, $4)
-               returning orders_teamorders_id, orders_item_id, orders_team_id, amt
+               returning orders_teamorders_id, orders_item_id, orders_team_id, amt, created, changed
             "#,
         )
         .await
@@ -163,7 +165,7 @@ pub async fn update_order_item(
             r#"
                update orders set amt = $1
                where orders_teamorders_id = $2 and orders_item_id = $3 and orders_team_id = $4
-               returning orders_teamorders_id, orders_item_id, orders_team_id, amt
+               returning orders_teamorders_id, orders_item_id, orders_team_id, amt, created, changed
             "#,
         )
         .await

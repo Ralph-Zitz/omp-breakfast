@@ -119,6 +119,7 @@ impl Modify for SecurityAddon {
         OrderEntry,
         CreateOrderEntry,
         UpdateOrderEntry,
+        RevokedResponse,
     ))
 )]
 pub(crate) struct ApiDoc;

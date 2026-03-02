@@ -22,7 +22,7 @@ use uuid::Uuid;
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn get_items(state: Data<State>) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     let items = db::get_items(&client).await?;
     Ok(HttpResponse::Ok().json(items))
 }
@@ -42,7 +42,7 @@ pub async fn get_items(state: Data<State>) -> Result<impl Responder, Error> {
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn get_item(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     let item = db::get_item(&client, path.into_inner()).await?;
     Ok(HttpResponse::Ok().json(item))
 }
@@ -56,6 +56,7 @@ pub async fn get_item(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 409, description = "Item already exists", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
@@ -66,7 +67,7 @@ pub async fn create_item(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
     let item = db::create_item(&client, json.into_inner()).await?;
     let mut response = HttpResponse::Created();
@@ -96,7 +97,7 @@ pub async fn delete_item(
     path: Path<Uuid>,
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
     let deleted = db::delete_item(&client, path.into_inner()).await?;
     if deleted {
@@ -115,6 +116,7 @@ pub async fn delete_item(
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 404, description = "Item not updated", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     params(
         ("item_id", description = "Unique UUID of the Item")
@@ -129,7 +131,7 @@ pub async fn update_item(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
     let item = db::update_item(&client, path.into_inner(), json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(item))

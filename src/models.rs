@@ -4,9 +4,16 @@ use deadpool_postgres::Pool;
 use serde::{Deserialize, Serialize};
 use std::{fmt, fmt::Display};
 
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum TokenType {
+    Access,
+    Refresh,
+}
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct Claims {
@@ -14,7 +21,7 @@ pub struct Claims {
     pub exp: i64,
     pub iat: i64,
     pub jti: Uuid,
-    pub token_type: String,
+    pub token_type: TokenType,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -30,10 +37,18 @@ pub struct TokenRequest {
     pub token: String,
 }
 
+/// Cached authentication data. Intentionally omits `Serialize` to prevent
+/// accidental serialization of password hashes.
+#[derive(Clone, Debug)]
+pub struct AuthCacheEntry {
+    pub user_id: Uuid,
+    pub password_hash: String,
+}
+
 /// A cached user entry with a timestamp for TTL-based eviction.
 #[derive(Clone, Debug)]
 pub struct CachedUser {
-    pub user: UpdateUserEntry,
+    pub user: AuthCacheEntry,
     pub cached_at: DateTime<Utc>,
 }
 
@@ -76,7 +91,7 @@ pub struct UserEntry {
     pub changed: DateTime<Utc>,
 }
 
-#[derive(Deserialize, Serialize, Clone, Validate, ToSchema, IntoParams)]
+#[derive(Deserialize, Serialize, Clone, Validate, ToSchema)]
 pub struct UpdateUserEntry {
     pub user_id: Uuid,
     #[validate(length(
@@ -95,7 +110,8 @@ pub struct UpdateUserEntry {
     pub email: String,
     #[validate(length(
         min = 8,
-        message = "password is required and must be at least 8 characters"
+        max = 128,
+        message = "password is required and must be between 8 and 128 characters"
     ))]
     pub password: String,
 }
@@ -114,7 +130,7 @@ impl fmt::Debug for UpdateUserEntry {
 
 /// API request body for updating a user. Password is optional — if omitted,
 /// the existing password is preserved (avoids unnecessary rehashing).
-#[derive(Deserialize, Serialize, Clone, Validate, Debug, ToSchema, IntoParams)]
+#[derive(Deserialize, Serialize, Clone, Validate, Debug, ToSchema)]
 pub struct UpdateUserRequest {
     #[validate(length(
         min = 2,
@@ -142,10 +158,15 @@ fn validate_optional_password(password: &String) -> Result<(), validator::Valida
         err.message = Some("password must be at least 8 characters".into());
         return Err(err);
     }
+    if password.len() > 128 {
+        let mut err = validator::ValidationError::new("password");
+        err.message = Some("password must not exceed 128 characters".into());
+        return Err(err);
+    }
     Ok(())
 }
 
-#[derive(Deserialize, Serialize, Clone, Validate, Debug, ToSchema, IntoParams)]
+#[derive(Deserialize, Serialize, Clone, Validate, Debug, ToSchema)]
 pub struct CreateUserEntry {
     #[validate(length(
         min = 2,
@@ -163,7 +184,8 @@ pub struct CreateUserEntry {
     pub email: String,
     #[validate(length(
         min = 8,
-        message = "password is required and must be at least 8 characters"
+        max = 128,
+        message = "password is required and must be between 8 and 128 characters"
     ))]
     pub password: String,
 }
@@ -246,7 +268,7 @@ pub struct UpdateRoleEntry {
 pub struct ItemEntry {
     pub item_id: Uuid,
     pub descr: String,
-    pub price: Option<rust_decimal::Decimal>,
+    pub price: rust_decimal::Decimal,
     pub created: DateTime<Utc>,
     pub changed: DateTime<Utc>,
 }
@@ -258,7 +280,7 @@ pub struct CreateItemEntry {
         message = "descr is required and must be at least 1 character"
     ))]
     pub descr: String,
-    pub price: Option<rust_decimal::Decimal>,
+    pub price: rust_decimal::Decimal,
 }
 
 #[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
@@ -268,7 +290,7 @@ pub struct UpdateItemEntry {
         message = "descr is required and must be at least 1 character"
     ))]
     pub descr: String,
-    pub price: Option<rust_decimal::Decimal>,
+    pub price: rust_decimal::Decimal,
 }
 
 // ── Team order models ───────────────────────────────────────────────────────
@@ -317,16 +339,18 @@ pub struct OrderEntry {
     pub orders_teamorders_id: Uuid,
     pub orders_item_id: Uuid,
     pub orders_team_id: Uuid,
-    pub amt: Option<i32>,
+    pub amt: i32,
+    pub created: DateTime<Utc>,
+    pub changed: DateTime<Utc>,
 }
 
 #[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct CreateOrderEntry {
     pub orders_item_id: Uuid,
-    pub amt: Option<i32>,
+    pub amt: i32,
 }
 
 #[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct UpdateOrderEntry {
-    pub amt: Option<i32>,
+    pub amt: i32,
 }

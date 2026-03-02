@@ -98,7 +98,7 @@ pub async fn update_team_order(
         .prepare(
             r#"
                update teamorders
-               set teamorders_user_id = $1, duedate = $2, closed = $3
+               set teamorders_user_id = $1, duedate = $2, closed = COALESCE($3, closed)
                where teamorders_id = $4 and teamorders_team_id = $5
                returning teamorders_id, teamorders_team_id, teamorders_user_id,
                          duedate, closed, created, changed

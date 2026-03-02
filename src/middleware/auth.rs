@@ -1,6 +1,10 @@
 use crate::{
-    db, db::get_user, db::get_user_by_email, errors::Error, handlers::get_client, models::Auth,
-    models::CachedUser, models::Claims, models::State,
+    db,
+    db::get_user,
+    db::get_user_by_email,
+    errors::{Error, ErrorResponse},
+    handlers::get_client,
+    models::{Auth, AuthCacheEntry, CachedUser, Claims, State, TokenType},
 };
 use actix_web::HttpMessage;
 use actix_web::{dev::ServiceRequest, web::Data};
@@ -14,7 +18,6 @@ use deadpool_postgres::Client;
 use jsonwebtoken::{
     Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode,
 };
-use serde_json::json;
 use tracing::{error, instrument, warn};
 use uuid::Uuid;
 
@@ -28,8 +31,6 @@ const CACHE_TTL_SECONDS: i64 = 300;
 const CACHE_MAX_SIZE: usize = 1000;
 
 // ── Token type constants ────────────────────────────────────────────────────
-pub const TOKEN_TYPE_ACCESS: &str = "access";
-pub const TOKEN_TYPE_REFRESH: &str = "refresh";
 pub const TOKEN_TYPE_BEARER: &str = "Bearer";
 
 // ── Role name constants ─────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ pub const ROLE_TEAM_ADMIN: &str = "Team Admin";
 fn generate_token(
     user_id: Uuid,
     jwt_secret: &str,
-    token_type: &str,
+    token_type: TokenType,
     duration: Duration,
 ) -> Result<String, jsonwebtoken::errors::Error> {
     let headers = Header::new(Algorithm::HS256);
@@ -52,7 +53,7 @@ fn generate_token(
         exp: exp.timestamp(),
         iat: now.timestamp(),
         jti: Uuid::now_v7(),
-        token_type: token_type.to_string(),
+        token_type,
     };
     encode(&headers, &claims, &encoding_key)
 }
@@ -62,14 +63,14 @@ pub fn generate_token_pair(user_id: Uuid, jwt_secret: &str) -> Result<Auth, Erro
     let access_token = generate_token(
         user_id,
         jwt_secret,
-        TOKEN_TYPE_ACCESS,
+        TokenType::Access,
         Duration::try_minutes(ACCESS_TOKEN_DURATION_MINUTES).expect("valid duration"),
     )
     .map_err(Error::Jwt)?;
     let refresh_token = generate_token(
         user_id,
         jwt_secret,
-        TOKEN_TYPE_REFRESH,
+        TokenType::Refresh,
         Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration"),
     )
     .map_err(Error::Jwt)?;
@@ -152,20 +153,20 @@ pub async fn jwt_validator(
         None => {
             error!("Application state not configured");
             return Err((
-                actix_web::error::ErrorInternalServerError(
-                    json!({"error":"Internal server error"}),
-                ),
+                actix_web::error::ErrorInternalServerError(ErrorResponse {
+                    error: "Internal server error".to_string(),
+                }),
                 req,
             ));
         }
     };
-    let client = match get_client(state.pool.clone()).await {
+    let client = match get_client(&state.pool).await {
         Ok(c) => c,
         Err(_) => {
             return Err((
-                actix_web::error::ErrorInternalServerError(
-                    json!({"error":"Database connection error"}),
-                ),
+                actix_web::error::ErrorInternalServerError(ErrorResponse {
+                    error: "Database connection error".to_string(),
+                }),
                 req,
             ));
         }
@@ -174,12 +175,12 @@ pub async fn jwt_validator(
     let claims = verify_jwt(credentials.token(), jwt_secret);
     if let Ok(c) = claims {
         // Only accept access tokens for API endpoints
-        if c.claims.token_type != TOKEN_TYPE_ACCESS {
-            warn!(token_type = %c.claims.token_type, "Invalid token type, access token required");
+        if c.claims.token_type != TokenType::Access {
+            warn!(token_type = ?c.claims.token_type, "Invalid token type, access token required");
             return Err((
-                actix_web::error::ErrorUnauthorized(
-                    json!({"error":"Invalid token type, access token required"}),
-                ),
+                actix_web::error::ErrorUnauthorized(ErrorResponse {
+                    error: "Invalid token type, access token required".to_string(),
+                }),
                 req,
             ));
         }
@@ -188,15 +189,17 @@ pub async fn jwt_validator(
             Ok(true) => {
                 warn!(jti = %c.claims.jti, "Rejected revoked token");
                 return Err((
-                    actix_web::error::ErrorUnauthorized(json!({"error":"Token has been revoked"})),
+                    actix_web::error::ErrorUnauthorized(ErrorResponse {
+                        error: "Token has been revoked".to_string(),
+                    }),
                     req,
                 ));
             }
             Err(_) => {
                 return Err((
-                    actix_web::error::ErrorInternalServerError(
-                        json!({"error":"Failed to check token revocation"}),
-                    ),
+                    actix_web::error::ErrorInternalServerError(ErrorResponse {
+                        error: "Failed to check token revocation".to_string(),
+                    }),
                     req,
                 ));
             }
@@ -212,7 +215,9 @@ pub async fn jwt_validator(
     } else {
         warn!("Unauthorized access - invalid or expired JWT");
         Err((
-            actix_web::error::ErrorUnauthorized(json!({"error":"Unauthorized access"})),
+            actix_web::error::ErrorUnauthorized(ErrorResponse {
+                error: "Unauthorized access".to_string(),
+            }),
             req,
         ))
     }
@@ -228,9 +233,9 @@ pub async fn refresh_validator(
         None => {
             error!("Application state not configured");
             return Err((
-                actix_web::error::ErrorInternalServerError(
-                    json!({"error":"Internal server error"}),
-                ),
+                actix_web::error::ErrorInternalServerError(ErrorResponse {
+                    error: "Internal server error".to_string(),
+                }),
                 req,
             ));
         }
@@ -239,23 +244,23 @@ pub async fn refresh_validator(
     let claims = verify_jwt(credentials.token(), jwt_secret);
     if let Ok(c) = claims {
         // Only accept refresh tokens
-        if c.claims.token_type != TOKEN_TYPE_REFRESH {
-            warn!(token_type = %c.claims.token_type, "Invalid token type, refresh token required");
+        if c.claims.token_type != TokenType::Refresh {
+            warn!(token_type = ?c.claims.token_type, "Invalid token type, refresh token required");
             return Err((
-                actix_web::error::ErrorUnauthorized(
-                    json!({"error":"Invalid token type, refresh token required"}),
-                ),
+                actix_web::error::ErrorUnauthorized(ErrorResponse {
+                    error: "Invalid token type, refresh token required".to_string(),
+                }),
                 req,
             ));
         }
         // Check if token has been revoked
-        let client = match get_client(state.pool.clone()).await {
+        let client = match get_client(&state.pool).await {
             Ok(c) => c,
             Err(_) => {
                 return Err((
-                    actix_web::error::ErrorInternalServerError(
-                        json!({"error":"Database connection error"}),
-                    ),
+                    actix_web::error::ErrorInternalServerError(ErrorResponse {
+                        error: "Database connection error".to_string(),
+                    }),
                     req,
                 ));
             }
@@ -264,15 +269,17 @@ pub async fn refresh_validator(
             Ok(true) => {
                 warn!(jti = %c.claims.jti, "Rejected revoked refresh token");
                 return Err((
-                    actix_web::error::ErrorUnauthorized(json!({"error":"Token has been revoked"})),
+                    actix_web::error::ErrorUnauthorized(ErrorResponse {
+                        error: "Token has been revoked".to_string(),
+                    }),
                     req,
                 ));
             }
             Err(_) => {
                 return Err((
-                    actix_web::error::ErrorInternalServerError(
-                        json!({"error":"Failed to check token revocation"}),
-                    ),
+                    actix_web::error::ErrorInternalServerError(ErrorResponse {
+                        error: "Failed to check token revocation".to_string(),
+                    }),
                     req,
                 ));
             }
@@ -282,9 +289,9 @@ pub async fn refresh_validator(
     } else {
         warn!("Invalid or expired refresh token");
         Err((
-            actix_web::error::ErrorUnauthorized(
-                json!({"error":"Invalid or expired refresh token"}),
-            ),
+            actix_web::error::ErrorUnauthorized(ErrorResponse {
+                error: "Invalid or expired refresh token".to_string(),
+            }),
             req,
         ))
     }
@@ -300,26 +307,26 @@ pub async fn basic_validator(
         None => {
             error!("Application state not configured");
             return Err((
-                actix_web::error::ErrorInternalServerError(
-                    json!({"error":"Internal server error"}),
-                ),
+                actix_web::error::ErrorInternalServerError(ErrorResponse {
+                    error: "Internal server error".to_string(),
+                }),
                 req,
             ));
         }
     };
     let cache = &state.cache;
-    let client = match get_client(state.pool.clone()).await {
+    let client = match get_client(&state.pool).await {
         Ok(c) => c,
         Err(_) => {
             return Err((
-                actix_web::error::ErrorInternalServerError(
-                    json!({"error":"Database connection error"}),
-                ),
+                actix_web::error::ErrorInternalServerError(ErrorResponse {
+                    error: "Database connection error".to_string(),
+                }),
                 req,
             ));
         }
     };
-    let user = {
+    let auth_entry = {
         cache
             .get(&credentials.user_id().to_string())
             .filter(|cached| {
@@ -329,15 +336,15 @@ pub async fn basic_validator(
             .map(|cached| cached.user.clone())
     };
     // Evict expired entry if TTL expired
-    if user.is_none()
+    if auth_entry.is_none()
         && let Some(cached) = cache.get(&credentials.user_id().to_string())
         && (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS
     {
         drop(cached);
         cache.remove(&credentials.user_id().to_string());
     }
-    let user = match user {
-        Some(u) => u,
+    let auth_entry = match auth_entry {
+        Some(entry) => entry,
         None => {
             // Enforce max cache size before inserting
             if cache.len() >= CACHE_MAX_SIZE {
@@ -355,19 +362,25 @@ pub async fn basic_validator(
             }
             match get_user_by_email(&client, credentials.user_id()).await {
                 Ok(u) => {
+                    let entry = AuthCacheEntry {
+                        user_id: u.user_id,
+                        password_hash: u.password.clone(),
+                    };
                     cache.insert(
                         credentials.user_id().to_string(),
                         CachedUser {
-                            user: u.clone(),
+                            user: entry.clone(),
                             cached_at: Utc::now(),
                         },
                     );
-                    u
+                    entry
                 }
                 Err(_) => {
                     warn!(user = %credentials.user_id(), "Unknown user attempted authentication");
                     return Err((
-                        actix_web::error::ErrorUnauthorized(json!({"error":"Unauthorized access"})),
+                        actix_web::error::ErrorUnauthorized(ErrorResponse {
+                            error: "Unauthorized access".to_string(),
+                        }),
                         req,
                     ));
                 }
@@ -375,14 +388,14 @@ pub async fn basic_validator(
         }
     };
     if let Some(pswd) = credentials.password() {
-        let parsed_hash = match PasswordHash::new(&user.password) {
+        let parsed_hash = match PasswordHash::new(&auth_entry.password_hash) {
             Ok(h) => h,
             Err(_) => {
                 warn!(user = %credentials.user_id(), "Malformed password hash in database");
                 return Err((
-                    actix_web::error::ErrorInternalServerError(
-                        json!({"error":"Internal server error"}),
-                    ),
+                    actix_web::error::ErrorInternalServerError(ErrorResponse {
+                        error: "Internal server error".to_string(),
+                    }),
                     req,
                 ));
             }
@@ -392,7 +405,9 @@ pub async fn basic_validator(
             Err(_) => {
                 warn!(user = %credentials.user_id(), "Invalid password for user");
                 Err((
-                    actix_web::error::ErrorUnauthorized(json!({"error":"Unauthorized access"})),
+                    actix_web::error::ErrorUnauthorized(ErrorResponse {
+                        error: "Unauthorized access".to_string(),
+                    }),
                     req,
                 ))
             }
@@ -400,7 +415,9 @@ pub async fn basic_validator(
     } else {
         warn!(user = %credentials.user_id(), "Missing password in basic auth");
         Err((
-            actix_web::error::ErrorUnauthorized(json!({"error":"Unauthorized access"})),
+            actix_web::error::ErrorUnauthorized(ErrorResponse {
+                error: "Unauthorized access".to_string(),
+            }),
             req,
         ))
     }
@@ -471,7 +488,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(token_data.claims.sub, user_id);
-        assert_eq!(token_data.claims.token_type, TOKEN_TYPE_ACCESS);
+        assert_eq!(token_data.claims.token_type, TokenType::Access);
         let expected_exp = Utc::now().timestamp() + ACCESS_TOKEN_DURATION_MINUTES * 60;
         assert!(
             (token_data.claims.exp - expected_exp).abs() < 60,
@@ -492,7 +509,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(token_data.claims.sub, user_id);
-        assert_eq!(token_data.claims.token_type, TOKEN_TYPE_REFRESH);
+        assert_eq!(token_data.claims.token_type, TokenType::Refresh);
         let expected_exp = Utc::now().timestamp() + REFRESH_TOKEN_DURATION_DAYS * 86400;
         assert!(
             (token_data.claims.exp - expected_exp).abs() < 60,
@@ -529,7 +546,7 @@ mod tests {
                 exp: (Utc::now() - Duration::try_hours(1).unwrap()).timestamp(),
                 iat: (Utc::now() - Duration::try_hours(2).unwrap()).timestamp(),
                 jti: Uuid::now_v7(),
-                token_type: TOKEN_TYPE_ACCESS.to_string(),
+                token_type: TokenType::Access,
             };
             encode(&Header::default(), &claims, &encoding_key).unwrap()
         };
@@ -601,17 +618,14 @@ mod tests {
     #[actix_web::test]
     async fn invalidate_cache_removes_existing_entry() {
         let state = test_state();
-        let user = crate::models::UpdateUserEntry {
+        let auth_entry = AuthCacheEntry {
             user_id: Uuid::now_v7(),
-            firstname: "Test".to_string(),
-            lastname: "User".to_string(),
-            email: "test@example.com".to_string(),
-            password: "password123".to_string(),
+            password_hash: "hashed_password".to_string(),
         };
         state.cache.insert(
             "test@example.com".to_string(),
             CachedUser {
-                user,
+                user: auth_entry,
                 cached_at: Utc::now(),
             },
         );

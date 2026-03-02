@@ -3,8 +3,8 @@ use crate::{
     errors::{Error, ErrorResponse},
     handlers::*,
     middleware::auth::{
-        generate_token_pair, invalidate_cache, is_token_revoked, revoke_token, verify_jwt,
-        REFRESH_TOKEN_DURATION_DAYS, TOKEN_TYPE_REFRESH,
+        REFRESH_TOKEN_DURATION_DAYS, generate_token_pair, invalidate_cache, is_token_revoked,
+        revoke_token, verify_jwt,
     },
     models::*,
     validate::validate,
@@ -29,7 +29,7 @@ use uuid::Uuid;
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn get_users(state: Data<State>) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     let users = db::get_users(&client).await?;
     Ok(HttpResponse::Ok().json(users))
 }
@@ -49,7 +49,7 @@ pub async fn get_users(state: Data<State>) -> Result<impl Responder, Error> {
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn get_user(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     let user = db::get_user(&client, path.into_inner()).await?;
     Ok(HttpResponse::Ok().json(user))
 }
@@ -65,13 +65,14 @@ pub async fn get_user(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
 )]
 #[instrument(skip(basic, state), level = "debug")]
 pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Responder, Error> {
-    let cache = &state.cache;
-    if let Some(cached) = cache.get(&basic.user_id().to_string()) {
-        let auth = generate_token_pair(cached.user.user_id, &state.jwtsecret)?;
-        Ok(HttpResponse::Ok().json(auth))
-    } else {
-        return Err(Error::Unauthorized("Unauthorized".to_string()));
-    }
+    // Credentials verified by basic_validator middleware; cache is guaranteed populated.
+    let user_id = state
+        .cache
+        .get(&basic.user_id().to_string())
+        .map(|cached| cached.user.user_id)
+        .ok_or_else(|| Error::Unauthorized("Unauthorized".to_string()))?;
+    let auth = generate_token_pair(user_id, &state.jwtsecret)?;
+    Ok(HttpResponse::Ok().json(auth))
 }
 
 #[utoipa::path(
@@ -92,14 +93,14 @@ pub async fn refresh_token(
 
     // Defence-in-depth: refresh_validator middleware already rejects non-refresh tokens
     // before this handler is reached, but we check again here as a safety net.
-    if claims.claims.token_type != TOKEN_TYPE_REFRESH {
+    if claims.claims.token_type != TokenType::Refresh {
         return Err(Error::Unauthorized(
             "Invalid token type, refresh token required".to_string(),
         ));
     }
 
     // Verify that the user still exists (also need client for revocation checks)
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
 
     // Check if revoked
     if is_token_revoked(&client, &state, &claims.claims.jti.to_string()).await? {
@@ -109,8 +110,9 @@ pub async fn refresh_token(
     db::get_user(&client, claims.claims.sub).await?;
 
     // Revoke the old refresh token (rotation)
-    let expires_at = DateTime::<Utc>::from_timestamp(claims.claims.exp, 0)
-        .unwrap_or_else(|| Utc::now() + Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration"));
+    let expires_at = DateTime::<Utc>::from_timestamp(claims.claims.exp, 0).unwrap_or_else(|| {
+        Utc::now() + Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration")
+    });
     revoke_token(&client, &state, &claims.claims.jti.to_string(), expires_at).await?;
 
     // Issue a new token pair
@@ -141,8 +143,10 @@ pub async fn revoke_user_token(
     // unless the requester is a global admin.
     let requester_id = requesting_user_id(&req)
         .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+
+    let client: Client = get_client(&state.pool).await?;
+
     if token_data.claims.sub != requester_id {
-        let client: Client = get_client(state.pool.clone()).await?;
         if !db::is_admin(&client, requester_id).await? {
             return Err(Error::Forbidden(
                 "Cannot revoke another user's token".to_string(),
@@ -151,9 +155,10 @@ pub async fn revoke_user_token(
     }
 
     // Revoke by jti — persist to DB
-    let client: Client = get_client(state.pool.clone()).await?;
-    let expires_at = DateTime::<Utc>::from_timestamp(token_data.claims.exp, 0)
-        .unwrap_or_else(|| Utc::now() + Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration"));
+    let expires_at =
+        DateTime::<Utc>::from_timestamp(token_data.claims.exp, 0).unwrap_or_else(|| {
+            Utc::now() + Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration")
+        });
     revoke_token(
         &client,
         &state,
@@ -169,14 +174,12 @@ pub async fn revoke_user_token(
     post,
     request_body = CreateUserEntry,
     path = "/api/v1.0/users",
-    params(
-        CreateUserEntry
-    ),
     responses(
         (status = 201, description = "User created", body = UserEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - admin or team admin role required", body = ErrorResponse),
         (status = 404, description = "User not created", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
@@ -187,7 +190,7 @@ pub async fn create_user(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
 
     // RBAC: admin or team admin
     require_admin_or_team_admin(&client, &req).await?;
@@ -221,7 +224,7 @@ pub async fn delete_user(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let uid = path.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
 
     // RBAC: self, global admin, or team admin of a shared team
     require_self_or_admin_or_team_admin(&client, &req, uid).await?;
@@ -260,7 +263,7 @@ pub async fn delete_user_by_email(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let email = path.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
 
     // RBAC: self, global admin, or team admin of a shared team
     match db::get_user_by_email(&client, &email).await {
@@ -293,10 +296,10 @@ pub async fn delete_user_by_email(
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - can only update own account, requires admin, or team admin of a shared team", body = ErrorResponse),
         (status = 404, description = "User not updated", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     params(
-        ("user_id", description = "Unique UUID of the User"),
-        UpdateUserRequest
+        ("user_id", description = "Unique UUID of the User")
     ),
     security(("bearer_auth" = [])),
 )]
@@ -308,7 +311,7 @@ pub async fn update_user(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let uid = path.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
 
     // RBAC: self, global admin, or team admin of a shared team
     require_self_or_admin_or_team_admin(&client, &req, uid).await?;
@@ -333,7 +336,7 @@ pub async fn update_user(
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn user_teams(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     let teams = db::get_user_teams(&client, path.into_inner()).await?;
     Ok(HttpResponse::Ok().json(teams))
 }

@@ -50,6 +50,19 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
+impl std::fmt::Display for ErrorResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            serde_json::to_string(self).unwrap_or_else(|_| format!(
+                r#"{{"error":"{}"}}"#,
+                self.error
+            ))
+        )
+    }
+}
+
 pub fn json_error_handler(err: JsonPayloadError, _req: &HttpRequest) -> AError {
     Error::ActixJson(err).into()
 }
@@ -103,17 +116,10 @@ impl ResponseError for Error {
                         })
                     }
                     None => {
-                        if e.to_string() == "query returned an unexpected number of rows" {
-                            warn!(error = %e, "DB record not found");
-                            HttpResponse::NotFound().json(ErrorResponse {
-                                error: "record not found".to_string(),
-                            })
-                        } else {
-                            error!(error = %e, "DB error");
-                            HttpResponse::InternalServerError().json(ErrorResponse {
-                                error: "Internal server error".to_string(),
-                            })
-                        }
+                        error!(error = %e, "DB error");
+                        HttpResponse::InternalServerError().json(ErrorResponse {
+                            error: "Internal server error".to_string(),
+                        })
                     }
                 }
             }
@@ -140,9 +146,6 @@ impl ResponseError for Error {
                     error: e.to_string(),
                 })
             }
-            // Error::RustlsPEMError(e) => HttpResponse::InternalServerError().json(ErrorResponse {
-            //     error: e.to_string(),
-            // }),
             Error::Config(e) => {
                 error!(error = %e, "Configuration error");
                 HttpResponse::InternalServerError().json(ErrorResponse {

@@ -39,8 +39,10 @@ pub async fn get_user(client: &Client, user_id: Uuid) -> Result<UserEntry, Error
         .map_err(Error::Db)?;
 
     client
-        .query_one(&statement, &[&user_id])
+        .query_opt(&statement, &[&user_id])
         .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("User not found".to_string()))
         .map(UserEntry::from_row)?
         .map_err(Error::DbMapper)
 }
@@ -52,8 +54,10 @@ pub async fn get_user_by_email(client: &Client, email: &str) -> Result<UpdateUse
         .map_err(Error::Db)?;
 
     client
-        .query_one(&statement, &[&email])
+        .query_opt(&statement, &[&email])
         .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("User not found".to_string()))
         .map(UpdateUserEntry::from_row)?
         .map_err(Error::DbMapper)
 }

@@ -672,14 +672,14 @@ async fn create_item_returns_entry_with_price() {
         &client,
         CreateItemEntry {
             descr: descr.clone(),
-            price: Some(Decimal::from_str("12.50").unwrap()),
+            price: Decimal::from_str("12.50").unwrap(),
         },
     )
     .await
     .expect("create_item should succeed");
 
     assert_eq!(item.descr, descr);
-    assert_eq!(item.price, Some(Decimal::from_str("12.50").unwrap()));
+    assert_eq!(item.price, Decimal::from_str("12.50").unwrap());
     assert!(!item.item_id.is_nil());
 
     // Cleanup
@@ -698,13 +698,13 @@ async fn create_item_with_null_price() {
         &client,
         CreateItemEntry {
             descr: descr.clone(),
-            price: None,
+            price: Decimal::ZERO,
         },
     )
     .await
-    .expect("create_item with null price should succeed");
+    .expect("create_item with zero price should succeed");
 
-    assert_eq!(item.price, None);
+    assert_eq!(item.price, Decimal::ZERO);
 
     // Cleanup
     db::delete_item(&client, item.item_id)
@@ -722,7 +722,7 @@ async fn get_item_by_id() {
         &client,
         CreateItemEntry {
             descr: descr.clone(),
-            price: Some(Decimal::from_str("5.00").unwrap()),
+            price: Decimal::from_str("5.00").unwrap(),
         },
     )
     .await
@@ -764,7 +764,7 @@ async fn update_item_changes_fields() {
         &client,
         CreateItemEntry {
             descr: descr.clone(),
-            price: Some(Decimal::from_str("1.00").unwrap()),
+            price: Decimal::from_str("1.00").unwrap(),
         },
     )
     .await
@@ -776,14 +776,14 @@ async fn update_item_changes_fields() {
         created.item_id,
         UpdateItemEntry {
             descr: new_descr.clone(),
-            price: Some(Decimal::from_str("99.99").unwrap()),
+            price: Decimal::from_str("99.99").unwrap(),
         },
     )
     .await
     .expect("update_item should succeed");
 
     assert_eq!(updated.descr, new_descr);
-    assert_eq!(updated.price, Some(Decimal::from_str("99.99").unwrap()));
+    assert_eq!(updated.price, Decimal::from_str("99.99").unwrap());
 
     // Cleanup
     db::delete_item(&client, created.item_id)
@@ -797,7 +797,7 @@ async fn delete_item_returns_true_then_false() {
     let client = test_client().await;
     let descr = format!("dbtest-item-{}", Uuid::now_v7());
 
-    let item = db::create_item(&client, CreateItemEntry { descr, price: None })
+    let item = db::create_item(&client, CreateItemEntry { descr, price: Decimal::ZERO })
         .await
         .unwrap();
 
@@ -826,7 +826,7 @@ async fn create_duplicate_item_returns_error() {
         &client,
         CreateItemEntry {
             descr: descr.clone(),
-            price: None,
+            price: Decimal::ZERO,
         },
     )
     .await
@@ -836,7 +836,7 @@ async fn create_duplicate_item_returns_error() {
         &client,
         CreateItemEntry {
             descr: descr.clone(),
-            price: None,
+            price: Decimal::ZERO,
         },
     )
     .await;
@@ -1088,7 +1088,7 @@ async fn create_order_item_returns_entry() {
         &client,
         CreateItemEntry {
             descr: item_descr,
-            price: Some(Decimal::from_str("2.00").unwrap()),
+            price: Decimal::from_str("2.00").unwrap(),
         },
     )
     .await
@@ -1111,7 +1111,7 @@ async fn create_order_item_returns_entry() {
         team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
-            amt: Some(5),
+            amt: 5,
         },
     )
     .await
@@ -1120,7 +1120,7 @@ async fn create_order_item_returns_entry() {
     assert_eq!(order_item.orders_teamorders_id, order.teamorders_id);
     assert_eq!(order_item.orders_item_id, item.item_id);
     assert_eq!(order_item.orders_team_id, team_id);
-    assert_eq!(order_item.amt, Some(5));
+    assert_eq!(order_item.amt, 5);
 
     // Cleanup (cascade: deleting order deletes order items)
     db::delete_team_order(&client, team_id, order.teamorders_id)
@@ -1167,7 +1167,7 @@ async fn get_order_item_by_id() {
         &client,
         CreateItemEntry {
             descr: item_descr,
-            price: None,
+            price: Decimal::ZERO,
         },
     )
     .await
@@ -1190,7 +1190,7 @@ async fn get_order_item_by_id() {
         team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
-            amt: Some(3),
+            amt: 3,
         },
     )
     .await
@@ -1200,7 +1200,7 @@ async fn get_order_item_by_id() {
         .await
         .expect("get_order_item should succeed");
     assert_eq!(fetched.orders_item_id, item.item_id);
-    assert_eq!(fetched.amt, Some(3));
+    assert_eq!(fetched.amt, 3);
 
     // Cleanup
     db::delete_team_order(&client, team_id, order.teamorders_id)
@@ -1222,7 +1222,7 @@ async fn update_order_item_changes_amt() {
         &client,
         CreateItemEntry {
             descr: item_descr,
-            price: None,
+            price: Decimal::ZERO,
         },
     )
     .await
@@ -1245,7 +1245,7 @@ async fn update_order_item_changes_amt() {
         team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
-            amt: Some(1),
+            amt: 1,
         },
     )
     .await
@@ -1256,12 +1256,12 @@ async fn update_order_item_changes_amt() {
         order.teamorders_id,
         item.item_id,
         team_id,
-        UpdateOrderEntry { amt: Some(42) },
+        UpdateOrderEntry { amt: 42 },
     )
     .await
     .expect("update_order_item should succeed");
 
-    assert_eq!(updated.amt, Some(42));
+    assert_eq!(updated.amt, 42);
 
     // Cleanup
     db::delete_team_order(&client, team_id, order.teamorders_id)
@@ -1283,7 +1283,7 @@ async fn delete_order_item_returns_true_then_false() {
         &client,
         CreateItemEntry {
             descr: item_descr,
-            price: None,
+            price: Decimal::ZERO,
         },
     )
     .await
@@ -1306,7 +1306,7 @@ async fn delete_order_item_returns_true_then_false() {
         team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
-            amt: Some(1),
+            amt: 1,
         },
     )
     .await
@@ -1343,7 +1343,7 @@ async fn duplicate_order_item_returns_error() {
         &client,
         CreateItemEntry {
             descr: item_descr,
-            price: None,
+            price: Decimal::ZERO,
         },
     )
     .await
@@ -1366,7 +1366,7 @@ async fn duplicate_order_item_returns_error() {
         team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
-            amt: Some(1),
+            amt: 1,
         },
     )
     .await
@@ -1379,7 +1379,7 @@ async fn duplicate_order_item_returns_error() {
         team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
-            amt: Some(2),
+            amt: 2,
         },
     )
     .await;
@@ -1995,9 +1995,11 @@ async fn cleanup_expired_tokens_removes_old_entries() {
         .await
         .expect("revoke should succeed");
 
-    // Verify it's there
-    let revoked = db::is_token_revoked_db(&client, jti).await.unwrap();
-    assert!(revoked, "should be in blacklist before cleanup");
+    // Note: we do NOT assert the token exists before cleanup here because a
+    // concurrent test (cleanup_expired_tokens_preserves_valid_entries) also
+    // calls cleanup_expired_tokens, which may remove our already-expired
+    // entry before we check.  The point of this test is that cleanup removes
+    // expired entries — which we verify below.
 
     // Run cleanup — don't assert on global count since parallel tests may
     // insert/remove expired tokens concurrently
@@ -2099,7 +2101,7 @@ async fn update_item_nonexistent_returns_error() {
         Uuid::now_v7(),
         UpdateItemEntry {
             descr: "ghost".to_string(),
-            price: None,
+            price: Decimal::ZERO,
         },
     )
     .await;
@@ -2136,7 +2138,7 @@ async fn update_order_item_nonexistent_returns_error() {
         Uuid::now_v7(),
         Uuid::now_v7(),
         Uuid::now_v7(),
-        UpdateOrderEntry { amt: Some(1) },
+        UpdateOrderEntry { amt: 1 },
     )
     .await;
     assert!(

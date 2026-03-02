@@ -22,7 +22,7 @@ use uuid::Uuid;
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn get_teams(state: Data<State>) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     let teams = db::get_teams(&client).await?;
     Ok(HttpResponse::Ok().json(teams))
 }
@@ -42,7 +42,7 @@ pub async fn get_teams(state: Data<State>) -> Result<impl Responder, Error> {
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn get_team(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     let team = db::get_team(&client, path.into_inner()).await?;
     Ok(HttpResponse::Ok().json(team))
 }
@@ -56,6 +56,7 @@ pub async fn get_team(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 409, description = "Team already exists", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
@@ -66,7 +67,7 @@ pub async fn create_team(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
     let team = db::create_team(&client, json.into_inner()).await?;
     let mut response = HttpResponse::Created();
@@ -97,7 +98,7 @@ pub async fn delete_team(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let team_id = tid.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
     let deleted = db::delete_team(&client, team_id).await?;
     if deleted {
@@ -116,6 +117,7 @@ pub async fn delete_team(
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 404, description = "Team not updated", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team")
@@ -131,7 +133,7 @@ pub async fn update_team(
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
     let team_id = path.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
     let team = db::update_team(&client, team_id, json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(team))
@@ -152,7 +154,7 @@ pub async fn update_team(
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn team_users(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     let users = db::get_team_users(&client, path.into_inner()).await?;
     Ok(HttpResponse::Ok().json(users))
 }
@@ -174,7 +176,7 @@ pub async fn get_team_orders(
     state: Data<State>,
     team_id: Path<Uuid>,
 ) -> Result<impl Responder, Error> {
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     let orders = db::get_team_orders(&client, team_id.into_inner()).await?;
     Ok(HttpResponse::Ok().json(orders))
 }
@@ -199,7 +201,7 @@ pub async fn get_team_order(
     path: Path<(Uuid, Uuid)>,
 ) -> Result<impl Responder, Error> {
     let (team_id, order_id) = path.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     let order = db::get_team_order(&client, team_id, order_id).await?;
     Ok(HttpResponse::Ok().json(order))
 }
@@ -212,6 +214,7 @@ pub async fn get_team_order(
         (status = 201, description = "Order created", body = TeamOrderEntry),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team")
@@ -227,7 +230,7 @@ pub async fn create_team_order(
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
     let tid = team_id.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_team_member(&client, &req, tid).await?;
     let order = db::create_team_order(&client, tid, json.into_inner()).await?;
     Ok(HttpResponse::Created().json(order))
@@ -255,7 +258,7 @@ pub async fn delete_team_order(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let (team_id, order_id) = path.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_team_member(&client, &req, team_id).await?;
     let deleted = db::delete_team_order(&client, team_id, order_id).await?;
     if deleted {
@@ -285,7 +288,7 @@ pub async fn delete_team_orders(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let tid = team_id.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_team_admin(&client, &req, tid).await?;
     let count = db::delete_team_orders(&client, tid).await?;
     Ok(HttpResponse::Ok().json(DeletedResponse { deleted: count > 0 }))
@@ -300,6 +303,7 @@ pub async fn delete_team_orders(
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
         (status = 404, description = "Order not found", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team"),
@@ -316,7 +320,7 @@ pub async fn update_team_order(
 ) -> Result<impl Responder, Error> {
     validate(&json)?;
     let (team_id, order_id) = path.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_team_member(&client, &req, team_id).await?;
     let order = db::update_team_order(&client, team_id, order_id, json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(order))
@@ -348,7 +352,7 @@ pub async fn add_team_member(
 ) -> Result<impl Responder, Error> {
     let tid = team_id.into_inner();
     let member = json.into_inner();
-    let mut client: Client = get_client(state.pool.clone()).await?;
+    let mut client: Client = get_client(&state.pool).await?;
     require_team_admin(&client, &req, tid).await?;
     let result = db::add_team_member(&mut client, tid, member.user_id, member.role_id).await?;
     Ok(HttpResponse::Created().json(result))
@@ -376,7 +380,7 @@ pub async fn remove_team_member(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let (team_id, user_id) = path.into_inner();
-    let client: Client = get_client(state.pool.clone()).await?;
+    let client: Client = get_client(&state.pool).await?;
     require_team_admin(&client, &req, team_id).await?;
     let deleted = db::remove_team_member(&client, team_id, user_id).await?;
     if deleted {
@@ -395,6 +399,7 @@ pub async fn remove_team_member(
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden - team admin role required", body = ErrorResponse),
         (status = 404, description = "Member not found in team", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team"),
@@ -410,7 +415,7 @@ pub async fn update_member_role(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let (team_id, user_id) = path.into_inner();
-    let mut client: Client = get_client(state.pool.clone()).await?;
+    let mut client: Client = get_client(&state.pool).await?;
     require_team_admin(&client, &req, team_id).await?;
     let result =
         db::update_member_role(&mut client, team_id, user_id, json.into_inner().role_id).await?;

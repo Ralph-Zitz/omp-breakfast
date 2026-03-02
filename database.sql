@@ -45,8 +45,8 @@ CREATE TABLE users (
   lastname varchar(50) NOT NULL,
   email varchar(75) NOT NULL,
   password text NOT NULL,
-  created timestamptz DEFAULT CURRENT_TIMESTAMP,
-  changed timestamptz DEFAULT CURRENT_TIMESTAMP,
+  created timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (email)
 );
 
@@ -59,8 +59,8 @@ CREATE TABLE teams (
   team_id uuid DEFAULT uuidv7 () PRIMARY KEY,
   tname text NOT NULL,
   descr text,
-  created timestamptz DEFAULT CURRENT_TIMESTAMP,
-  changed timestamptz DEFAULT CURRENT_TIMESTAMP,
+  created timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (tname)
 );
 
@@ -70,8 +70,8 @@ CREATE INDEX idx_teams_name ON teams (tname);
 CREATE TABLE roles (
   role_id uuid DEFAULT uuidv7 () PRIMARY KEY,
   title text NOT NULL,
-  created timestamptz DEFAULT CURRENT_TIMESTAMP,
-  changed timestamptz DEFAULT CURRENT_TIMESTAMP,
+  created timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (title)
 );
 
@@ -79,9 +79,9 @@ CREATE TABLE roles (
 CREATE TABLE items (
   item_id uuid DEFAULT uuidv7 () PRIMARY KEY,
   descr text NOT NULL,
-  price numeric(10, 2) CHECK (price >= 0),
-  created timestamptz DEFAULT CURRENT_TIMESTAMP,
-  changed timestamptz DEFAULT CURRENT_TIMESTAMP,
+  price numeric(10, 2) NOT NULL CHECK (price >= 0),
+  created timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (descr)
 );
 
@@ -89,8 +89,9 @@ CREATE TABLE items (
 CREATE TABLE memberof (
   memberof_team_id uuid,
   memberof_user_id uuid,
-  memberof_role_id uuid,
+  memberof_role_id uuid NOT NULL,
   joined timestamptz DEFAULT CURRENT_TIMESTAMP,
+  changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (memberof_team_id, memberof_user_id),
   FOREIGN KEY (memberof_team_id) REFERENCES teams (team_id) ON DELETE CASCADE,
   FOREIGN KEY (memberof_user_id) REFERENCES users (user_id) ON DELETE CASCADE,
@@ -108,23 +109,27 @@ CREATE TABLE teamorders (
   teamorders_user_id uuid,
   duedate date,
   closed boolean NOT NULL DEFAULT FALSE,
-  created timestamptz DEFAULT CURRENT_TIMESTAMP,
-  changed timestamptz DEFAULT CURRENT_TIMESTAMP,
+  created timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (teamorders_team_id) REFERENCES teams (team_id) ON DELETE CASCADE,
   FOREIGN KEY (teamorders_user_id) REFERENCES users (user_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX idx_teamorders_id_due ON teamorders (teamorders_team_id, duedate);
 
+CREATE INDEX idx_teamorders_user ON teamorders (teamorders_user_id);
+
 /* Orders table */
 CREATE TABLE orders (
   orders_teamorders_id uuid,
   orders_item_id uuid,
   orders_team_id uuid,
-  amt int CHECK (amt >= 0),
+  amt int NOT NULL DEFAULT 1 CHECK (amt >= 0),
+  created timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (orders_teamorders_id, orders_item_id),
   FOREIGN KEY (orders_teamorders_id) REFERENCES teamorders (teamorders_id) ON DELETE CASCADE,
-  FOREIGN KEY (orders_item_id) REFERENCES items (item_id) ON DELETE CASCADE,
+  FOREIGN KEY (orders_item_id) REFERENCES items (item_id) ON DELETE RESTRICT,
   FOREIGN KEY (orders_team_id) REFERENCES teams (team_id) ON DELETE CASCADE
 );
 
@@ -159,7 +164,9 @@ CREATE TRIGGER enforce_order_team_id
   FOR EACH ROW
   EXECUTE PROCEDURE enforce_order_team_consistency ();
 
-CREATE INDEX idx_orders_tid ON orders (orders_teamorders_id);
+CREATE INDEX idx_orders_team ON orders (orders_team_id);
+
+CREATE INDEX idx_orders_item ON orders (orders_item_id);
 
 /* Token blacklist table — persists revoked JWT tokens across server restarts */
 CREATE TABLE token_blacklist (
@@ -208,6 +215,16 @@ CREATE TRIGGER update_items_changed_at
 
 CREATE TRIGGER update_teamorders_changed_at
   BEFORE UPDATE ON teamorders
+  FOR EACH ROW
+  EXECUTE PROCEDURE update_changed_timestamp ();
+
+CREATE TRIGGER update_orders_changed_at
+  BEFORE UPDATE ON orders
+  FOR EACH ROW
+  EXECUTE PROCEDURE update_changed_timestamp ();
+
+CREATE TRIGGER update_memberof_changed_at
+  BEFORE UPDATE ON memberof
   FOR EACH ROW
   EXECUTE PROCEDURE update_changed_timestamp ();
 

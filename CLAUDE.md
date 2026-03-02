@@ -253,7 +253,7 @@ When asked to **assess the project** (or "project assessment"), perform the foll
 
 When writing to the findings file, follow these rules:
 
-- **Mark resolved items.** When an item is fixed, mark it `[x]` in its current severity section. Do not move it yet — archival happens in step 7.
+- **Mark resolved items.** When an item is fixed, mark it `[x]` in its current severity section. Do not move it yet — archival happens in step 7. **Before marking any item as resolved, all project tests must pass.** Run `cargo test` (unit tests) and `make test-integration` (integration tests) — if either suite has failures, fix the regressions before marking items `[x]`. If only frontend code changed, `make test-frontend` may substitute for integration tests.
 - **Update open items.** If a previously tracked `[ ]` item is still found by the current assessment, update its description, file references, and line numbers to reflect the current state of the code (lines may have shifted).
 - **Remove stale items.** If a previously tracked `[ ]` item is no longer surfaced by any command (i.e., it was fixed but not checked off), mark it `[x]` with a note: "Resolved — no longer surfaced by assessment."
 - **Append new items.** If the assessment surfaces new findings not already in the file, append them under the appropriate severity section and category heading (or create a new heading).
@@ -306,9 +306,12 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ## Required Test Runs
 
-Before committing any backend changes, **both** unit tests and integration tests must pass:
+Before committing any changes, **all** applicable test suites must pass:
 
 1. Run `cargo test` (unit tests — must show 0 failures)
 2. Run `make test-integration` (integration tests — must show 0 failures)
+3. Run `make test-frontend` (frontend WASM tests — must show 0 failures)
 
-Do not commit if either test suite fails. If only frontend code changed, `make test-frontend` may be substituted for step 2.
+Do not commit if any test suite fails. If only frontend code changed, step 2 may be skipped. If only backend code changed, step 3 may be skipped.
+
+When asked to "run all tests", run all three suites (or equivalently `make test-all`).

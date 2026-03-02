@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-02 (full re-assessment round 2 — 56 new findings: #130–#185; #55/#122 superseded by #132; #125 upgraded to Important; #108 resolved)
+Last assessed: 2025-07-17
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -14,22 +14,6 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Critical Items
 
-### Database — `update_team_order` Can Set `closed` to NULL
-
-- [ ] **#130 — Sending `null` for `closed` bypasses `guard_open_order` (which treats NULL as open via `.unwrap_or(false)`)**
-  - Files: `src/db/orders.rs` (UPDATE query), `src/models.rs` (`UpdateTeamOrderEntry`)
-  - Problem: `UpdateTeamOrderEntry.closed` is `Option<bool>`. When `closed` is `None`, the SQL `SET closed = $3` writes NULL to the DB. `guard_open_order` uses `.unwrap_or(false)` — so NULL counts as "open." An attacker who is a team member could re-open a closed order.
-  - Fix: Use `COALESCE($3, closed)` in the SQL so NULL preserves the existing value, or make `closed` a required `bool` in `UpdateTeamOrderEntry`.
-  - Source commands: `db-review`, `review`
-
-### Database — Missing Index on `orders.orders_item_id`
-
-- [ ] **#131 — FK RESTRICT lookups require sequential scan after V3 changed CASCADE→RESTRICT**
-  - Files: `migrations/V3__indexes_constraints.sql`, `migrations/V1__initial_schema.sql`
-  - Problem: V3 changed the FK on `orders.orders_item_id` from CASCADE to RESTRICT. When deleting an item, PostgreSQL must verify no orders reference it. The composite PK `(orders_teamorders_id, orders_item_id)` cannot serve this lookup because `orders_item_id` is the second column.
-  - Fix: Add `CREATE INDEX IF NOT EXISTS idx_orders_item ON orders (orders_item_id);` in a V4 migration.
-  - Source commands: `db-review`
-
 ### Dependencies — `jsonwebtoken` Pulls Vulnerable and Unnecessary Crypto Crates
 
 - [ ] **#132 — `rust_crypto` feature enables ~15 unused crates including vulnerable `rsa` (RUSTSEC-2023-0071); granular `["hmac", "sha2"]` features are available**
@@ -40,86 +24,6 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
-### Database — Nullable Timestamp Columns Across All Tables
-
-- [ ] **#133 — `created` and `changed` columns lack NOT NULL; Rust models use non-Optional types**
-  - File: `migrations/V1__initial_schema.sql` (users, teams, roles, items, teamorders)
-  - Problem: All timestamp columns use `DEFAULT CURRENT_TIMESTAMP` but no `NOT NULL`. An explicit NULL insert would cause a `FromRow` conversion error at runtime since the Rust models use `DateTime<Utc>` (non-optional).
-  - Fix: V4 migration: `ALTER TABLE ... ALTER COLUMN created SET NOT NULL` and same for `changed` on all 5 entity tables.
-  - Source commands: `db-review`
-
-### Database — `items.price` Allows NULL
-
-- [ ] **#134 — Item without a price makes order totals impossible to calculate**
-  - Files: `migrations/V1__initial_schema.sql`, `src/models.rs` (`ItemEntry`, `CreateItemEntry`, `UpdateItemEntry`)
-  - Problem: `price numeric(10,2) CHECK (price >= 0)` has no NOT NULL. Rust models use `Option<Decimal>`.
-  - Fix: Add NOT NULL to schema and change Rust type from `Option<Decimal>` to `Decimal`.
-  - Source commands: `db-review`
-
-### Database — `orders.amt` Allows NULL
-
-- [ ] **#135 — Order item without a quantity is meaningless**
-  - Files: `migrations/V1__initial_schema.sql`, `src/models.rs` (`OrderEntry`, `CreateOrderEntry`, `UpdateOrderEntry`)
-  - Problem: `amt int CHECK (amt >= 0)` has no NOT NULL. Rust models use `Option<i32>`.
-  - Fix: Add `NOT NULL DEFAULT 1` to schema and change Rust type from `Option<i32>` to `i32`.
-  - Source commands: `db-review`
-
-### Database — `orders` Table Has No Timestamps
-
-- [ ] **#136 — Unlike every other entity table, `orders` lacks `created`/`changed` columns**
-  - File: `migrations/V1__initial_schema.sql` (orders table definition)
-  - Problem: No audit trail for when order items were added or modified.
-  - Fix: V4 migration: add `created` and `changed` columns with NOT NULL defaults and BEFORE UPDATE trigger, consistent with other tables.
-  - Source commands: `db-review`
-
-### Error Handling — Fragile 404 Detection via String Matching
-
-- [ ] **#137 — 404 detection relies on matching `"query returned an unexpected number of rows"` string from tokio-postgres**
-  - File: `src/errors.rs` (Error::Db handler)
-  - Problem: If tokio-postgres ever changes this error message wording, all 404 responses silently degrade to 500s.
-  - Fix: Use `query_opt` + explicit `Error::NotFound` in single-row DB functions, or match on the error kind instead of the string.
-  - Source commands: `db-review`
-
-### Documentation — `database.sql` Diverged from Migrations
-
-- [ ] **#138 — Deprecated `database.sql` is out of sync with V3 migration**
-  - File: `database.sql`
-  - Problem: Still uses CASCADE (V3 changed to RESTRICT), still creates `idx_orders_tid` (V3 drops it), missing NOT NULL on `memberof_role_id`, missing V3 indexes. Developers using it get a different schema than production.
-  - Fix: Update to match post-V3 schema, or remove the file entirely.
-  - Source commands: `db-review`
-
-### OpenAPI — Spurious Query Params on `create_user`
-
-- [ ] **#139 — `params(CreateUserEntry)` in utoipa annotation renders body fields as query parameters in Swagger UI**
-  - File: `src/handlers/users.rs` (`create_user` utoipa path annotation)
-  - Problem: `CreateUserEntry` derives `IntoParams`. Its fields (firstname, lastname, email, password) appear as query parameters alongside the request body.
-  - Fix: Remove `params(CreateUserEntry)` from the annotation. Remove `IntoParams` from the derive.
-  - Source commands: `openapi-sync`
-
-### OpenAPI — Spurious Query Params on `update_user`
-
-- [ ] **#140 — `params(("user_id", ...), UpdateUserRequest)` renders body fields as query parameters**
-  - File: `src/handlers/users.rs` (`update_user` utoipa path annotation)
-  - Problem: Same issue as #139 — `UpdateUserRequest` appears as query params alongside the body.
-  - Fix: Change to `params(("user_id", ...))` only. Remove `IntoParams` from `UpdateUserRequest`.
-  - Source commands: `openapi-sync`
-
-### OpenAPI — Missing 422 Response on Validated Endpoints
-
-- [ ] **#141 — 12 handlers call `validate(&json)?` but none document 422 in utoipa annotations**
-  - Files: `src/handlers/users.rs`, `src/handlers/teams.rs`, `src/handlers/items.rs`, `src/handlers/roles.rs`, `src/handlers/orders.rs`
-  - Problem: Validation errors return HTTP 422 via `ErrorResponse`, but Swagger UI consumers don't see this documented response.
-  - Fix: Add `(status = 422, description = "Validation error", body = ErrorResponse)` to each handler's `responses(...)`.
-  - Source commands: `openapi-sync`
-
-### Security — No Minimum JWT Secret Length in Production
-
-- [ ] **#142 — Operator could set `BREAKFAST_SERVER_JWTSECRET=abc` and the server would accept it**
-  - Files: `src/server.rs` (production checks), `config/default.yml`
-  - Problem: The server panics on default secret values in production, but imposes no minimum length. HS256 security requires at least 256 bits (32 bytes) of entropy.
-  - Fix: Add a runtime check that JWT secret is ≥32 characters in production.
-  - Source commands: `security-audit`
-
 ### Security — Argon2 Parameters Rely on Crate Defaults
 
 - [ ] **#143 — A dependency update could silently weaken hashing parameters**
@@ -128,14 +32,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Explicitly construct `Argon2::new(Algorithm::Argon2id, Version::V0x13, params)` in a shared constant.
   - Source commands: `security-audit`
 
-### Security — `auth_user` Cache Hit Path Bypasses Password Verification
-
-- [ ] **#144 — Handler generates tokens from cache without re-verifying password; middleware verifies but code path is misleading**
-  - File: `src/handlers/users.rs` (`auth_user` handler)
-  - Problem: On cache hit, a token pair is generated immediately without password check. The `basic_validator` middleware verifies first, but if middleware ordering changes, this becomes a critical auth bypass.
-  - Fix: Remove the redundant cache check in the handler body. Generate token pair from the middleware-authenticated identity.
-  - Source commands: `security-audit`, `review`
-
 ### Security — No Production Panic for Default DB Credentials
 
 - [ ] **#145 — Default Postgres credentials `actix/actix` used with no startup validation (unlike server/JWT secrets)**
@@ -143,38 +39,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Problem: A misconfigured production deploy would silently use development credentials.
   - Fix: Add production-panic for default DB credentials similar to the existing secret checks.
   - Source commands: `security-audit`
-
-### Frontend — `.unwrap()` on Event Targets in WASM
-
-- [ ] **#125 — `ev.target().unwrap()` in input handlers could crash the WASM module (upgraded from informational)**
-  - File: `frontend/src/app.rs` (UsernameField and PasswordField components)
-  - Problem: A panic in WASM kills the entire SPA. The `target()` call returns `Option` and is unwrapped without graceful handling.
-  - Fix: Use `let Some(target) = ev.target() else { return; };`.
-  - Source commands: `review`
-
-### Code Quality — Double DB Client Acquisition in `revoke_user_token`
-
-- [ ] **#147 — Handler acquires two pool connections when one would suffice**
-  - File: `src/handlers/users.rs` (`revoke_user_token`)
-  - Problem: The handler acquires a client for the admin check, drops it, then acquires a second for the revocation. The first client could be reused.
-  - Fix: Reuse the first `Client` for both the admin check and the token revocation.
-  - Source commands: `review`, `practices-audit`, `rbac-rules`
-
-### Code Quality — `Claims.token_type` Uses `String` Instead of Typed Enum
-
-- [ ] **#148 — `token_type` field only ever holds `"access"` or `"refresh"` but uses `String`**
-  - Files: `src/models.rs` (`Claims`), `src/middleware/auth.rs`
-  - Problem: A typo or invalid value would compile and only fail at runtime. String comparisons are scattered across auth.rs and handlers/users.rs.
-  - Fix: Define a `TokenType` enum with serde serialization.
-  - Source commands: `review`
-
-### Dependencies — `leptos` Patch Update Available
-
-- [ ] **#149 — `leptos` 0.8.16 resolved, 0.8.17 available**
-  - File: `frontend/Cargo.toml`
-  - Problem: Patch release likely contains bug fixes.
-  - Fix: Run `cargo update -p leptos`.
-  - Source commands: `dependency-check`
 
 ## Minor Items
 
@@ -241,108 +105,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Problem: When the cache is full (1000 entries), every miss collects all entries into a `Vec`, sorts by timestamp, and removes the oldest 10%. This is O(n log n) per miss.
   - Fix: Use a proper LRU data structure (e.g., `lru` crate) or a min-heap.
   - Source commands: `review`
-
-### RBAC — Helpers Return 403 Instead of 401 for Missing Claims
-
-- [ ] **#150 — All six RBAC helpers use `Error::Forbidden("Authentication required")` — should be 401 per RFC 9110**
-  - File: `src/handlers/mod.rs` (all RBAC helpers)
-  - Problem: "Authentication required" is a 401 concern, not 403. Mitigated by JWT middleware blocking unauthenticated requests first — this code path is unreachable in practice.
-  - Fix: Change to `Error::Unauthorized("Authentication required")`.
-  - Source commands: `rbac-rules`
-
-### Code Quality — Middleware Auth Uses Inline `json!()` Instead of `ErrorResponse`
-
-- [ ] **#151 — ~15 error responses in auth validators use `json!({"error":"..."})` instead of the `ErrorResponse` struct**
-  - File: `src/middleware/auth.rs` (`jwt_validator`, `refresh_validator`, `basic_validator`)
-  - Problem: If `ErrorResponse` gains additional fields, these responses would diverge.
-  - Fix: Replace `json!({"error":"..."})` with `ErrorResponse { error: "...".into() }` in all auth validators.
-  - Source commands: `practices-audit`
-
-### OpenAPI — Unnecessary `IntoParams` Derives on Request Body Structs
-
-- [ ] **#152 — `CreateUserEntry`, `UpdateUserRequest`, `UpdateUserEntry` derive `IntoParams` but are only used as JSON bodies**
-  - File: `src/models.rs`
-  - Problem: Enables the erroneous `params()` usage in #139/#140. These structs are never used as query parameters.
-  - Fix: Remove `IntoParams` from these three derives.
-  - Source commands: `openapi-sync`
-
-### OpenAPI — `RevokedResponse` Not Explicitly Registered in Schema Components
-
-- [ ] **#153 — Auto-discovered by utoipa but not listed in `components(schemas(...))`**
-  - File: `src/middleware/openapi.rs`
-  - Problem: Inconsistent with the convention of explicit schema registration (all other schemas are listed).
-  - Fix: Add `RevokedResponse` to the `components(schemas(...))` list.
-  - Source commands: `openapi-sync`
-
-### Security — No Maximum Password Length Validation
-
-- [ ] **#154 — `CreateUserEntry.password` enforces `min = 8` but has no maximum; enables HashDoS**
-  - Files: `src/models.rs` (`CreateUserEntry`, `validate_optional_password`)
-  - Problem: An attacker could submit a multi-megabyte password string, causing excessive CPU during Argon2 hashing.
-  - Fix: Add `max = 128` (or 1024) to password validation.
-  - Source commands: `security-audit`
-
-### Security — JSON Payload Size Limit Only on API Scope
-
-- [ ] **#155 — `/auth/revoke` endpoint uses actix-web default 256 KiB limit instead of the 64 KiB limit on `/api/v1.0`**
-  - File: `src/routes.rs`
-  - Problem: The `JsonConfig::default().limit(65_536)` is only applied within the `/api/v1.0` scope.
-  - Fix: Apply `JsonConfig` with size limit to the `/auth/revoke` resource as well.
-  - Source commands: `security-audit`
-
-### Security — Password Hash Stored in Auth Cache
-
-- [ ] **#156 — `UpdateUserEntry` including the Argon2 hash is stored in the `DashMap` cache**
-  - Files: `src/models.rs`, `src/middleware/auth.rs`
-  - Problem: Keeping password hashes in memory increases blast radius of memory-disclosure vulnerabilities.
-  - Fix: Use a distinct `AuthUser` struct for the cache that is never `Serialize`.
-  - Source commands: `security-audit`
-
-### Security — No Rate Limiting on `/auth/revoke`
-
-- [ ] **#157 — `/auth` and `/auth/refresh` have rate limiting but `/auth/revoke` does not**
-  - File: `src/routes.rs`
-  - Problem: An attacker with a valid token could flood the revocation endpoint, causing excessive DB writes.
-  - Fix: Apply the same `auth_rate_limit` governor to `/auth/revoke`.
-  - Source commands: `security-audit`
-
-### Code Quality — `get_client` Takes Pool by Value
-
-- [ ] **#158 — `pub async fn get_client(pool: Pool)` forces clone at every call site**
-  - File: `src/handlers/mod.rs`
-  - Problem: While `Pool` is Arc-based and cheap to clone, idiomatic Rust accepts `&Pool`.
-  - Fix: Change signature to `&Pool`.
-  - Source commands: `review`
-
-### Code Quality — Commented-Out Error Variant
-
-- [ ] **#159 — Dead `RustlsPEMError` block in `errors.rs`**
-  - File: `src/errors.rs`
-  - Problem: Commented-out code adds noise.
-  - Fix: Remove the dead code.
-  - Source commands: `review`
-
-### Code Quality — `check_db` Uses `execute` for `SELECT 1`
-
-- [ ] **#160 — `client.execute(SELECT 1)` returns row count; `query_one` is more idiomatic**
-  - File: `src/db/health.rs`
-  - Fix: Use `client.query_one(&statement, &[]).await` instead.
-  - Source commands: `review`
-
-### Code Quality — Unnecessary `return` Keyword
-
-- [ ] **#161 — `return Err(Error::Unauthorized(...))` in `auth_user` is redundant**
-  - File: `src/handlers/users.rs`
-  - Fix: Remove the `return` keyword — it's the final expression in the block.
-  - Source commands: `review`
-
-### Database — `memberof` Table Lacks `changed` Timestamp
-
-- [ ] **#162 — No audit trail for role changes**
-  - File: `migrations/V1__initial_schema.sql` (memberof table)
-  - Problem: The table only has `joined`. When a member's role is updated, there's no record of when.
-  - Fix: Add `changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP` with an update trigger.
-  - Source commands: `db-review`
 
 ### Documentation — Frontend Test Category Breakdown Sums to 21, Not 23
 
@@ -640,7 +402,7 @@ This file is **generated and maintained by the project assessment process** defi
 ## Completed Items
 
 Resolved items are maintained in [`.claude/resolved-findings.md`](.claude/resolved-findings.md), organized by original severity.
-See that file for the full history of 73 resolved findings.
+See that file for the full history of 103 resolved findings.
 
 ## Notes
 
@@ -650,7 +412,7 @@ See that file for the full history of 73 resolved findings.
 - Clippy is clean on both backend and frontend.
 - `cargo fmt --check` is clean on both crates.
 - RBAC enforcement is correct across all handlers per the policy table.
-- OpenAPI spec is synchronized with routes (41 operations) — minor issues documented in #139, #140, #141, #152, #153.
+- OpenAPI spec is synchronized with routes (41 operations).
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 3 critical (#130–#132), 17 important (#125, #133–#145, #147–#149), 30 minor (8 carried + 22 new), 29 informational (16 carried + 13 new). Total: 79 open items.
-- 73 resolved items moved to `.claude/resolved-findings.md` (4 critical, 22 important, 42 minor, 5 informational).
+- Open items summary: 1 critical (#132), 2 important (#143, #145), 17 minor, 29 informational. Total: 49 open items.
+- 103 resolved items moved to `.claude/resolved-findings.md` (6 critical, 37 important, 55 minor, 5 informational).

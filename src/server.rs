@@ -295,6 +295,12 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
             "FATAL: JWT secret must be changed from the default value in production. Set BREAKFAST_SERVER_JWTSECRET environment variable."
         );
     }
+    if is_production && settings.server.jwtsecret.len() < 32 {
+        panic!(
+            "FATAL: JWT secret must be at least 32 characters in production. Current length: {}",
+            settings.server.jwtsecret.len()
+        );
+    }
     if !is_production && settings.server.jwtsecret == "Very Secret" {
         warn!("Using default JWT secret — acceptable for development only");
     }

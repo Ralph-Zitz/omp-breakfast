@@ -12,7 +12,7 @@ use tracing::{error, instrument};
 use uuid::Uuid;
 
 /* Utility Functions */
-pub async fn get_client(pool: Pool) -> Result<Client, Error> {
+pub async fn get_client(pool: &Pool) -> Result<Client, Error> {
     pool.get().await.map_err(|err| {
         error!(error = %err, "Failed to acquire DB client from pool");
         err.into()
@@ -32,7 +32,7 @@ pub async fn require_team_member(
     team_id: Uuid,
 ) -> Result<(), Error> {
     let user_id = requesting_user_id(req)
-        .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
     // Combined admin + team role check in a single DB round-trip
     let (is_admin, team_role) = db::check_team_access(client, team_id, user_id).await?;
     if is_admin {
@@ -47,7 +47,7 @@ pub async fn require_team_member(
 /// Require the requesting user to hold the "Admin" role in any team (global admin check).
 pub async fn require_admin(client: &Client, req: &HttpRequest) -> Result<(), Error> {
     let user_id = requesting_user_id(req)
-        .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
     if db::is_admin(client, user_id).await? {
         Ok(())
     } else {
@@ -63,7 +63,7 @@ pub async fn require_team_admin(
     team_id: Uuid,
 ) -> Result<(), Error> {
     let user_id = requesting_user_id(req)
-        .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
     // Combined admin + team role check in a single DB round-trip
     let (is_admin, team_role) = db::check_team_access(client, team_id, user_id).await?;
     if is_admin {
@@ -81,7 +81,7 @@ pub async fn require_team_admin(
 /// that should be available to both admin tiers but not regular members.
 pub async fn require_admin_or_team_admin(client: &Client, req: &HttpRequest) -> Result<(), Error> {
     let user_id = requesting_user_id(req)
-        .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
     if db::is_admin_or_team_admin(client, user_id).await? {
         Ok(())
     } else {
@@ -99,7 +99,7 @@ pub async fn require_self_or_admin(
     target_user_id: Uuid,
 ) -> Result<(), Error> {
     let user_id = requesting_user_id(req)
-        .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
     if user_id == target_user_id {
         return Ok(());
     }
@@ -119,7 +119,7 @@ pub async fn require_self_or_admin_or_team_admin(
     target_user_id: Uuid,
 ) -> Result<(), Error> {
     let user_id = requesting_user_id(req)
-        .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
     // Self-match: user can always modify their own account
     if user_id == target_user_id {
         return Ok(());
@@ -140,7 +140,7 @@ pub async fn require_self_or_admin_or_team_admin(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::middleware::auth::TOKEN_TYPE_ACCESS;
+    use crate::models::TokenType;
     use actix_web::error::ResponseError;
     use actix_web::test::TestRequest;
     use uuid::Uuid;
@@ -153,7 +153,7 @@ mod tests {
             exp: 9999999999,
             iat: 1000000000,
             jti: Uuid::now_v7(),
-            token_type: TOKEN_TYPE_ACCESS.to_string(),
+            token_type: TokenType::Access,
         });
         req
     }
@@ -198,23 +198,23 @@ mod tests {
 
     #[test]
     fn require_admin_rejects_missing_claims_sync() {
-        // All RBAC helpers should return Forbidden when no Claims are in
+        // All RBAC helpers should return Unauthorized when no Claims are in
         // the request extensions. We test that the error message is correct.
         let req = request_without_claims();
         let uid = requesting_user_id(&req);
         assert!(uid.is_none());
-        // The helpers would return Error::Forbidden("Authentication required")
+        // The helpers would return Error::Unauthorized("Authentication required")
         let err = uid
-            .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))
+            .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))
             .unwrap_err();
         assert!(err.to_string().contains("Authentication required"));
     }
 
     #[test]
-    fn require_admin_error_is_forbidden_variant() {
-        let err = Error::Forbidden("Authentication required".to_string());
+    fn require_admin_error_is_unauthorized_variant() {
+        let err = Error::Unauthorized("Authentication required".to_string());
         let resp = err.error_response();
-        assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
+        assert_eq!(resp.status(), actix_web::http::StatusCode::UNAUTHORIZED);
     }
 
     #[test]
@@ -287,7 +287,7 @@ mod tests {
 #[instrument(skip(state), level = "debug")]
 pub async fn get_health(state: Data<State>) -> Result<impl Responder, Error> {
     //    let client: Client = get_client(state.pool.clone()).await?;
-    let Ok(client) = get_client(state.pool.clone()).await else {
+    let Ok(client) = get_client(&state.pool).await else {
         return Ok(HttpResponse::ServiceUnavailable().json(StatusResponse { up: false }));
     };
     let result = db::check_db(&client).await;
