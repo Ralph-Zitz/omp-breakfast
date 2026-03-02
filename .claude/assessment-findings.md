@@ -1,10 +1,10 @@
 # Assessment Findings
 
-Last assessed: 2026-03-02 (full re-assessment — 45 new findings: #85–#129; findings #94–#107, #109–#111, #114 fixed in v0.6.3)
+Last assessed: 2026-03-02 (full re-assessment round 2 — 56 new findings: #130–#185; #55/#122 superseded by #132; #125 upgraded to Important; #108 resolved)
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
-**Do not edit manually** unless you are checking off a completed item. The assessment process will preserve completed items, update open items (file/line references may shift), remove items no longer surfaced, and append new findings.
+**Do not edit manually** unless you are checking off a completed item. The assessment process will move completed items to `.claude/resolved-findings.md`, update open items (file/line references may shift), remove items no longer surfaced, and append new findings.
 
 ## How to use
 
@@ -14,78 +14,166 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Critical Items
 
-### Transaction Safety — TOCTOU Race on Closed-Order Checks
+### Database — `update_team_order` Can Set `closed` to NULL
 
-- [x] **#85 — `create_order_item`, `update_order_item`, and `delete_order_item` have TOCTOU race conditions**
-  - File: `src/handlers/orders.rs` (all three mutation handlers)
-  - Problem: Each handler checks `is_team_order_closed()` then performs the mutation as two separate, non-transactional DB operations. Between the check and the mutation, a concurrent request could close the order, allowing an item to be added/updated/deleted on a closed order.
-  - Fix: Wrap the closed-order check and the mutation in a single DB transaction with `SELECT ... FOR UPDATE` on the `teamorders` row. Alternatively, add a DB-level trigger on the `orders` table that prevents INSERT/UPDATE/DELETE when the parent `teamorders.closed = true`.
+- [ ] **#130 — Sending `null` for `closed` bypasses `guard_open_order` (which treats NULL as open via `.unwrap_or(false)`)**
+  - Files: `src/db/orders.rs` (UPDATE query), `src/models.rs` (`UpdateTeamOrderEntry`)
+  - Problem: `UpdateTeamOrderEntry.closed` is `Option<bool>`. When `closed` is `None`, the SQL `SET closed = $3` writes NULL to the DB. `guard_open_order` uses `.unwrap_or(false)` — so NULL counts as "open." An attacker who is a team member could re-open a closed order.
+  - Fix: Use `COALESCE($3, closed)` in the SQL so NULL preserves the existing value, or make `closed` a required `bool` in `UpdateTeamOrderEntry`.
+  - Source commands: `db-review`, `review`
+
+### Database — Missing Index on `orders.orders_item_id`
+
+- [ ] **#131 — FK RESTRICT lookups require sequential scan after V3 changed CASCADE→RESTRICT**
+  - Files: `migrations/V3__indexes_constraints.sql`, `migrations/V1__initial_schema.sql`
+  - Problem: V3 changed the FK on `orders.orders_item_id` from CASCADE to RESTRICT. When deleting an item, PostgreSQL must verify no orders reference it. The composite PK `(orders_teamorders_id, orders_item_id)` cannot serve this lookup because `orders_item_id` is the second column.
+  - Fix: Add `CREATE INDEX IF NOT EXISTS idx_orders_item ON orders (orders_item_id);` in a V4 migration.
   - Source commands: `db-review`
+
+### Dependencies — `jsonwebtoken` Pulls Vulnerable and Unnecessary Crypto Crates
+
+- [ ] **#132 — `rust_crypto` feature enables ~15 unused crates including vulnerable `rsa` (RUSTSEC-2023-0071); granular `["hmac", "sha2"]` features are available**
+  - File: `Cargo.toml` (jsonwebtoken dependency)
+  - Problem: `features = ["rust_crypto"]` pulls `rsa`, `ed25519-dalek`, `p256`, `p384`, `rand` — none of which are used (only HS256). The `rsa` crate has an unfixable timing side-channel advisory. `jsonwebtoken` 10.3.0 supports individual feature selection.
+  - Fix: Change `features = ["rust_crypto"]` to `features = ["hmac", "sha2"]`. This eliminates the advisory and removes ~15 crates from the dependency tree.
+  - Source commands: `dependency-check`
 
 ## Important Items
 
-### Code Quality — Panicking `row.get()` in Membership Functions
+### Database — Nullable Timestamp Columns Across All Tables
 
-- [x] **#86 — `add_team_member` and `update_member_role` use panicking `row.get()` instead of `try_get()`**
-  - Files: `src/db/membership.rs` lines 139–158 (`add_team_member`), lines 224–236 (`update_member_role`)
-  - Problem: Both functions use `row.get("column")` (the panicking variant from tokio-postgres) when constructing `UsersInTeam` results inside transactions. The rest of the codebase consistently uses `row.try_get()` or `FromRow`. If a column is renamed or missing due to a migration error, this will panic and crash the server process rather than returning an error.
-  - Fix: Use `row.try_get(...).map_err(|e| Error::Db(e))?` or implement `FromRow` for `UsersInTeam` to match the pattern used everywhere else.
+- [ ] **#133 — `created` and `changed` columns lack NOT NULL; Rust models use non-Optional types**
+  - File: `migrations/V1__initial_schema.sql` (users, teams, roles, items, teamorders)
+  - Problem: All timestamp columns use `DEFAULT CURRENT_TIMESTAMP` but no `NOT NULL`. An explicit NULL insert would cause a `FromRow` conversion error at runtime since the Rust models use `DateTime<Utc>` (non-optional).
+  - Fix: V4 migration: `ALTER TABLE ... ALTER COLUMN created SET NOT NULL` and same for `changed` on all 5 entity tables.
+  - Source commands: `db-review`
+
+### Database — `items.price` Allows NULL
+
+- [ ] **#134 — Item without a price makes order totals impossible to calculate**
+  - Files: `migrations/V1__initial_schema.sql`, `src/models.rs` (`ItemEntry`, `CreateItemEntry`, `UpdateItemEntry`)
+  - Problem: `price numeric(10,2) CHECK (price >= 0)` has no NOT NULL. Rust models use `Option<Decimal>`.
+  - Fix: Add NOT NULL to schema and change Rust type from `Option<Decimal>` to `Decimal`.
+  - Source commands: `db-review`
+
+### Database — `orders.amt` Allows NULL
+
+- [ ] **#135 — Order item without a quantity is meaningless**
+  - Files: `migrations/V1__initial_schema.sql`, `src/models.rs` (`OrderEntry`, `CreateOrderEntry`, `UpdateOrderEntry`)
+  - Problem: `amt int CHECK (amt >= 0)` has no NOT NULL. Rust models use `Option<i32>`.
+  - Fix: Add `NOT NULL DEFAULT 1` to schema and change Rust type from `Option<i32>` to `i32`.
+  - Source commands: `db-review`
+
+### Database — `orders` Table Has No Timestamps
+
+- [ ] **#136 — Unlike every other entity table, `orders` lacks `created`/`changed` columns**
+  - File: `migrations/V1__initial_schema.sql` (orders table definition)
+  - Problem: No audit trail for when order items were added or modified.
+  - Fix: V4 migration: add `created` and `changed` columns with NOT NULL defaults and BEFORE UPDATE trigger, consistent with other tables.
+  - Source commands: `db-review`
+
+### Error Handling — Fragile 404 Detection via String Matching
+
+- [ ] **#137 — 404 detection relies on matching `"query returned an unexpected number of rows"` string from tokio-postgres**
+  - File: `src/errors.rs` (Error::Db handler)
+  - Problem: If tokio-postgres ever changes this error message wording, all 404 responses silently degrade to 500s.
+  - Fix: Use `query_opt` + explicit `Error::NotFound` in single-row DB functions, or match on the error kind instead of the string.
+  - Source commands: `db-review`
+
+### Documentation — `database.sql` Diverged from Migrations
+
+- [ ] **#138 — Deprecated `database.sql` is out of sync with V3 migration**
+  - File: `database.sql`
+  - Problem: Still uses CASCADE (V3 changed to RESTRICT), still creates `idx_orders_tid` (V3 drops it), missing NOT NULL on `memberof_role_id`, missing V3 indexes. Developers using it get a different schema than production.
+  - Fix: Update to match post-V3 schema, or remove the file entirely.
+  - Source commands: `db-review`
+
+### OpenAPI — Spurious Query Params on `create_user`
+
+- [ ] **#139 — `params(CreateUserEntry)` in utoipa annotation renders body fields as query parameters in Swagger UI**
+  - File: `src/handlers/users.rs` (`create_user` utoipa path annotation)
+  - Problem: `CreateUserEntry` derives `IntoParams`. Its fields (firstname, lastname, email, password) appear as query parameters alongside the request body.
+  - Fix: Remove `params(CreateUserEntry)` from the annotation. Remove `IntoParams` from the derive.
+  - Source commands: `openapi-sync`
+
+### OpenAPI — Spurious Query Params on `update_user`
+
+- [ ] **#140 — `params(("user_id", ...), UpdateUserRequest)` renders body fields as query parameters**
+  - File: `src/handlers/users.rs` (`update_user` utoipa path annotation)
+  - Problem: Same issue as #139 — `UpdateUserRequest` appears as query params alongside the body.
+  - Fix: Change to `params(("user_id", ...))` only. Remove `IntoParams` from `UpdateUserRequest`.
+  - Source commands: `openapi-sync`
+
+### OpenAPI — Missing 422 Response on Validated Endpoints
+
+- [ ] **#141 — 12 handlers call `validate(&json)?` but none document 422 in utoipa annotations**
+  - Files: `src/handlers/users.rs`, `src/handlers/teams.rs`, `src/handlers/items.rs`, `src/handlers/roles.rs`, `src/handlers/orders.rs`
+  - Problem: Validation errors return HTTP 422 via `ErrorResponse`, but Swagger UI consumers don't see this documented response.
+  - Fix: Add `(status = 422, description = "Validation error", body = ErrorResponse)` to each handler's `responses(...)`.
+  - Source commands: `openapi-sync`
+
+### Security — No Minimum JWT Secret Length in Production
+
+- [ ] **#142 — Operator could set `BREAKFAST_SERVER_JWTSECRET=abc` and the server would accept it**
+  - Files: `src/server.rs` (production checks), `config/default.yml`
+  - Problem: The server panics on default secret values in production, but imposes no minimum length. HS256 security requires at least 256 bits (32 bytes) of entropy.
+  - Fix: Add a runtime check that JWT secret is ≥32 characters in production.
+  - Source commands: `security-audit`
+
+### Security — Argon2 Parameters Rely on Crate Defaults
+
+- [ ] **#143 — A dependency update could silently weaken hashing parameters**
+  - Files: `src/db/users.rs`, `src/middleware/auth.rs`
+  - Problem: `Argon2::default()` is used for hashing and verification. While current defaults match OWASP recommendations, they could change.
+  - Fix: Explicitly construct `Argon2::new(Algorithm::Argon2id, Version::V0x13, params)` in a shared constant.
+  - Source commands: `security-audit`
+
+### Security — `auth_user` Cache Hit Path Bypasses Password Verification
+
+- [ ] **#144 — Handler generates tokens from cache without re-verifying password; middleware verifies but code path is misleading**
+  - File: `src/handlers/users.rs` (`auth_user` handler)
+  - Problem: On cache hit, a token pair is generated immediately without password check. The `basic_validator` middleware verifies first, but if middleware ordering changes, this becomes a critical auth bypass.
+  - Fix: Remove the redundant cache check in the handler body. Generate token pair from the middleware-authenticated identity.
+  - Source commands: `security-audit`, `review`
+
+### Security — No Production Panic for Default DB Credentials
+
+- [ ] **#145 — Default Postgres credentials `actix/actix` used with no startup validation (unlike server/JWT secrets)**
+  - Files: `config/default.yml`, `src/server.rs`
+  - Problem: A misconfigured production deploy would silently use development credentials.
+  - Fix: Add production-panic for default DB credentials similar to the existing secret checks.
+  - Source commands: `security-audit`
+
+### Frontend — `.unwrap()` on Event Targets in WASM
+
+- [ ] **#125 — `ev.target().unwrap()` in input handlers could crash the WASM module (upgraded from informational)**
+  - File: `frontend/src/app.rs` (UsernameField and PasswordField components)
+  - Problem: A panic in WASM kills the entire SPA. The `target()` call returns `Option` and is unwrapped without graceful handling.
+  - Fix: Use `let Some(target) = ev.target() else { return; };`.
   - Source commands: `review`
 
-### Security — Token Revocation Expiry Defaults to Now
+### Code Quality — Double DB Client Acquisition in `revoke_user_token`
 
-- [x] **#87 — Token revocation blacklist entry may be immediately evictable**
-  - File: `src/handlers/users.rs` lines 112, 142
-  - Problem: `DateTime::<Utc>::from_timestamp(claims.claims.exp, 0).unwrap_or_else(Utc::now)` — if `exp` is an invalid timestamp, the blacklist entry gets `Utc::now()` as its expiry, making it immediately eligible for cleanup by the hourly background task. A still-valid token could become un-revoked after the next cleanup cycle.
-  - Fix: Default to a far-future timestamp (e.g., `Utc::now() + Duration::days(7)` matching max refresh token lifetime) instead of `Utc::now()`.
+- [ ] **#147 — Handler acquires two pool connections when one would suffice**
+  - File: `src/handlers/users.rs` (`revoke_user_token`)
+  - Problem: The handler acquires a client for the admin check, drops it, then acquires a second for the revocation. The first client could be reused.
+  - Fix: Reuse the first `Client` for both the admin check and the token revocation.
+  - Source commands: `review`, `practices-audit`, `rbac-rules`
+
+### Code Quality — `Claims.token_type` Uses `String` Instead of Typed Enum
+
+- [ ] **#148 — `token_type` field only ever holds `"access"` or `"refresh"` but uses `String`**
+  - Files: `src/models.rs` (`Claims`), `src/middleware/auth.rs`
+  - Problem: A typo or invalid value would compile and only fail at runtime. String comparisons are scattered across auth.rs and handlers/users.rs.
+  - Fix: Define a `TokenType` enum with serde serialization.
   - Source commands: `review`
 
-### Security — JWT Algorithm Not Explicitly Pinned
+### Dependencies — `leptos` Patch Update Available
 
-- [x] **#88 — JWT validation uses implicit algorithm selection**
-  - File: `src/middleware/auth.rs` lines 36, 80
-  - Problem: `Header::default()` uses HS256 and `Validation::default()` implicitly allows HS256. If `jsonwebtoken`'s defaults ever change, algorithm confusion attacks become possible. While the current behavior is safe, the reliance on implicit defaults is fragile.
-  - Fix: Use `Validation::new(Algorithm::HS256)` instead of `Validation::default()` to explicitly pin the algorithm.
-  - Source commands: `security-audit`
-
-### Security — Token Revocation Allows Cross-User Revocation
-
-- [x] **#89 — Any authenticated user can revoke any other user's token**
-  - File: `src/handlers/users.rs` lines 126–148
-  - Problem: The `revoke_user_token` handler accepts a JWT token in the request body and revokes it by `jti`. It requires a valid access token (JWT auth) but does not verify that the `sub` (user ID) of the token being revoked matches the requesting user. Any authenticated user who knows or guesses a token can revoke it.
-  - Fix: Decode the token-to-revoke, verify `token_data.claims.sub == requesting_user_id`, or restrict this endpoint to admins. The current frontend only revokes its own tokens at logout, but the API is open.
-  - Source commands: `security-audit`
-
-### Security — No Explicit JSON Body Size Limit
-
-- [x] **#90 — `JsonConfig::default()` relies on implicit size limit**
-  - File: `src/routes.rs` lines 58–59
-  - Problem: No explicit `.limit()` is set on `JsonConfig`. The implicit 32 KiB limit from actix-web 4 is adequate but could change across library versions, enabling DoS via large payloads.
-  - Fix: Add `.limit(65_536)` (64 KiB) to `JsonConfig::default()`.
-  - Source commands: `security-audit`
-
-### Documentation — CLAUDE.md Test Count Stale Again
-
-- [x] **#91 — CLAUDE.md says 156 unit tests but actual count is 170**
-  - File: `CLAUDE.md` (Testing → Backend section)
-  - Problem: 14 tests were added to `db/migrate.rs` (20→34) since the last count update. The documented breakdown and total are wrong. Correct breakdown: config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, db/migrate: 34, healthcheck: 22 = 170 total.
-  - Fix: Update CLAUDE.md test count from 156 to 170 and update the db/migrate count in the per-module breakdown.
-  - Source commands: `practices-audit`
-
-### Testing — Missing RBAC Denial Tests
-
-- [x] **#92 — No integration test verifies non-admin gets 403 on `update_role`, `delete_role`, `update_team`**
-  - File: `tests/api_tests.rs`
-  - Problem: These endpoints are admin-gated in code (`require_admin`) but no test verifies the denial path. A refactor could silently remove the guard and no test would catch it.
-  - Fix: Add 3 integration tests: `non_admin_cannot_update_role`, `non_admin_cannot_delete_role`, `non_admin_cannot_update_team`.
-  - Source commands: `test-gaps`
-
-### Dependencies — Unused `secure-cookies` Feature
-
-- [x] **#93 — `actix-web` `secure-cookies` feature adds unused crypto crates**
-  - File: `Cargo.toml` line 14
-  - Problem: The `secure-cookies` feature on `actix-web` pulls in `aes-gcm`, `aes`, `hmac`, and `cookie` with crypto features. The project uses JWT in headers, not cookie-based authentication. No cookie signing or encryption is used anywhere.
-  - Fix: Remove `"secure-cookies"` from the features list: `features = ["rustls-0_23"]`.
+- [ ] **#149 — `leptos` 0.8.16 resolved, 0.8.17 available**
+  - File: `frontend/Cargo.toml`
+  - Problem: Patch release likely contains bug fixes.
+  - Fix: Run `cargo update -p leptos`.
   - Source commands: `dependency-check`
 
 ## Minor Items
@@ -138,150 +226,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Add a startup check similar to the secret-validation panic.
   - Source commands: `practices-audit`, `review`
 
-### Code Quality — `verify_jwt` and `generate_token_pair` Are Unnecessarily Async
-
-- [x] **#94 — Functions contain no `.await` but are marked `async`**
-  - File: `src/middleware/auth.rs` lines 52, 77
-  - Problem: Creates unnecessary `Future` wrappers on every auth call. Every caller must `.await` them but the compiler generates state-machine code for no benefit.
-  - Fix: Change to `pub fn`. Remove `.await` from callers.
-  - Source commands: `review`
-
-### Code Quality — Auth Functions Take `String` by Value
-
-- [x] **#95 — `verify_jwt` and `generate_token_pair` take `String` instead of `&str`**
-  - File: `src/middleware/auth.rs` lines 52, 77
-  - Problem: Forces `.clone()` at every call site (`state.jwtsecret.clone()`, `credentials.token().to_string()`).
-  - Fix: Change signatures to take `&str`.
-  - Source commands: `review`
-
-### Code Quality — Magic Strings for Role Names and Token Types
-
-- [x] **#96 — `"Admin"`, `"Team Admin"`, `"access"`, `"refresh"` scattered as raw strings**
-  - Files: `src/db/membership.rs`, `src/handlers/mod.rs`, `src/middleware/auth.rs`
-  - Problem: A typo would silently break RBAC or token validation.
-  - Fix: Define `const` values or enums (e.g., `pub const ADMIN: &str = "Admin";`).
-  - Source commands: `review`
-
-### Code Quality — `StatusResponse` Reused for Token Revocation
-
-- [x] **#97 — Token revocation returns `{"up": true}` instead of a revocation-specific response**
-  - File: `src/handlers/users.rs` line 150
-  - Problem: `StatusResponse { up: true }` is the health-check response type. Reusing it for `/auth/revoke` is semantically wrong.
-  - Fix: Create a dedicated `RevokedResponse` or use `DeletedResponse`.
-  - Source commands: `review`
-
-### Code Quality — Dead `FromRow` Implementations for Input DTOs
-
-- [x] **#98 — 7 `FromRow` implementations exist for types never read from DB rows**
-  - File: `src/from_row.rs` (CreateUserEntry, CreateTeamEntry, UpdateTeamEntry, CreateRoleEntry, UpdateRoleEntry, CreateItemEntry, UpdateItemEntry)
-  - Problem: These types are input DTOs (deserialized from JSON). No DB function ever constructs them from a row.
-  - Fix: Remove the unused `FromRow` implementations.
-  - Source commands: `review`
-
-### Code Quality — `FromRow` Boilerplate
-
-- [x] **#99 — `from_row` always delegates to `from_row_ref` — 13 identical function bodies**
-  - File: `src/from_row.rs`
-  - Problem: Every `FromRow` implementation has the same `fn from_row(row: Row) -> ... { Self::from_row_ref(&row) }` body.
-  - Fix: Add a default implementation in the trait: `fn from_row(row: Row) -> ... { Self::from_row_ref(&row) }`.
-  - Source commands: `review`
-
-### Code Quality — `UsersInTeam`/`UserInTeams` Bypass `FromRow`
-
-- [x] **#100 — Manual row mapping in `get_team_users` and `get_user_teams` instead of `FromRow`**
-  - File: `src/db/teams.rs` lines 27–46, 155–183
-  - Problem: Two functions use copy-pasted manual `try_get` logic instead of the `FromRow` trait used everywhere else.
-  - Fix: Implement `FromRow` for `UsersInTeam` and `UserInTeams`.
-  - Source commands: `review`, `db-review`
-
-### Database — Missing FK Index on `teamorders.teamorders_user_id`
-
-- [x] **#101 — `teamorders_user_id` foreign key is not indexed**
-  - File: `migrations/V1__initial_schema.sql`
-  - Problem: Queries joining on this column or `ON DELETE RESTRICT` checks on user deletion will seq-scan `teamorders`.
-  - Fix: Add `CREATE INDEX idx_teamorders_user ON teamorders (teamorders_user_id);` in a new V3 migration.
-  - Source commands: `db-review`
-
-### Database — Missing FK Index on `orders.orders_team_id`
-
-- [x] **#102 — `orders_team_id` has no index; queries filter on it**
-  - File: `migrations/V1__initial_schema.sql`
-  - Problem: `get_order_items` and `delete_order_item` filter on `orders_team_id`, causing seq-scans.
-  - Fix: Add `CREATE INDEX idx_orders_team ON orders (orders_team_id);` in a new V3 migration.
-  - Source commands: `db-review`
-
-### Database — Redundant Index `idx_orders_tid`
-
-- [x] **#103 — Composite PK already provides B-tree on leading column**
-  - File: `migrations/V1__initial_schema.sql` line 126
-  - Problem: `idx_orders_tid` on `(orders_teamorders_id)` is redundant — the PK `(orders_teamorders_id, orders_item_id)` already covers it.
-  - Fix: Drop the index in a new migration.
-  - Source commands: `db-review`
-
-### Database — `ON DELETE CASCADE` on `orders.orders_item_id` Destroys History
-
-- [x] **#104 — Deleting a breakfast item silently removes it from all historical orders**
-  - File: `migrations/V1__initial_schema.sql` line 99
-  - Problem: `ON DELETE CASCADE` on the FK from `orders.orders_item_id` to `items.item_id` means deleting an item destroys order history.
-  - Fix: Change to `ON DELETE RESTRICT` (prevent deletion of items in use) or implement soft-delete.
-  - Source commands: `db-review`
-
-### Database — `memberof.memberof_role_id` Allows NULL
-
-- [x] **#105 — A membership without a role bypasses RBAC**
-  - File: `migrations/V1__initial_schema.sql` line 65
-  - Problem: `memberof_role_id` has no `NOT NULL` constraint. A row with NULL role_id passes membership checks but has no role, creating undefined RBAC behavior.
-  - Fix: Add `ALTER TABLE memberof ALTER COLUMN memberof_role_id SET NOT NULL;` in a V3 migration.
-  - Source commands: `db-review`
-
-### Code Quality — `TeamOrderEntry.closed` Type Mismatch
-
-- [x] **#106 — `closed` is `Option<bool>` but DB column is `NOT NULL DEFAULT FALSE`**
-  - File: `src/models.rs`
-  - Problem: The Rust model will never receive `None` — it will always be `Some(true)` or `Some(false)`.
-  - Fix: Change to `pub closed: bool`.
-  - Source commands: `db-review`
-
-### Documentation — OpenAPI Path Parameter Names Are Generic
-
-- [x] **#107 — 15 handlers use `{id}` in utoipa path instead of descriptive names like `{user_id}`**
-  - Files: `src/handlers/users.rs`, `src/handlers/teams.rs`, `src/handlers/items.rs`, `src/handlers/roles.rs`
-  - Problem: Swagger UI shows generic `id` parameter names instead of descriptive ones. The `delete_user_by_email` route also misleadingly names the email segment `{user_id}` in routes.rs.
-  - Fix: Update utoipa `path` attributes to match actix route parameter names.
-  - Source commands: `openapi-sync`
-
-### Documentation — `MIGRATION_FIX_SUMMARY.md` Listed But Deleted
-
-- [ ] **#108 — Project Structure tree references a file that no longer exists on disk**
-  - File: `CLAUDE.md` (Project Structure section)
-  - Problem: `MIGRATION_FIX_SUMMARY.md` was deleted but CLAUDE.md still lists it.
-  - Fix: Remove the entry from the Project Structure tree.
-  - Source commands: `practices-audit`
-
-### Performance — RBAC Helpers Make Sequential DB Queries
-
-- [x] **#109 — `require_team_member` and `require_team_admin` make 2 DB round-trips**
-  - File: `src/handlers/mod.rs` lines 30–79
-  - Problem: For non-admin users (the common case), both `is_admin()` and `get_member_role()` execute sequentially. Could be combined.
-  - Fix: Create a single query checking both admin and team role in one `EXISTS`.
-  - Source commands: `db-review`
-
-### Security — Missing HSTS Header
-
-- [x] **#110 — No `Strict-Transport-Security` despite TLS enforcement**
-  - File: `src/server.rs` (DefaultHeaders section)
-  - Problem: Without HSTS, a first-visit browser is vulnerable to SSL stripping for the initial HTTP request (before redirect).
-  - Fix: Add `.add(("Strict-Transport-Security", "max-age=31536000; includeSubDomains"))` to `DefaultHeaders`.
-  - Source commands: `security-audit`
-
-### Security — Missing `X-Content-Type-Options` Header
-
-- [x] **#111 — No `X-Content-Type-Options: nosniff` header set**
-  - File: `src/server.rs` (DefaultHeaders section)
-  - Problem: Older browsers may MIME-sniff responses.
-  - Fix: Add `X-Content-Type-Options: nosniff` to `DefaultHeaders`.
-  - Source commands: `security-audit`
-
 ### Security — Swagger UI Exposed in Production
 
 - [ ] **#112 — `/explorer` registered unconditionally regardless of environment**
@@ -298,22 +242,177 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Use a proper LRU data structure (e.g., `lru` crate) or a min-heap.
   - Source commands: `review`
 
-### Error Handling — `FromRowError::ColumnNotFound` Maps to HTTP 404
+### RBAC — Helpers Return 403 Instead of 401 for Missing Claims
 
-- [x] **#114 — Missing column (programming error) returns "not found" instead of 500**
-  - File: `src/errors.rs` lines 118–123
-  - Problem: `ColumnNotFound` indicates a schema mismatch (programming error), not a missing resource. Mapping it to 404 could mislead clients and mask bugs.
-  - Fix: Map to 500 Internal Server Error, same as `Conversion`.
+- [ ] **#150 — All six RBAC helpers use `Error::Forbidden("Authentication required")` — should be 401 per RFC 9110**
+  - File: `src/handlers/mod.rs` (all RBAC helpers)
+  - Problem: "Authentication required" is a 401 concern, not 403. Mitigated by JWT middleware blocking unauthenticated requests first — this code path is unreachable in practice.
+  - Fix: Change to `Error::Unauthorized("Authentication required")`.
+  - Source commands: `rbac-rules`
+
+### Code Quality — Middleware Auth Uses Inline `json!()` Instead of `ErrorResponse`
+
+- [ ] **#151 — ~15 error responses in auth validators use `json!({"error":"..."})` instead of the `ErrorResponse` struct**
+  - File: `src/middleware/auth.rs` (`jwt_validator`, `refresh_validator`, `basic_validator`)
+  - Problem: If `ErrorResponse` gains additional fields, these responses would diverge.
+  - Fix: Replace `json!({"error":"..."})` with `ErrorResponse { error: "...".into() }` in all auth validators.
+  - Source commands: `practices-audit`
+
+### OpenAPI — Unnecessary `IntoParams` Derives on Request Body Structs
+
+- [ ] **#152 — `CreateUserEntry`, `UpdateUserRequest`, `UpdateUserEntry` derive `IntoParams` but are only used as JSON bodies**
+  - File: `src/models.rs`
+  - Problem: Enables the erroneous `params()` usage in #139/#140. These structs are never used as query parameters.
+  - Fix: Remove `IntoParams` from these three derives.
+  - Source commands: `openapi-sync`
+
+### OpenAPI — `RevokedResponse` Not Explicitly Registered in Schema Components
+
+- [ ] **#153 — Auto-discovered by utoipa but not listed in `components(schemas(...))`**
+  - File: `src/middleware/openapi.rs`
+  - Problem: Inconsistent with the convention of explicit schema registration (all other schemas are listed).
+  - Fix: Add `RevokedResponse` to the `components(schemas(...))` list.
+  - Source commands: `openapi-sync`
+
+### Security — No Maximum Password Length Validation
+
+- [ ] **#154 — `CreateUserEntry.password` enforces `min = 8` but has no maximum; enables HashDoS**
+  - Files: `src/models.rs` (`CreateUserEntry`, `validate_optional_password`)
+  - Problem: An attacker could submit a multi-megabyte password string, causing excessive CPU during Argon2 hashing.
+  - Fix: Add `max = 128` (or 1024) to password validation.
+  - Source commands: `security-audit`
+
+### Security — JSON Payload Size Limit Only on API Scope
+
+- [ ] **#155 — `/auth/revoke` endpoint uses actix-web default 256 KiB limit instead of the 64 KiB limit on `/api/v1.0`**
+  - File: `src/routes.rs`
+  - Problem: The `JsonConfig::default().limit(65_536)` is only applied within the `/api/v1.0` scope.
+  - Fix: Apply `JsonConfig` with size limit to the `/auth/revoke` resource as well.
+  - Source commands: `security-audit`
+
+### Security — Password Hash Stored in Auth Cache
+
+- [ ] **#156 — `UpdateUserEntry` including the Argon2 hash is stored in the `DashMap` cache**
+  - Files: `src/models.rs`, `src/middleware/auth.rs`
+  - Problem: Keeping password hashes in memory increases blast radius of memory-disclosure vulnerabilities.
+  - Fix: Use a distinct `AuthUser` struct for the cache that is never `Serialize`.
+  - Source commands: `security-audit`
+
+### Security — No Rate Limiting on `/auth/revoke`
+
+- [ ] **#157 — `/auth` and `/auth/refresh` have rate limiting but `/auth/revoke` does not**
+  - File: `src/routes.rs`
+  - Problem: An attacker with a valid token could flood the revocation endpoint, causing excessive DB writes.
+  - Fix: Apply the same `auth_rate_limit` governor to `/auth/revoke`.
+  - Source commands: `security-audit`
+
+### Code Quality — `get_client` Takes Pool by Value
+
+- [ ] **#158 — `pub async fn get_client(pool: Pool)` forces clone at every call site**
+  - File: `src/handlers/mod.rs`
+  - Problem: While `Pool` is Arc-based and cheap to clone, idiomatic Rust accepts `&Pool`.
+  - Fix: Change signature to `&Pool`.
+  - Source commands: `review`
+
+### Code Quality — Commented-Out Error Variant
+
+- [ ] **#159 — Dead `RustlsPEMError` block in `errors.rs`**
+  - File: `src/errors.rs`
+  - Problem: Commented-out code adds noise.
+  - Fix: Remove the dead code.
+  - Source commands: `review`
+
+### Code Quality — `check_db` Uses `execute` for `SELECT 1`
+
+- [ ] **#160 — `client.execute(SELECT 1)` returns row count; `query_one` is more idiomatic**
+  - File: `src/db/health.rs`
+  - Fix: Use `client.query_one(&statement, &[]).await` instead.
+  - Source commands: `review`
+
+### Code Quality — Unnecessary `return` Keyword
+
+- [ ] **#161 — `return Err(Error::Unauthorized(...))` in `auth_user` is redundant**
+  - File: `src/handlers/users.rs`
+  - Fix: Remove the `return` keyword — it's the final expression in the block.
+  - Source commands: `review`
+
+### Database — `memberof` Table Lacks `changed` Timestamp
+
+- [ ] **#162 — No audit trail for role changes**
+  - File: `migrations/V1__initial_schema.sql` (memberof table)
+  - Problem: The table only has `joined`. When a member's role is updated, there's no record of when.
+  - Fix: Add `changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP` with an update trigger.
   - Source commands: `db-review`
 
+### Documentation — Frontend Test Category Breakdown Sums to 21, Not 23
+
+- [ ] **#163 — CLAUDE.md test category breakdown omits 2 token refresh tests**
+  - File: `CLAUDE.md` (Testing → Frontend → Test categories)
+  - Problem: 8 categories total 4+3+3+3+2+1+2+3 = 21, but 23 WASM tests exist. Missing: `test_authed_get_retries_after_401_with_token_refresh` and `test_authed_get_double_failure_falls_back_to_login`.
+  - Fix: Add "Token refresh (2 tests)" category to the breakdown.
+  - Source commands: `cross-ref-check`
+
+### Documentation — `test-gaps.md` References `gloo_timers` Which Project Doesn't Use
+
+- [ ] **#164 — Command recommends `gloo_timers::future::sleep` but project uses custom `flush()` helper**
+  - File: `.claude/commands/test-gaps.md`
+  - Problem: Misleading test instruction. The project uses a Promise-based setTimeout wrapper, not `gloo-timers`.
+  - Fix: Replace with instruction to use the `flush(ms)` helper.
+  - Source commands: `cross-ref-check`
+
+### Documentation — Integration Test Doc Comments Reference Deprecated `database.sql`
+
+- [ ] **#165 — Both `api_tests.rs` and `db_tests.rs` reference `database.sql` for setup**
+  - Files: `tests/api_tests.rs`, `tests/db_tests.rs` (line 3 doc comments)
+  - Problem: DB is now initialized via Refinery migrations + `database_seed.sql`.
+  - Fix: Update doc comments to reference migrations and `database_seed.sql`.
+  - Source commands: `cross-ref-check`
+
+### Documentation — `middleware/mod.rs` Missing from CLAUDE.md Structure Tree
+
+- [ ] **#166 — Tree lists `auth.rs` and `openapi.rs` under `middleware/` but omits `mod.rs`**
+  - File: `CLAUDE.md` (Project Structure section)
+  - Problem: Inconsistent with `db/mod.rs` and `handlers/mod.rs` which are listed.
+  - Fix: Add `mod.rs — Module declarations` under `middleware/`.
+  - Source commands: `cross-ref-check`
+
+### Code Quality — Missing `#[must_use]` on Auth Functions
+
+- [ ] **#167 — `generate_token_pair`, `verify_jwt`, `invalidate_cache` return values that should not be ignored**
+  - File: `src/middleware/auth.rs`
+  - Fix: Add `#[must_use]` to these functions.
+  - Source commands: `review`
+
+### Dependencies — Redundant `features = ["default"]` on Crates
+
+- [ ] **#168 — `argon2` and `opentelemetry` specify `features = ["default"]` which is a no-op**
+  - File: `Cargo.toml`
+  - Fix: Simplify to plain version strings.
+  - Source commands: `dependency-check`
+
+### Dependencies — Unnecessary Braces on Simple Dependencies
+
+- [ ] **#169 — `actix-web-httpauth`, `tracing-log`, `rustls-pki-types` use `{ version = "..." }` with no other keys**
+  - File: `Cargo.toml`
+  - Fix: Simplify to plain version strings.
+  - Source commands: `dependency-check`
+
+### Security — Missing `X-Frame-Options` Header
+
+- [ ] **#170 — CSP `frame-ancestors 'none'` covers modern browsers but `X-Frame-Options: DENY` is missing for older browsers**
+  - File: `src/server.rs` (DefaultHeaders)
+  - Fix: Add `.add(("X-Frame-Options", "DENY"))`.
+  - Source commands: `security-audit`
+
+### Testing — `AddMemberEntry` and `UpdateMemberRoleEntry` Lack `Validate` Derive
+
+- [ ] **#171 — These models are deserialized from request bodies but `validate()` is a no-op since they don't derive `Validate`**
+  - File: `src/models.rs`
+  - Problem: Fields are UUIDs (type-enforced by serde), so low risk, but inconsistent with other models.
+  - Fix: Add `Validate` derive or remove the `validate()` call in the handlers.
+  - Source commands: `test-gaps`
+
 ## Informational Items
-
-### Dependencies — Unfixable RSA Advisory
-
-- [ ] **#55 — `rsa` 0.9.10 has an unfixable timing side-channel advisory (RUSTSEC-2023-0071)**
-  - Problem: The `rsa` crate (transitive dependency via `jsonwebtoken` 10.3.0) is affected by the Marvin Attack. No patched version is available upstream. The project uses HMAC (HS256), not RSA — the vulnerability is not exploitable.
-  - Source command: `dependency-check` (cargo audit)
-  - Action: No code changes possible — waiting on upstream fix. Monitor `jsonwebtoken` releases.
 
 ### Documentation — Test Count Maintenance Burden
 
@@ -393,13 +492,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Source commands: `dependency-check`
   - Action: Accept compile-time cost. File upstream issue on `refinery` if desired.
 
-### Dependencies — Unused Crypto Algorithms Compiled
-
-- [ ] **#122 — `jsonwebtoken` `rust_crypto` feature compiles RSA, EdDSA, P-256, P-384**
-  - Problem: ~30 transitive crates for algorithms never used (only HS256). No way to select HMAC-only without upstream changes.
-  - Source commands: `dependency-check`
-  - Action: Monitor `jsonwebtoken` for granular feature gates.
-
 ### Dependencies — Low-Activity `tracing-bunyan-formatter`
 
 - [ ] **#123 — `tracing-bunyan-formatter` has infrequent releases**
@@ -413,14 +505,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Problem: No tests for rate limiter behavior, malformed JSON body handling, FK cascade/constraint behavior on delete, or `fix_migration_history` DB interaction.
   - Source commands: `test-gaps`
   - Action: Add tests incrementally as high-risk code is modified.
-
-### Frontend — `.unwrap()` on Event Targets in WASM
-
-- [ ] **#125 — `ev.target().unwrap()` in input handlers could crash the WASM module**
-  - File: `frontend/src/app.rs`
-  - Problem: While `target()` is practically never `None` in a browser, `.unwrap()` in WASM triggers the panic hook and aborts the entire app.
-  - Source commands: `review`
-  - Action: Use `let Some(target) = ev.target() else { return; }` for defensive coding.
 
 ### Frontend — `Page::Dashboard` Clones Data on Every Signal Read
 
@@ -454,271 +538,119 @@ This file is **generated and maintained by the project assessment process** defi
   - Source commands: `review`
   - Action: Add doc comments incrementally when modifying these files.
 
+### Testing — `validate_optional_password` Has No Unit Tests
+
+- [ ] **#172 — Custom validator for `UpdateUserRequest.password` has zero test coverage**
+  - File: `src/models.rs` (`validate_optional_password`)
+  - Problem: If this validator silently passes short passwords, users could set weak passwords via PUT. The function uses a non-standard `&String` signature required by the `validator` crate.
+  - Source commands: `test-gaps`
+  - Action: Add tests for `Some("short")` → error, `Some("validpass")` → pass, `None` → skip.
+
+### Testing — No API Test for `user_teams` Endpoint
+
+- [ ] **#173 — `GET /api/v1.0/users/{user_id}/teams` has no API-level integration test**
+  - Files: `tests/api_tests.rs`, `src/handlers/users.rs`
+  - Problem: Tested at DB level but no API test verifies JSON shape, JWT requirement, or empty-array behavior.
+  - Source commands: `test-gaps`
+  - Action: Add `get_user_teams_returns_empty_array`, `get_user_teams_returns_memberships`, `get_user_teams_requires_jwt`.
+
+### Testing — `check_team_access` Combined RBAC Query Has No Direct Test
+
+- [ ] **#174 — Core RBAC query tested only indirectly through API-level tests**
+  - File: `src/db/membership.rs` (`check_team_access`)
+  - Problem: Returns `(is_admin, team_role)` tuple via correlated subquery + EXISTS. A subtle SQL bug could be masked.
+  - Source commands: `test-gaps`
+  - Action: Add 4 direct DB tests: admin in team, member, non-member, admin not in team.
+
+### Testing — No Test for Malformed Path Parameters
+
+- [ ] **#175 — `GET /api/v1.0/users/not-a-uuid` → 400 path is untested**
+  - Files: `tests/api_tests.rs`, `src/errors.rs` (`path_error_handler`)
+  - Source commands: `test-gaps`
+  - Action: Add `get_user_with_invalid_uuid_returns_400`.
+
+### Testing — No Test for JSON Error Handler
+
+- [ ] **#176 — Oversized/malformed JSON body error paths are untested**
+  - Files: `tests/api_tests.rs`, `src/errors.rs` (`json_error_handler`)
+  - Problem: Three sub-cases: ContentType → 415, deserialization → 422, other → 400. None tested.
+  - Source commands: `test-gaps`
+  - Action: Add `create_user_with_wrong_content_type_returns_415`, `create_user_with_invalid_json_returns_400`.
+
+### Testing — No API Tests for `update_team` and `update_role` Success Paths
+
+- [ ] **#177 — Admin happy path untested; only rejection path (`non_admin_cannot_*`) exists**
+  - File: `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+  - Action: Add `update_team_as_admin_returns_200`, `update_role_as_admin_returns_200`.
+
+### Testing — No Tests for `Location` Header in Create Responses
+
+- [ ] **#178 — All create handlers build `Location` header via `url_for` but no test verifies it**
+  - Files: `tests/api_tests.rs`, `src/handlers/` (all create handlers)
+  - Problem: If the named route string drifts, `url_for` silently fails (wrapped in `if let Ok`).
+  - Source commands: `test-gaps`
+  - Action: Add `create_user_sets_location_header`.
+
+### Testing — No Rate Limiting Behavior Test
+
+- [ ] **#179 — No test verifies the 11th rapid auth request returns 429**
+  - Files: `tests/api_tests.rs`, `src/routes.rs` (governor config)
+  - Source commands: `test-gaps`
+  - Action: Add `auth_endpoint_rate_limits_after_burst`.
+
+### Testing — No Validation Tests for Order-Related Models
+
+- [ ] **#180 — `CreateOrderEntry`, `UpdateOrderEntry`, `CreateTeamOrderEntry`, `UpdateTeamOrderEntry` derive `Validate` but have no tests**
+  - File: `src/models.rs`
+  - Source commands: `test-gaps`
+  - Action: Add basic validation tests to catch regressions if rules are added.
+
+### Testing — No Test for Error Response Body Shape
+
+- [ ] **#181 — Tests verify status codes but never assert response body matches `{"error": "..."}`**
+  - File: `src/errors.rs`
+  - Problem: A serialization change could break API clients.
+  - Source commands: `test-gaps`
+  - Action: Add `error_response_body_is_json_with_error_field`.
+
+### Code Quality — `UpdateUserEntry` Serves Dual Purpose
+
+- [ ] **#183 — Struct used for both auth cache and DB row mapping**
+  - File: `src/models.rs`
+  - Problem: Includes `password` hash (needed for cache verification) and derives `Validate` with password min-length rules (applies to plaintext, not hash).
+  - Source commands: `review`
+  - Action: Consider a dedicated `CachedUserData` type for the auth cache.
+
+### Frontend — `authed_get` Only Supports GET
+
+- [ ] **#184 — Future pages need `authed_post`, `authed_put`, `authed_delete` variants**
+  - File: `frontend/src/app.rs`
+  - Source commands: `review`
+  - Action: Build generic `authed_request(method, url, body?)` when implementing the next frontend page.
+
+### Deployment — Healthcheck Binary Hardcodes Port 8080
+
+- [ ] **#185 — `let port = 8080;` is hardcoded in the healthcheck binary**
+  - File: `src/bin/healthcheck.rs`
+  - Problem: Production with a different port would cause healthcheck failures.
+  - Source commands: `review`
+  - Action: Read port from environment or config.
+
 ## Completed Items
 
-Items moved here after being resolved:
-
-### Documentation — CLAUDE.md Test Counts and Module List Are Stale
-
-- [x] **#83 — CLAUDE.md says 136 unit tests but actual count is 156 (20 `db::migrate` tests uncounted)**
-  - File: `CLAUDE.md` line 276 (Testing → Backend section)
-  - Resolution: Updated test count from 136 to 156 and added `db::migrate` to the module list. The correct breakdown is: config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, db/migrate: 20, healthcheck: 22.
-  - Source commands: `practices-audit`
-
-### Documentation — CLAUDE.md Project Structure Missing V2 Migration
-
-- [x] **#84 — `migrations/V2__uuid_v7_defaults.sql` is not listed in the Project Structure tree**
-  - File: `CLAUDE.md` line 104 (Project Structure section, `migrations/` directory)
-  - Resolution: Added `V2__uuid_v7_defaults.sql — UUID v7 default migration (PostgreSQL 18+)` after the V1 entry in the Project Structure tree.
-  - Source commands: `practices-audit`
-
-### Database — UUID Version Mismatch Between Schema and Application
-
-- [x] **#69 — Schema defaults to UUID v4 but Rust code generates UUID v7**
-  - Files: `migrations/V2__uuid_v7_defaults.sql` (new), `database.sql`, `init_dev_db.sh`
-  - Resolution: Created V2 migration that `ALTER TABLE ... SET DEFAULT uuidv7()` on all five UUID primary key columns. Updated `database.sql` and `init_dev_db.sh`.
-  - Source commands: `db-review`, `review`
-
-### Documentation — CLAUDE.md Test Counts and References Are Stale
-
-- [x] **#77 — Multiple stale references in CLAUDE.md**
-  - Files: `CLAUDE.md` (Project Structure and Testing sections)
-  - Resolution: Updated WASM test count from 22 to 23 in both sections.
-  - Source commands: `practices-audit`
-
-### Documentation — CLAUDE.md `flurry` Reference Is Stale
-
-- [x] **#79 — Key Conventions still references `flurry::HashMap` instead of `dashmap::DashMap`**
-  - File: `CLAUDE.md` line 117
-  - Resolution: Changed to `dashmap::DashMap` and updated description.
-  - Source commands: `practices-audit`
-
-### Documentation — CLAUDE.md Project Structure Missing New Files
-
-- [x] **#80 — Project Structure tree omits files added since last documentation update**
-  - File: `CLAUDE.md` lines 48–110
-  - Resolution: Added all missing files to the tree.
-  - Source commands: `practices-audit`
-
-### Documentation — `api-completeness.md` References Deprecated Schema File
-
-- [x] **#81 — `api-completeness.md` still references `database.sql` as the schema source**
-  - File: `.claude/commands/api-completeness.md`
-  - Resolution: Updated to reference `migrations/V1__initial_schema.sql`.
-  - Source commands: `practices-audit`
-
-### Code Quality — Duplicate Doc Comment on `fetch_user_details`
-
-- [x] **#82 — `fetch_user_details` has a duplicate doc comment block**
-  - File: `frontend/src/app.rs`
-  - Resolution: Removed redundant doc comment lines.
-  - Source commands: `review`
-
-### Deployment — Database Migration Tool Adopted
-
-- [x] **#66 — Schema managed via destructive `DROP TABLE` DDL script**
-  - Resolution: Adopted `refinery` 0.8 with versioned migrations.
-  - Source commands: `db-review`, `security-audit`
-
-### Security — In-Memory Token Blacklist Eviction
-
-- [x] **#67 — `token_blacklist` in-memory DashMap has no eviction or size limit**
-  - Resolution: Changed DashMap value to `DateTime<Utc>`, added `retain()` in cleanup task.
-  - Source commands: `security-audit`, `review`
-
-### Documentation — CLAUDE.md CSP Policy Not Documented
-
-- [x] **#57 — CLAUDE.md Key Conventions should document the CSP header on static files**
-  - Resolution: Added CSP documentation to Key Conventions.
-  - Source commands: `practices-audit`, `security-audit`
-
-### Frontend — Loading Page Spinner CSS Missing
-
-- [x] **#58 — `LoadingPage` component references undefined CSS classes**
-  - Resolution: Added CSS rules for loading page components.
-  - Source commands: `review`, `practices-audit`
-
-### Security — actix-files CVE (Verified Patched)
-
-- [x] **#56 — `actix-files` had 2 known CVEs**
-  - Resolution: Verified Cargo.lock pins patched version 0.6.10.
-  - Source commands: `dependency-check`, `security-audit`
-
-### Security — Password Hashing at User Creation
-
-- [x] **#40 — `create_user` stores plaintext password instead of Argon2 hash**
-  - Resolution: Fixed in prior session.
-  - Source commands: `db-review`, `security-audit`
-
-### Documentation — CLAUDE.md Stale After Recent Changes
-
-- [x] **#41 — Test counts in CLAUDE.md are stale**
-  - Resolution: Updated test counts.
-  - Source command: `practices-audit`
-
-- [x] **#42 — `Error::Unauthorized` variant not documented in CLAUDE.md**
-  - Resolution: Added documentation.
-  - Source command: `practices-audit`
-
-- [x] **#43 — Unfinished Work section does not reflect frontend token revocation**
-  - Resolution: Updated Unfinished Work and Frontend Architecture sections.
-  - Source commands: `practices-audit`, `api-completeness`
-
-### Test Gaps
-
-- [x] **#44 — No integration test for create-user -> authenticate round-trip**
-  - Resolution: Added integration test.
-  - Source command: `test-gaps`
-
-### Backend — Error Response Consistency
-
-- [x] **#15 — `auth_user` returns bare string instead of `ErrorResponse`**
-  - Resolution: Routed through centralized `ResponseError` impl.
-  - Source command: `review`
-
-- [x] **#16 — `refresh_token` handler bypasses centralized error handling**
-  - Resolution: Added `Error::Unauthorized` variant and updated handler.
-  - Source command: `review`
-
-### Frontend — Token Revocation on Logout
-
-- [x] **#1 — Frontend logout does not revoke tokens server-side**
-  - Resolution: Added `revoke_token_server_side` helper with fire-and-forget revocation.
-  - Source commands: `api-completeness`, `security-audit`
-
-### Database — Inconsistent Row Mapping Pattern
-
-- [x] **#6 — `get_team_users` uses `.map()` instead of `filter_map` + `warn!()`**
-  - Resolution: Changed to `filter_map` with `try_get()` and `warn!()`.
-  - Source commands: `db-review`, `practices-audit`
-
-- [x] **#7 — `get_user_teams` has the same `.map()` issue**
-  - Resolution: Same approach as #6.
-  - Source commands: `db-review`, `practices-audit`
-
-### Architecture — Defence-in-Depth Notes
-
-- [x] **#49 — RBAC, OpenAPI sync, and dependency health all verified correct**
-  - Resolution: Migrated from `rustls-pemfile` to `rustls-pki-types`, resolved advisories via `cargo update`.
-  - Source commands: `rbac-rules`, `openapi-sync`, `dependency-check`
-
-### Test Gaps (Earlier Round)
-
-- [x] **#37 — No integration test for closed-order enforcement**
-  - Resolution: Tests already present in codebase.
-  - Source command: `test-gaps`
-
-- [x] **#38 — No integration test for `delete_user_by_email` RBAC fallback**
-  - Resolution: Added two integration tests.
-  - Source command: `test-gaps`
-
-- [x] **#39 — No WASM test for `authed_get` token refresh retry**
-  - Resolution: Added stateful fetch mock test.
-  - Source command: `test-gaps`
-
-### Backend — Redundant Token-Type Check
-
-- [x] **#45 — `refresh_token` handler duplicates token-type check already enforced by middleware**
-  - Resolution: Kept as defence-in-depth with explanatory comment.
-  - Source commands: `review`, `security-audit`
-
-### Frontend — Clippy Warning in Test File
-
-- [x] **#46 — Useless `format!` in frontend test `ui_tests.rs`**
-  - Resolution: Replaced with `.to_string()`.
-  - Source command: `review`
-
-### Testing — Flaky DB Test
-
-- [x] **#47 — `cleanup_expired_tokens_removes_old_entries` is flaky under parallel test execution**
-  - Resolution: Changed expiry and removed global count assertion.
-  - Source command: `test-gaps`
-
-### Security — Missing CSP Headers for Static Files
-
-- [x] **#48 — No Content-Security-Policy header on static file responses**
-  - Resolution: Added CSP via `DefaultHeaders` middleware.
-  - Source commands: `security-audit`
-
-### Security — Credentials Logged via `#[instrument]`
-
-- [x] **#50 — `#[instrument]` on auth handlers doesn't skip credential parameters**
-  - Resolution: Updated all `#[instrument]` annotations to skip credentials.
-  - Source commands: `security-audit`, `review`
-
-### Documentation — CLAUDE.md `handlers/mod.rs` Description Incomplete
-
-- [x] **#51 — `handlers/mod.rs` description omits newer RBAC helpers**
-  - Resolution: Updated to list all RBAC helpers.
-  - Source command: `practices-audit`
-
-### Database — Missing DROP TABLE for token_blacklist
-
-- [x] **#52 — `database.sql` missing `DROP TABLE IF EXISTS token_blacklist`**
-  - Resolution: Added the DROP statement.
-  - Source command: `db-review`
-
-### Code Quality — Unused `require_self_or_admin` Helper
-
-- [x] **#53 — `require_self_or_admin` helper is retained but never called**
-  - Resolution: Added `#[deprecated]` attribute.
-  - Source command: `review`
-
-### Dependencies — `tokio-pg-mapper` Is Archived
-
-- [x] **#60 — `tokio-pg-mapper` crate is unmaintained/archived**
-  - Resolution: Replaced with custom `FromRow` trait in `src/from_row.rs`.
-  - Source command: `dependency-check`
-
-### Deployment — Docker Image Tags Verified Valid
-
-- [x] **#62 — `postgres:18.3` Docker image tag — FALSE POSITIVE**
-  - Resolution: Verified tag exists on Docker Hub.
-  - Source commands: `dependency-check`, `review`
-
-- [x] **#63 — `rust:1.93.1` Docker image tag — FALSE POSITIVE**
-  - Resolution: Verified tag exists on Docker Hub.
-  - Source commands: `dependency-check`, `review`
-
-### Code Quality — Monolithic `src/db.rs` Refactored
-
-- [x] **#64 — `src/db.rs` is 1,144+ lines covering all domain areas**
-  - Resolution: Split into `src/db/` module directory with 9 domain files.
-  - Source commands: `review`, `practices-audit`
-
-### Dependencies — `flurry` Replaced with `dashmap`
-
-- [x] **#65 — `flurry` 0.5.2 is unmaintained**
-  - Resolution: Replaced with `dashmap` 6.1.0.
-  - Source commands: `dependency-check`, `review`
-
-### Security — HTTPS Redirect Implemented
-
-- [x] **#72 — HTTP requests are not redirected to HTTPS**
-  - Resolution: Added HTTP->HTTPS redirect server.
-  - Source commands: `security-audit`
-
-### Testing — Missing Test Coverage Areas Addressed
-
-- [x] **#74 — Several areas lack dedicated test coverage**
-  - Resolution: Added tests for from_row, openapi, healthcheck, CORS, frontend double-failure.
-  - Source commands: `test-gaps`
-
-### Documentation — Command Files Reference Stale Path
-
-- [x] **#78 — Three command files reference `src/db.rs` instead of `src/db/`**
-  - Resolution: Updated all three command files.
-  - Source commands: `practices-audit`
+Resolved items are maintained in [`.claude/resolved-findings.md`](.claude/resolved-findings.md), organized by original severity.
+See that file for the full history of 73 resolved findings.
 
 ## Notes
 
-- All 170 backend unit tests pass (148 lib + 22 healthcheck); 65 API integration tests pass; 86 DB integration tests pass; 23 WASM tests pass. Total: 344 tests, 0 failures.
+- All 170 backend unit tests pass (148 lib + 22 healthcheck); 67 API integration tests pass; 86 DB integration tests pass; 23 WASM tests pass. Total: 346 tests, 0 failures.
 - Backend unit test breakdown: config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, db/migrate: 34, healthcheck: 22 = **170 total**.
-- `cargo audit` reports 1 unfixable vulnerability: `rsa` 0.9.10 via `jsonwebtoken` (RUSTSEC-2023-0071). Not exploitable (only HS256 used).
+- `cargo audit` reports 1 vulnerability: `rsa` 0.9.10 via `jsonwebtoken` (RUSTSEC-2023-0071). **Fixable** — see #132 (switch to `["hmac", "sha2"]` features).
 - Clippy is clean on both backend and frontend.
 - `cargo fmt --check` is clean on both crates.
 - RBAC enforcement is correct across all handlers per the policy table.
-- OpenAPI spec is synchronized with routes (41 operations, 27 schemas) — only cosmetic path parameter naming differences.
-- All 10 assessment commands run: `api-completeness`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#85), 8 important (#86-#93), 27 minor (6 carried + 21 new), 19 informational (4 carried + 15 new). Total: 55 open items.
-- 45 completed items preserved from prior assessments.
+- OpenAPI spec is synchronized with routes (41 operations) — minor issues documented in #139, #140, #141, #152, #153.
+- All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
+- Open items summary: 3 critical (#130–#132), 17 important (#125, #133–#145, #147–#149), 30 minor (8 carried + 22 new), 29 informational (16 carried + 13 new). Total: 79 open items.
+- 73 resolved items moved to `.claude/resolved-findings.md` (4 critical, 22 important, 42 minor, 5 informational).

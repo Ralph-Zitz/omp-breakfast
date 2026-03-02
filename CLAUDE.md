@@ -247,18 +247,20 @@ When asked to **assess the project** (or "project assessment"), perform the foll
 4. **Do not apply any changes** — only present the plan for approval
 5. If no actionable findings are discovered, state that the project is in good shape
 6. **Persist findings** — after presenting the plan, write **all** findings (critical, important, minor, and informational) to `.claude/assessment-findings.md` using the format described below. This file is the bridge between the assessment and the `/resume-assessment` command, which loads it in future sessions to continue work.
+7. **Archive resolved items** — after updating the findings file, move all items marked `[x]` in `.claude/assessment-findings.md` to `.claude/resolved-findings.md`, organized under their original severity section (Critical, Important, Minor, Informational). Remove the moved items from `assessment-findings.md`. Update the "Last updated" date in `resolved-findings.md`.
 
 ### Assessment findings file format (`.claude/assessment-findings.md`)
 
 When writing to the findings file, follow these rules:
 
-- **Do not overwrite completed items.** Read the existing file first. Any item marked `[x]` or listed under "Completed Items" must be preserved exactly as-is.
+- **Mark resolved items.** When an item is fixed, mark it `[x]` in its current severity section. Do not move it yet — archival happens in step 7.
 - **Update open items.** If a previously tracked `[ ]` item is still found by the current assessment, update its description, file references, and line numbers to reflect the current state of the code (lines may have shifted).
-- **Remove resolved items.** If a previously tracked `[ ]` item is no longer surfaced by any command (i.e., it was fixed but not checked off), move it to "Completed Items" with a note: "Resolved — no longer surfaced by assessment."
+- **Remove stale items.** If a previously tracked `[ ]` item is no longer surfaced by any command (i.e., it was fixed but not checked off), mark it `[x]` with a note: "Resolved — no longer surfaced by assessment."
 - **Append new items.** If the assessment surfaces new findings not already in the file, append them under the appropriate severity section and category heading (or create a new heading).
 - **Update metadata.** Set the "Last assessed" date at the top of the file to the current date.
-- **Preserve the file structure.** The file must always contain these sections in order: preamble with date, "How to use", "Critical Items", "Important Items", "Minor Items", "Informational Items" (each with sub-headings by category), "Completed Items", "Notes". Omit a severity section only if it has never had any items.
+- **Preserve the file structure.** The file must always contain these sections in order: preamble with date, "How to use", "Critical Items", "Important Items", "Minor Items", "Informational Items" (each with sub-headings by category), "Completed Items" (brief pointer to resolved-findings.md), "Notes". Omit a severity section only if it has never had any items.
 - **Item format.** Each item must include: checkbox (`- [ ]`), finding number and title in bold, file path and line range, problem description, fix instructions, and source command(s). Follow the format already established in the file.
+- **Archive resolved items.** After updating the findings file, move all `[x]` items to `.claude/resolved-findings.md` under their original severity section. Remove the `[x]` items from `assessment-findings.md`. The resolved file uses the same section structure (Critical, Important, Minor, Informational) and item format.
 
 This assessment must consider **all** commands in `.claude/commands/` at the time it is run, including any added after this rule was written.
 
