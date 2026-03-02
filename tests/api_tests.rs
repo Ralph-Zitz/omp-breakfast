@@ -1,6 +1,7 @@
 //! Integration tests for the breakfast API.
 //!
-//! These tests require a running PostgreSQL instance seeded with `database.sql`.
+//! These tests require a running PostgreSQL instance initialized via Refinery
+//! migrations and seeded with `database_seed.sql`.
 //! The easiest way to run them:
 //!   make test-integration
 //!

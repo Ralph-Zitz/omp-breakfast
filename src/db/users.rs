@@ -2,12 +2,18 @@ use crate::errors::Error;
 use crate::from_row::FromRow;
 use crate::models::*;
 use argon2::{
-    Argon2,
+    Algorithm, Argon2, Params, Version,
     password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
 };
 use deadpool_postgres::Client;
 use tracing::warn;
 use uuid::Uuid;
+
+/// Explicit Argon2id hasher — pins algorithm, version, and parameters so that
+/// a future `argon2` crate update cannot silently weaken hashing defaults.
+fn argon2_hasher() -> Argon2<'static> {
+    Argon2::new(Algorithm::Argon2id, Version::V0x13, Params::default())
+}
 
 pub async fn get_users(client: &Client) -> Result<Vec<UserEntry>, Error> {
     let statement = client
@@ -75,7 +81,7 @@ pub async fn create_user(client: &Client, user: CreateUserEntry) -> Result<UserE
         .map_err(Error::Db)?;
 
     let salt = SaltString::generate(&mut OsRng);
-    let hash = Argon2::default()
+    let hash = argon2_hasher()
         .hash_password(user.password.as_bytes(), &salt)
         .map_err(|err| Error::Argon2(err.to_string()))?
         .to_string();
@@ -109,7 +115,7 @@ pub async fn update_user(
                 .map_err(Error::Db)?;
 
             let salt = SaltString::generate(&mut OsRng);
-            let hash = Argon2::default()
+            let hash = argon2_hasher()
                 .hash_password(password.as_bytes(), &salt)
                 .map_err(|err| Error::Argon2(err.to_string()))?
                 .to_string();

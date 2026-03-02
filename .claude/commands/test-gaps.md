@@ -53,7 +53,7 @@ Frontend WASM tests in `frontend/tests/ui_tests.rs` run via `make test-frontend`
 - Mount components by appending to `document().body()`
 - Mock HTTP via `js_sys::eval` to override `window.fetch`
 - Access DOM via `document().query_selector()` assertions
-- Use `gloo_timers::future::sleep` for async timing
+- Use the `flush(ms)` async helper (Promise-based `setTimeout` wrapper) for async timing
 
 ### Scope
 

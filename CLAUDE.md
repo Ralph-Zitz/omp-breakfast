@@ -78,6 +78,7 @@ src/
     items.rs       – Item CRUD handlers (breakfast items with prices, admin-gated CUD)
     orders.rs      – Order item CRUD handlers (items within team orders, member-gated)
   middleware/
+    mod.rs         – Module declarations
     auth.rs        – JWT/Basic auth validators, token generation/verification, blacklist
     openapi.rs     – OpenApi derive + Swagger UI endpoint
 frontend/
@@ -125,7 +126,7 @@ tests/
 - Self-or-Admin-or-Team-Admin RBAC: `require_self_or_admin_or_team_admin` helper gates user mutations (update, delete); allows the user themselves, a global Admin, or a Team Admin of any team where the target user is also a member (checked via `db::is_team_admin_of_user` — a self-join on `memberof`). The legacy `require_self_or_admin` helper is retained but no longer used by any handler.
 - `Error::Forbidden` variant maps to HTTP 403 for authorization failures
 - `Error::Unauthorized` variant maps to HTTP 401 for authentication failures
-- Production safety: server panics at startup if `server.secret` or `server.jwtsecret` is still the default value when `ENV=production`
+- Production safety: server panics at startup if `server.secret` or `server.jwtsecret` is still the default value when `ENV=production`, or if `pg.user` or `pg.password` is still the default `actix`
 - Error responses are JSON `{"error": "..."}` via `ErrorResponse` struct; DB constraint violations return sanitized messages (never raw SQL)
 - List queries (`get_users`, `get_teams`, `get_roles`, `get_items`, `get_team_orders`, `get_order_items`) log a `warn!()` when a row fails to map instead of silently dropping it
 - `get_user_teams` and `get_team_users` return an empty `[]` (200 OK) when no records are found, rather than a 404 error
@@ -134,6 +135,8 @@ tests/
 - Health endpoint (`/health`) returns HTTP 503 with `{"up": false}` when the database is unreachable, and HTTP 200 with `{"up": true}` when healthy
 - Backend serves `frontend/dist/` as static files via `actix-files`, with `index_file("index.html")`
 - Static files are served with a `Content-Security-Policy` header: `default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'`. The `'unsafe-inline'` directive in `script-src` is required because Trunk generates an inline `<script type="module">` to initialize the WASM module; removing it causes a white-screen failure in Chrome.
+- Security headers: `Strict-Transport-Security` (HSTS), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` are set globally via `DefaultHeaders`
+- Password hashing uses explicit Argon2id parameters (`Algorithm::Argon2id`, `Version::V0x13`, `Params::default()`) rather than `Argon2::default()` to prevent silent weakening via crate updates
 
 ## Frontend Architecture
 

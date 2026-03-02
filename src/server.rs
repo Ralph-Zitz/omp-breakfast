@@ -305,6 +305,23 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         warn!("Using default JWT secret — acceptable for development only");
     }
 
+    // Reject default database credentials in production
+    let pg_user = settings.pg.user.as_deref().unwrap_or("actix");
+    let pg_password = settings.pg.password.as_deref().unwrap_or("actix");
+    if is_production && pg_user == "actix" {
+        panic!(
+            "FATAL: Database user must be changed from the default value in production. Set BREAKFAST_PG_USER environment variable."
+        );
+    }
+    if is_production && pg_password == "actix" {
+        panic!(
+            "FATAL: Database password must be changed from the default value in production. Set BREAKFAST_PG_PASSWORD environment variable."
+        );
+    }
+    if !is_production && pg_user == "actix" && pg_password == "actix" {
+        warn!("Using default database credentials — acceptable for development only");
+    }
+
     // Database pool
     let pool = settings
         .pg
@@ -404,7 +421,8 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
             .wrap(
                 DefaultHeaders::new()
                     .add(("Strict-Transport-Security", "max-age=31536000; includeSubDomains"))
-                    .add(("X-Content-Type-Options", "nosniff")),
+                    .add(("X-Content-Type-Options", "nosniff"))
+                    .add(("X-Frame-Options", "DENY")),
             )
             .app_data(state.clone())
             .app_data(swagger_config.clone())

@@ -321,13 +321,13 @@ pub struct UpdateTeamOrderEntry {
 
 // ── Memberof models ─────────────────────────────────────────────────────────
 
-#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
+#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct AddMemberEntry {
     pub user_id: Uuid,
     pub role_id: Uuid,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
+#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct UpdateMemberRoleEntry {
     pub role_id: Uuid,
 }

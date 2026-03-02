@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2025-07-17
+Last assessed: 2026-03-02
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -22,24 +22,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Attempted fix: Changed `features = ["rust_crypto"]` to `features = ["hmac", "sha2"]`. This compiled but all JWT tests failed at runtime: jsonwebtoken 10.x requires either `rust_crypto` or `aws_lc_rs` to auto-install a `CryptoProvider`. The granular `hmac`/`sha2` features do not register a provider, causing `"Could not automatically determine the process-level CryptoProvider"` errors. Manual `CryptoProvider::install_default()` calls would be needed, which is invasive.
   - Status: **Blocked on upstream.** Requires `jsonwebtoken` to either support granular features with auto-provider registration, or to split the `rust_crypto` feature so HS-only usage doesn't pull RSA/EC crates. Reverted to `features = ["rust_crypto"]`.
   - Source commands: `dependency-check`
-
-## Important Items
-
-### Security — Argon2 Parameters Rely on Crate Defaults
-
-- [ ] **#143 — A dependency update could silently weaken hashing parameters**
-  - Files: `src/db/users.rs`, `src/middleware/auth.rs`
-  - Problem: `Argon2::default()` is used for hashing and verification. While current defaults match OWASP recommendations, they could change.
-  - Fix: Explicitly construct `Argon2::new(Algorithm::Argon2id, Version::V0x13, params)` in a shared constant.
-  - Source commands: `security-audit`
-
-### Security — No Production Panic for Default DB Credentials
-
-- [ ] **#145 — Default Postgres credentials `actix/actix` used with no startup validation (unlike server/JWT secrets)**
-  - Files: `config/default.yml`, `src/server.rs`
-  - Problem: A misconfigured production deploy would silently use development credentials.
-  - Fix: Add production-panic for default DB credentials similar to the existing secret checks.
-  - Source commands: `security-audit`
 
 ## Minor Items
 
@@ -114,66 +96,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Problem: 8 categories total 4+3+3+3+2+1+2+3 = 21, but 23 WASM tests exist. Missing: `test_authed_get_retries_after_401_with_token_refresh` and `test_authed_get_double_failure_falls_back_to_login`.
   - Fix: Add "Token refresh (2 tests)" category to the breakdown.
   - Source commands: `cross-ref-check`
-
-### Documentation — `test-gaps.md` References `gloo_timers` Which Project Doesn't Use
-
-- [ ] **#164 — Command recommends `gloo_timers::future::sleep` but project uses custom `flush()` helper**
-  - File: `.claude/commands/test-gaps.md`
-  - Problem: Misleading test instruction. The project uses a Promise-based setTimeout wrapper, not `gloo-timers`.
-  - Fix: Replace with instruction to use the `flush(ms)` helper.
-  - Source commands: `cross-ref-check`
-
-### Documentation — Integration Test Doc Comments Reference Deprecated `database.sql`
-
-- [ ] **#165 — Both `api_tests.rs` and `db_tests.rs` reference `database.sql` for setup**
-  - Files: `tests/api_tests.rs`, `tests/db_tests.rs` (line 3 doc comments)
-  - Problem: DB is now initialized via Refinery migrations + `database_seed.sql`.
-  - Fix: Update doc comments to reference migrations and `database_seed.sql`.
-  - Source commands: `cross-ref-check`
-
-### Documentation — `middleware/mod.rs` Missing from CLAUDE.md Structure Tree
-
-- [ ] **#166 — Tree lists `auth.rs` and `openapi.rs` under `middleware/` but omits `mod.rs`**
-  - File: `CLAUDE.md` (Project Structure section)
-  - Problem: Inconsistent with `db/mod.rs` and `handlers/mod.rs` which are listed.
-  - Fix: Add `mod.rs — Module declarations` under `middleware/`.
-  - Source commands: `cross-ref-check`
-
-### Code Quality — Missing `#[must_use]` on Auth Functions
-
-- [ ] **#167 — `generate_token_pair`, `verify_jwt`, `invalidate_cache` return values that should not be ignored**
-  - File: `src/middleware/auth.rs`
-  - Fix: Add `#[must_use]` to these functions.
-  - Source commands: `review`
-
-### Dependencies — Redundant `features = ["default"]` on Crates
-
-- [ ] **#168 — `argon2` and `opentelemetry` specify `features = ["default"]` which is a no-op**
-  - File: `Cargo.toml`
-  - Fix: Simplify to plain version strings.
-  - Source commands: `dependency-check`
-
-### Dependencies — Unnecessary Braces on Simple Dependencies
-
-- [ ] **#169 — `actix-web-httpauth`, `tracing-log`, `rustls-pki-types` use `{ version = "..." }` with no other keys**
-  - File: `Cargo.toml`
-  - Fix: Simplify to plain version strings.
-  - Source commands: `dependency-check`
-
-### Security — Missing `X-Frame-Options` Header
-
-- [ ] **#170 — CSP `frame-ancestors 'none'` covers modern browsers but `X-Frame-Options: DENY` is missing for older browsers**
-  - File: `src/server.rs` (DefaultHeaders)
-  - Fix: Add `.add(("X-Frame-Options", "DENY"))`.
-  - Source commands: `security-audit`
-
-### Testing — `AddMemberEntry` and `UpdateMemberRoleEntry` Lack `Validate` Derive
-
-- [ ] **#171 — These models are deserialized from request bodies but `validate()` is a no-op since they don't derive `Validate`**
-  - File: `src/models.rs`
-  - Problem: Fields are UUIDs (type-enforced by serde), so low risk, but inconsistent with other models.
-  - Fix: Add `Validate` derive or remove the `validate()` call in the handlers.
-  - Source commands: `test-gaps`
 
 ## Informational Items
 
@@ -415,5 +337,5 @@ See that file for the full history of 103 resolved findings.
 - RBAC enforcement is correct across all handlers per the policy table.
 - OpenAPI spec is synchronized with routes (41 operations).
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 — blocked on upstream), 2 important (#143, #145), 17 minor, 29 informational. Total: 49 open items.
-- 103 resolved items moved to `.claude/resolved-findings.md` (6 critical, 37 important, 55 minor, 5 informational).
+- Open items summary: 1 critical (#132 — blocked on upstream), 0 important, 9 minor, 29 informational. Total: 39 open items.
+- 113 resolved items moved to `.claude/resolved-findings.md` (6 critical, 39 important, 63 minor, 5 informational).

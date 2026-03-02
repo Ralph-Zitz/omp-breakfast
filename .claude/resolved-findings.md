@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2025-07-17
+Last updated: 2026-03-02
 
 ## Critical Items
 
@@ -310,6 +310,18 @@ Last updated: 2025-07-17
   - Problem: Patch release likely contains bug fixes.
   - Fix: Run `cargo update -p leptos`.
   - Source commands: `dependency-check`
+
+### Security — Argon2 Parameters Rely on Crate Defaults
+
+- [x] **#143 — A dependency update could silently weaken hashing parameters**
+  - Resolution: Replaced `Argon2::default()` with explicit `Argon2::new(Algorithm::Argon2id, Version::V0x13, Params::default())` in `src/db/users.rs` (shared `argon2_hasher()` helper) and `src/middleware/auth.rs`.
+  - Source commands: `security-audit`
+
+### Security — No Production Panic for Default DB Credentials
+
+- [x] **#145 — Default Postgres credentials `actix/actix` used with no startup validation (unlike server/JWT secrets)**
+  - Resolution: Added production panic checks for default `pg.user` and `pg.password` in `src/server.rs`, matching the existing pattern for server/JWT secrets.
+  - Source commands: `security-audit`
 
 ## Minor Items
 
@@ -737,8 +749,56 @@ Last updated: 2025-07-17
   - Resolution: Superseded by #132. Granular feature selection `["hmac", "sha2"]` now available in jsonwebtoken 10.3.0.
   - Source commands: `dependency-check`
 
+### Documentation — `test-gaps.md` References `gloo_timers`
+
+- [x] **#164 — Command recommends `gloo_timers::future::sleep` but project uses custom `flush()` helper**
+  - Resolution: Updated `.claude/commands/test-gaps.md` to reference the `flush(ms)` async helper.
+  - Source commands: `cross-ref-check`
+
+### Documentation — Integration Test Doc Comments Reference Deprecated `database.sql`
+
+- [x] **#165 — Both `api_tests.rs` and `db_tests.rs` reference `database.sql` for setup**
+  - Resolution: Updated doc comments to reference Refinery migrations and `database_seed.sql`.
+  - Source commands: `cross-ref-check`
+
+### Documentation — `middleware/mod.rs` Missing from CLAUDE.md Structure Tree
+
+- [x] **#166 — Tree lists `auth.rs` and `openapi.rs` under `middleware/` but omits `mod.rs`**
+  - Resolution: Added `mod.rs — Module declarations` under `middleware/` in CLAUDE.md.
+  - Source commands: `cross-ref-check`
+
+### Code Quality — Missing `#[must_use]` on Auth Functions
+
+- [x] **#167 — `generate_token_pair`, `verify_jwt`, `invalidate_cache` return values that should not be ignored**
+  - Resolution: Added `#[must_use]` attribute to all three functions in `src/middleware/auth.rs`.
+  - Source commands: `review`
+
+### Dependencies — Redundant `features = ["default"]` on Crates
+
+- [x] **#168 — `argon2` and `opentelemetry` specify `features = ["default"]` which is a no-op**
+  - Resolution: Simplified `argon2` and `opentelemetry` to plain version strings in `Cargo.toml`.
+  - Source commands: `dependency-check`
+
+### Dependencies — Unnecessary Braces on Simple Dependencies
+
+- [x] **#169 — `actix-web-httpauth`, `tracing-log`, `rustls-pki-types` use `{ version = "..." }` with no other keys**
+  - Resolution: Simplified to plain version strings in `Cargo.toml`.
+  - Source commands: `dependency-check`
+
+### Security — Missing `X-Frame-Options` Header
+
+- [x] **#170 — CSP `frame-ancestors 'none'` covers modern browsers but `X-Frame-Options: DENY` is missing for older browsers**
+  - Resolution: Added `.add(("X-Frame-Options", "DENY"))` to `DefaultHeaders` in `src/server.rs`.
+  - Source commands: `security-audit`
+
+### Testing — `AddMemberEntry` and `UpdateMemberRoleEntry` Lack `Validate` Derive
+
+- [x] **#171 — These models are deserialized from request bodies but `validate()` is a no-op since they don't derive `Validate`**
+  - Resolution: Added `Validate` derive to both structs in `src/models.rs` for consistency with other request models.
+  - Source commands: `test-gaps`
+
 ## Notes
 
-- Total resolved items: 103 (6 critical, 37 important, 55 minor, 5 informational)
+- Total resolved items: 113 (6 critical, 39 important, 63 minor, 5 informational)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

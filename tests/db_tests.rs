@@ -1,6 +1,7 @@
 //! Integration tests for `db.rs` — tests every database function directly.
 //!
-//! These tests require a running PostgreSQL instance seeded with `database.sql`.
+//! These tests require a running PostgreSQL instance initialized via Refinery
+//! migrations and seeded with `database_seed.sql`.
 //! Run them via:
 //!   make test-integration
 //!
@@ -797,9 +798,15 @@ async fn delete_item_returns_true_then_false() {
     let client = test_client().await;
     let descr = format!("dbtest-item-{}", Uuid::now_v7());
 
-    let item = db::create_item(&client, CreateItemEntry { descr, price: Decimal::ZERO })
-        .await
-        .unwrap();
+    let item = db::create_item(
+        &client,
+        CreateItemEntry {
+            descr,
+            price: Decimal::ZERO,
+        },
+    )
+    .await
+    .unwrap();
 
     let deleted = db::delete_item(&client, item.item_id).await.unwrap();
     assert!(deleted);

@@ -10,7 +10,7 @@ use actix_web::HttpMessage;
 use actix_web::{dev::ServiceRequest, web::Data};
 use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
 use argon2::{
-    Argon2,
+    Algorithm as Argon2Algorithm, Argon2, Params, Version as Argon2Version,
     password_hash::{PasswordHash, PasswordVerifier},
 };
 use chrono::{DateTime, Duration, Utc};
@@ -58,6 +58,7 @@ fn generate_token(
     encode(&headers, &claims, &encoding_key)
 }
 
+#[must_use]
 #[instrument(skip(jwt_secret), level = "debug")]
 pub fn generate_token_pair(user_id: Uuid, jwt_secret: &str) -> Result<Auth, Error> {
     let access_token = generate_token(
@@ -82,6 +83,7 @@ pub fn generate_token_pair(user_id: Uuid, jwt_secret: &str) -> Result<Auth, Erro
     })
 }
 
+#[must_use]
 #[instrument(skip(jwt_secret), level = "debug")]
 pub fn verify_jwt(token: &str, jwt_secret: &str) -> Result<TokenData<Claims>, Error> {
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
@@ -137,6 +139,7 @@ pub async fn is_token_revoked(
     Ok(revoked)
 }
 
+#[must_use]
 #[instrument(skip(state), level = "debug")]
 pub fn invalidate_cache(state: Data<State>, key: &str) -> bool {
     let cache = &state.cache;
@@ -400,7 +403,13 @@ pub async fn basic_validator(
                 ));
             }
         };
-        match Argon2::default().verify_password(pswd.as_bytes(), &parsed_hash) {
+        match Argon2::new(
+            Argon2Algorithm::Argon2id,
+            Argon2Version::V0x13,
+            Params::default(),
+        )
+        .verify_password(pswd.as_bytes(), &parsed_hash)
+        {
             Ok(_) => Ok(req),
             Err(_) => {
                 warn!(user = %credentials.user_id(), "Invalid password for user");
