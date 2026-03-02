@@ -1,91 +1,154 @@
-# Breakfast App (WIP)
+# Breakfast App
 
-## Backend written in [Rust](https://www.rust-lang.org/) using [actix-web](https://actix.rs/)
+A breakfast ordering application for teams, built in Rust with an [actix-web](https://actix.rs/) REST API backend and a [Leptos](https://leptos.dev/) WebAssembly single-page frontend. Used internally at LEGO (FabuLab).
 
-### Setup
+## Tech Stack
 
-1. Git clone this repo
-2. Install Rust. See guide [here](https://www.rust-lang.org/tools/install)
-3. Install a postgres client (on Mac): `brew install postgresql@15`
-4. Add some nice tools for auto-reloading: `cargo install cargo-watch`
-5. Install JSON parser (on Mac): `brew install jq`
-6. Install certificate tools (on Mac): `brew install mkcert nss`
-7. Generate CA files for signing certificates for the web server: `mkcert -install`
-8. Generate the certificates with the web server: `mkcert localhost postgres 127.0.0.1 ::1`
-9. Place the generated certificates in the root folder of this project
-10. Modify the content of file `server.rs` and adjust paths to read the generated certificates
-11. Run `docker compose up -d` to start the local Postgresql database and the application
+- **Backend:** Rust / actix-web 4 with TLS (rustls)
+- **Frontend:** Leptos 0.8 (CSR mode, compiled to WebAssembly via Trunk)
+- **Database:** PostgreSQL 18 via `deadpool-postgres` connection pool
+- **Auth:** JWT (access + refresh tokens) + Basic Auth (Argon2id password hashing) + RBAC
+- **API docs:** Swagger UI at `/explorer` (via utoipa)
+- **Observability:** `tracing` with OpenTelemetry spans
+- **Containerization:** Docker Compose (app + PostgreSQL with TLS)
 
-To only run the database:
+## Prerequisites
 
-* Run the command: `docker compose run postgres-setup postgres -d`
+- [Rust](https://www.rust-lang.org/tools/install) (stable toolchain)
+- [Trunk](https://trunkrs.dev/) for frontend builds: `cargo install trunk`
+- [wasm-pack](https://rustwasm.github.io/wasm-pack/) for frontend tests: `cargo install wasm-pack`
+- Docker for running PostgreSQL
+- PostgreSQL client: `brew install postgresql` (macOS)
+- Certificate tools: `brew install mkcert nss` (macOS)
+- Optional: `cargo install cargo-watch` for auto-reload during development
+- Optional: `brew install jq` for pretty-printing JSON responses
 
-Then manually connect by running the application from the command line:
+## Setup
 
-* Build and run the server: `cargo watch -x check -x fmt -x run`
-* Check that connection to database is ok: `curl -v https://localhost:8080/health -s | jq`
+1. Clone this repo
+2. Generate a local CA for signing certificates: `mkcert -install`
+3. Generate TLS certificates: `mkcert localhost postgres 127.0.0.1 ::1`
+4. Place the generated files (`localhost.pem`, `localhost_key.pem`, `localhost_ca.pem`) in the project root
+5. Start everything: `docker compose up -d`
 
-Make profit :wink:
+To run only the database and start the backend manually:
 
-### Testing
+```bash
+docker compose up -d postgres            # start PostgreSQL
+docker compose run --rm postgres-setup   # initialize schema + seed data
+cargo watch -x check -x fmt -x run      # build and run with auto-reload
+```
 
-The project has two levels of tests:
+Verify the server is running:
 
-**Unit tests** — run without any external dependencies:
+```bash
+curl -k https://localhost:8080/health | jq
+```
+
+The frontend dev server (with API proxying) can be started separately:
+
+```bash
+make frontend-dev   # serves at http://127.0.0.1:8081
+```
+
+## Testing
+
+The project has three test suites:
+
+**Unit tests** (170 tests) — no external dependencies:
+
 ```bash
 make test-unit     # or: cargo test
 ```
 
-**Integration tests** — require a PostgreSQL database (managed via Docker):
+**Integration tests** (153 tests: 67 API + 86 DB) — require PostgreSQL:
+
 ```bash
 make test-integration
 ```
-This automatically:
-1. Starts an isolated Postgres container on port 5433 (via `Dockerfile.postgres`)
-2. Runs the V1 migration (creates schema) via init script
-3. Seeds it with `database_seed.sql`
-4. Runs the 15 integration tests
-5. Tears down the container
 
-**All tests** — run unit and integration tests in sequence:
+This automatically starts an isolated Postgres container on port 5433, runs all four migrations (V1–V4), seeds test data, executes all integration tests, and tears down the container.
+
+**Frontend WASM tests** (23 tests) — require Chrome:
+
+```bash
+make test-frontend
+```
+
+**All tests** — run all three suites plus a dependency audit:
+
 ```bash
 make test-all
 ```
 
 **Prerequisites for integration tests:**
+
 - Docker must be running
-- A PostgreSQL client (`psql`) must be installed (`brew install postgresql@15`)
+- A PostgreSQL client (`psql`) must be installed
 
 You can also manage the test database manually:
+
 ```bash
 make db-up         # start test DB on port 5433
 make db-down       # stop and remove test DB
 ```
 
-### Database Initialization
+## Database Initialization
 
-The application uses **different initialization strategies** for development vs production:
+The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Four migrations exist:
 
-**Production (and docker-compose):**
-- The application runs Refinery migrations at startup (`migrations/V1__initial_schema.sql`)
-- Migrations are tracked in the `refinery_schema_history` table
-- No seed data is inserted in production
+| Migration | Description |
+| --- | --- |
+| V1 | Initial schema (tables, triggers) |
+| V2 | UUID v7 defaults |
+| V3 | Indexes, FK constraints, NOT NULL |
+| V4 | Schema hardening |
 
-**Development (docker-compose):**
-- `docker compose up` starts the `postgres-setup` service
-- This service runs `init_dev_db.sh` which:
-  1. Creates the migration tracking table
-  2. Marks V1 migration as applied (so app doesn't re-run it)
-  3. Loads seed data from `database_seed.sql`
-- The application sees the schema is already at V1 and continues normally
+**Production:** The application runs pending migrations automatically at startup. No seed data is inserted.
+
+**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all four migrations, creates the Refinery tracking table, and loads seed data from `database_seed.sql`. On first startup, the application's migration runner detects the migrations are already applied and continues normally.
 
 **Manual database reset (development only):**
+
 ```bash
-# If you need to completely reset your local database from scratch:
-docker compose down -v
-PGPASSWORD=actix psql -h localhost -p 5432 -U actix actix < database.sql
-# Or just restart docker-compose which will reinitialize:
-docker compose up -d
+docker compose down -v   # remove volumes
+docker compose up -d     # reinitialize from scratch
 ```
 
-The `database.sql` file is kept for manual resets but is no longer used by docker-compose.
+## Make Targets
+
+| Target | Description |
+| --- | --- |
+| `make build` | Build frontend (Trunk) + backend (cargo) |
+| `make test-unit` | Run backend unit tests |
+| `make test-integration` | Run integration tests (manages test DB lifecycle) |
+| `make test-frontend` | Run frontend WASM tests (headless Chrome) |
+| `make test-all` | Run all test suites + dependency audit |
+| `make frontend-build` | Build frontend with Trunk (release) |
+| `make frontend-dev` | Start Trunk dev server on `http://127.0.0.1:8081` |
+| `make frontend-clean` | Remove `frontend/dist/` |
+| `make db-up` | Start test DB on port 5433 |
+| `make db-down` | Stop and remove test DB |
+| `make audit` | Run `cargo audit` |
+
+## Configuration
+
+Configuration is layered: `config/default.yml` → `config/{ENV}.yml` → environment variables (prefix: `BREAKFAST_`, separator: `_`).
+
+Key environment variables:
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `ENV` | Environment (`development` / `production`) | `development` |
+| `BREAKFAST_SERVER_SECRET` | Server secret (must change in production) | `Very Secret` |
+| `BREAKFAST_SERVER_JWTSECRET` | JWT signing secret (must change in production) | `Very Secret` |
+| `BREAKFAST_PG_USER` | Database user (must change in production) | `actix` |
+| `BREAKFAST_PG_PASSWORD` | Database password (must change in production) | `actix` |
+| `BREAKFAST_PG_HOST` | Database hostname | `localhost` |
+| `BREAKFAST_PG_PORT` | Database port | `5432` |
+
+The server panics at startup if default secrets or database credentials are used in production (`ENV=production`).
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
