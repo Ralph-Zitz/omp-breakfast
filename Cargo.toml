@@ -1,6 +1,6 @@
 [package]
 name = "breakfast"
-version = "0.6.1"
+version = "0.6.2"
 authors = ["Ralph Zitz <Ralph.Zitz@LEGO.com>"]
 edition = "2024"
 readme = "README.md"
@@ -11,7 +11,7 @@ keywords = ["fabulab"]
 
 [dependencies]
 dashmap = "6.1.0"
-actix-web = { version = "4.13.0", features = ["rustls-0_23", "secure-cookies"] }
+actix-web = { version = "4.13.0", features = ["rustls-0_23"] }
 actix-web-httpauth = { version = "0.8.2" }
 actix-governor = "0.10"
 utoipa = { version = "5.4.0", features = ["actix_extras", "chrono", "uuid", "decimal"] }

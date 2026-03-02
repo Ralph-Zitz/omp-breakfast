@@ -4,6 +4,7 @@ use crate::{
     handlers::*,
     middleware::auth::{
         generate_token_pair, invalidate_cache, is_token_revoked, revoke_token, verify_jwt,
+        REFRESH_TOKEN_DURATION_DAYS,
     },
     models::*,
     validate::validate,
@@ -12,7 +13,7 @@ use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
 };
 use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use deadpool_postgres::Client;
 use tracing::instrument;
 use uuid::Uuid;
@@ -109,7 +110,8 @@ pub async fn refresh_token(
     db::get_user(&client, claims.claims.sub).await?;
 
     // Revoke the old refresh token (rotation)
-    let expires_at = DateTime::<Utc>::from_timestamp(claims.claims.exp, 0).unwrap_or_else(Utc::now);
+    let expires_at = DateTime::<Utc>::from_timestamp(claims.claims.exp, 0)
+        .unwrap_or_else(|| Utc::now() + Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration"));
     revoke_token(&client, &state, &claims.claims.jti.to_string(), expires_at).await?;
 
     // Issue a new token pair
@@ -124,21 +126,36 @@ pub async fn refresh_token(
     responses(
         (status = 200, description = "Token revoked successfully", body = StatusResponse),
         (status = 400, description = "Invalid token", body = ErrorResponse),
+        (status = 403, description = "Forbidden - cannot revoke another user's token", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state, json), level = "debug")]
+#[instrument(skip(state, json, req), level = "debug")]
 pub async fn revoke_user_token(
     state: Data<State>,
     json: Json<TokenRequest>,
+    req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let jwt_secret = state.jwtsecret.clone();
     let token_data = verify_jwt(json.into_inner().token, jwt_secret).await?;
 
+    // Ownership check: the token being revoked must belong to the requesting user,
+    // unless the requester is a global admin.
+    let requester_id = requesting_user_id(&req)
+        .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+    if token_data.claims.sub != requester_id {
+        let client: Client = get_client(state.pool.clone()).await?;
+        if !db::is_admin(&client, requester_id).await? {
+            return Err(Error::Forbidden(
+                "Cannot revoke another user's token".to_string(),
+            ));
+        }
+    }
+
     // Revoke by jti — persist to DB
     let client: Client = get_client(state.pool.clone()).await?;
-    let expires_at =
-        DateTime::<Utc>::from_timestamp(token_data.claims.exp, 0).unwrap_or_else(Utc::now);
+    let expires_at = DateTime::<Utc>::from_timestamp(token_data.claims.exp, 0)
+        .unwrap_or_else(|| Utc::now() + Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration"));
     revoke_token(
         &client,
         &state,

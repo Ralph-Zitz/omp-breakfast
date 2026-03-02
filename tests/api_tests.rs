@@ -3052,3 +3052,76 @@ async fn create_user_then_authenticate_round_trip() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200, "cleanup: admin should delete temp user");
 }
+
+#[actix_web::test]
+#[ignore]
+async fn non_admin_cannot_update_team() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U1_F is a Member, not an Admin
+    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let token = &auth.access_token;
+
+    // Get teams
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let team_id = teams[0]["team_id"].as_str().unwrap();
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"tname": "Forbidden Update", "descr": "Should not work"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "non-admin should not be able to update teams"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn non_admin_cannot_update_role() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = login_admin(&app).await;
+    let user_auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+
+    // Get an existing role ID (use "Guest" role which is safe to test against)
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/roles")
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let roles: Vec<Value> = test::read_body_json(resp).await;
+    let guest_role = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Guest"))
+        .unwrap();
+    let role_id = guest_role["role_id"].as_str().unwrap();
+
+    // Non-admin tries to update → 403
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/roles/{}", role_id))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", user_auth.access_token),
+        ))
+        .set_json(json!({"title": "Forbidden Update"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "non-admin should not be able to update roles"
+    );
+}

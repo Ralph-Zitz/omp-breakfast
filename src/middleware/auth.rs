@@ -11,7 +11,9 @@ use argon2::{
 };
 use chrono::{DateTime, Duration, Utc};
 use deadpool_postgres::Client;
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode};
+use jsonwebtoken::{
+    Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode,
+};
 use serde_json::json;
 use tracing::{error, instrument, warn};
 use uuid::Uuid;
@@ -19,7 +21,7 @@ use uuid::Uuid;
 // Access token lifetime: 15 minutes
 const ACCESS_TOKEN_DURATION_MINUTES: i64 = 15;
 // Refresh token lifetime: 7 days
-const REFRESH_TOKEN_DURATION_DAYS: i64 = 7;
+pub const REFRESH_TOKEN_DURATION_DAYS: i64 = 7;
 // Auth cache TTL: 5 minutes
 const CACHE_TTL_SECONDS: i64 = 300;
 // Auth cache maximum entries
@@ -32,7 +34,7 @@ fn generate_token(
     token_type: &str,
     duration: Duration,
 ) -> Result<String, jsonwebtoken::errors::Error> {
-    let headers = Header::default();
+    let headers = Header::new(Algorithm::HS256);
     let encoding_key = EncodingKey::from_secret(jwt_secret.as_ref());
     let now = Utc::now();
     let exp = now + duration;
@@ -73,7 +75,7 @@ pub async fn generate_token_pair(user_id: Uuid, jwt_secret: String) -> Result<Au
 #[instrument(skip(jwt_secret), level = "debug")]
 pub async fn verify_jwt(token: String, jwt_secret: String) -> Result<TokenData<Claims>, Error> {
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
-    let validation = Validation::default();
+    let validation = Validation::new(Algorithm::HS256);
     let result = decode::<Claims>(&token, &decoding_key, &validation)?;
     Ok(result)
 }

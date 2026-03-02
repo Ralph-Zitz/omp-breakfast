@@ -151,11 +151,11 @@ pub async fn add_team_member(
         .map_err(Error::Db)?;
 
     let result = UsersInTeam {
-        user_id: row.get("user_id"),
-        firstname: row.get("firstname"),
-        lastname: row.get("lastname"),
-        email: row.get("email"),
-        title: row.get("title"),
+        user_id: row.try_get("user_id").map_err(Error::Db)?,
+        firstname: row.try_get("firstname").map_err(Error::Db)?,
+        lastname: row.try_get("lastname").map_err(Error::Db)?,
+        email: row.try_get("email").map_err(Error::Db)?,
+        title: row.try_get("title").map_err(Error::Db)?,
     };
 
     tx.commit().await.map_err(Error::Db)?;
@@ -229,11 +229,11 @@ pub async fn update_member_role(
         .map_err(Error::Db)?;
 
     let result = UsersInTeam {
-        user_id: row.get("user_id"),
-        firstname: row.get("firstname"),
-        lastname: row.get("lastname"),
-        email: row.get("email"),
-        title: row.get("title"),
+        user_id: row.try_get("user_id").map_err(Error::Db)?,
+        firstname: row.try_get("firstname").map_err(Error::Db)?,
+        lastname: row.try_get("lastname").map_err(Error::Db)?,
+        email: row.try_get("email").map_err(Error::Db)?,
+        title: row.try_get("title").map_err(Error::Db)?,
     };
 
     tx.commit().await.map_err(Error::Db)?;

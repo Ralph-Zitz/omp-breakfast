@@ -1079,7 +1079,7 @@ async fn delete_team_orders_bulk() {
 #[actix_web::test]
 #[ignore]
 async fn create_order_item_returns_entry() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
 
     // Create an item and order to work with
@@ -1106,7 +1106,7 @@ async fn create_order_item_returns_entry() {
     .unwrap();
 
     let order_item = db::create_order_item(
-        &client,
+        &mut client,
         order.teamorders_id,
         team_id,
         CreateOrderEntry {
@@ -1159,7 +1159,7 @@ async fn get_order_items_returns_list() {
 #[actix_web::test]
 #[ignore]
 async fn get_order_item_by_id() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
 
     let item_descr = format!("dbtest-getoi-{}", Uuid::now_v7());
@@ -1185,7 +1185,7 @@ async fn get_order_item_by_id() {
     .unwrap();
 
     db::create_order_item(
-        &client,
+        &mut client,
         order.teamorders_id,
         team_id,
         CreateOrderEntry {
@@ -1214,7 +1214,7 @@ async fn get_order_item_by_id() {
 #[actix_web::test]
 #[ignore]
 async fn update_order_item_changes_amt() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
 
     let item_descr = format!("dbtest-updoi-{}", Uuid::now_v7());
@@ -1240,7 +1240,7 @@ async fn update_order_item_changes_amt() {
     .unwrap();
 
     db::create_order_item(
-        &client,
+        &mut client,
         order.teamorders_id,
         team_id,
         CreateOrderEntry {
@@ -1252,7 +1252,7 @@ async fn update_order_item_changes_amt() {
     .unwrap();
 
     let updated = db::update_order_item(
-        &client,
+        &mut client,
         order.teamorders_id,
         item.item_id,
         team_id,
@@ -1275,7 +1275,7 @@ async fn update_order_item_changes_amt() {
 #[actix_web::test]
 #[ignore]
 async fn delete_order_item_returns_true_then_false() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
 
     let item_descr = format!("dbtest-deloi-{}", Uuid::now_v7());
@@ -1301,7 +1301,7 @@ async fn delete_order_item_returns_true_then_false() {
     .unwrap();
 
     db::create_order_item(
-        &client,
+        &mut client,
         order.teamorders_id,
         team_id,
         CreateOrderEntry {
@@ -1312,12 +1312,12 @@ async fn delete_order_item_returns_true_then_false() {
     .await
     .unwrap();
 
-    let deleted = db::delete_order_item(&client, order.teamorders_id, item.item_id, team_id)
+    let deleted = db::delete_order_item(&mut client, order.teamorders_id, item.item_id, team_id)
         .await
         .unwrap();
     assert!(deleted);
 
-    let deleted_again = db::delete_order_item(&client, order.teamorders_id, item.item_id, team_id)
+    let deleted_again = db::delete_order_item(&mut client, order.teamorders_id, item.item_id, team_id)
         .await
         .unwrap();
     assert!(!deleted_again);
@@ -1334,7 +1334,7 @@ async fn delete_order_item_returns_true_then_false() {
 #[actix_web::test]
 #[ignore]
 async fn duplicate_order_item_returns_error() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
 
     let item_descr = format!("dbtest-dupoi-{}", Uuid::now_v7());
@@ -1360,7 +1360,7 @@ async fn duplicate_order_item_returns_error() {
     .unwrap();
 
     db::create_order_item(
-        &client,
+        &mut client,
         order.teamorders_id,
         team_id,
         CreateOrderEntry {
@@ -1373,7 +1373,7 @@ async fn duplicate_order_item_returns_error() {
 
     // Adding the same item again should fail (PK violation)
     let result = db::create_order_item(
-        &client,
+        &mut client,
         order.teamorders_id,
         team_id,
         CreateOrderEntry {
@@ -2129,9 +2129,9 @@ async fn update_team_order_nonexistent_returns_error() {
 #[actix_web::test]
 #[ignore]
 async fn update_order_item_nonexistent_returns_error() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let result = db::update_order_item(
-        &client,
+        &mut client,
         Uuid::now_v7(),
         Uuid::now_v7(),
         Uuid::now_v7(),
