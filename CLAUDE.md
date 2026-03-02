@@ -102,7 +102,6 @@ init_dev_db.sh     – Docker development database initialization script
 migrations/
   V1__initial_schema.sql – Refinery migration for the database schema
   V2__uuid_v7_defaults.sql – UUID v7 default migration (PostgreSQL 18+)
-MIGRATION_FIX_SUMMARY.md – Documents the migration architecture change
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
   db_tests.rs      – DB function integration tests (ignored without running DB)
