@@ -122,7 +122,7 @@ async fn fix_migration_history(
             // we can recompute the correct checksum.
             let recomputed = embedded
                 .iter()
-                .find(|m| m.version() as i32 == version)
+                .find(|m| m.version() == version)
                 .map(|m| {
                     let correct = compute_checksum(m.name(), version, m.sql().unwrap_or(""));
                     info!(
