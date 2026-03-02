@@ -10,7 +10,7 @@ You are a database engineer reviewing a PostgreSQL-backed Rust application. The 
 
 The application uses different initialization strategies:
 
-- **Schema:** `migrations/V1__initial_schema.sql` - Refinery migration with idempotent DDL (CREATE IF NOT EXISTS, OR REPLACE)
+- **Schema:** `migrations/` directory — all Refinery migration files (V1 initial schema, V2 UUID v7 defaults, V3 indexes/constraints, and any newer migrations)
 - **Seed data (dev/test only):** `database_seed.sql` - INSERT statements with ON CONFLICT DO NOTHING for test fixtures
 - **Manual reset (deprecated):** `database.sql` - Full DROP/CREATE script, kept for manual dev resets only
 - **Initialization:** `init_dev_db.sh` - Sets up refinery tracking table and loads seed data for docker-compose
@@ -18,7 +18,7 @@ The application uses different initialization strategies:
 **Production:** Application runs migrations at startup via `src/db/migrate.rs`  
 **Development:** docker-compose runs `init_dev_db.sh` which marks V1 as applied and loads seeds
 
-### Schema review (`migrations/V1__initial_schema.sql`)
+### Schema review (`migrations/`)
 
 1. **Indexing** — Are all foreign keys indexed? Are frequently queried columns (used in WHERE clauses in `src/db/`) indexed? Are there missing or redundant indexes?
 2. **Data types** — Are column types appropriate? (e.g., `money` type vs `numeric`, `text` vs `varchar` consistency)
@@ -55,7 +55,7 @@ End with:
 ### Scope
 
 Read the following files:
-- `migrations/V1__initial_schema.sql` - Current schema definition (production)
+- `migrations/` - All migration files (V1 schema, V2 UUID defaults, V3 indexes/constraints, and any newer)
 - `database_seed.sql` - Seed data for development/testing
 - `src/db/` - All database query modules
 - `src/db/migrate.rs` - Migration runner

@@ -64,7 +64,7 @@ src/
     items.rs       – Item CRUD (get_items, get_item, create_item, update_item, delete_item)
     orders.rs      – Team order CRUD (get_team_orders, get_team_order, create_team_order, update_team_order, delete_team_order, delete_team_orders)
     order_items.rs – Order item CRUD + closed-order check (is_team_order_closed, get_order_items, get_order_item, create_order_item, update_order_item, delete_order_item)
-    membership.rs  – Team membership + RBAC queries (is_admin, is_admin_or_team_admin, is_team_admin_of_user, get_member_role, add_team_member, remove_team_member, update_member_role)
+    membership.rs  – Team membership + RBAC queries (is_admin, is_admin_or_team_admin, is_team_admin_of_user, get_member_role, check_team_access, add_team_member, remove_team_member, update_member_role)
     tokens.rs      – Token blacklist persistence (revoke_token_db, is_token_revoked_db, cleanup_expired_tokens)
   errors.rs        – Error enum with thiserror + ResponseError impl (maps to HTTP status codes)
   validate.rs      – Generic validation wrapper using validator crate
@@ -102,6 +102,7 @@ init_dev_db.sh     – Docker development database initialization script
 migrations/
   V1__initial_schema.sql – Refinery migration for the database schema
   V2__uuid_v7_defaults.sql – UUID v7 default migration (PostgreSQL 18+)
+  V3__indexes_constraints.sql – Indexes, FK RESTRICT, NOT NULL constraints
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
   db_tests.rs      – DB function integration tests (ignored without running DB)
@@ -229,6 +230,7 @@ When asked to **assess the project** (or "project assessment"), perform the foll
 
 1. Run every command defined in `.claude/commands/` against the current codebase:
    - `api-completeness` — compare DB schema vs implemented endpoints and frontend consumption
+   - `cross-ref-check` — validate CLAUDE.md, commands, and migration references against disk
    - `db-review` — review schema design, indexing, constraints, and query patterns
    - `dependency-check` — analyze Cargo dependencies for freshness, redundancy, and compatibility
    - `openapi-sync` — validate OpenAPI spec against routes and frontend API usage
@@ -272,7 +274,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 170 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `routes`, `server`, `validate` modules and the `healthcheck` binary
+- 148 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `routes`, `server`, `validate` modules and the `healthcheck` binary
 - 67 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - 86 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
