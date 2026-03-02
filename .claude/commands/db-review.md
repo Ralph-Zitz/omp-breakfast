@@ -55,6 +55,7 @@ End with:
 ### Scope
 
 Read the following files:
+
 - `migrations/` - All migration files (V1 schema, V2 UUID defaults, V3 indexes/constraints, and any newer)
 - `database_seed.sql` - Seed data for development/testing
 - `src/db/` - All database query modules

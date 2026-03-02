@@ -9,17 +9,17 @@ Audit the codebase against the RBAC (Role-Based Access Control) policy defined b
 
 ## RBAC Policy Table
 
-| Resource      | Action                        | Required Role                      | Enforced By                   |
-| ------------- | ----------------------------- | ---------------------------------- | ----------------------------- |
-| Team          | Create, Update, Delete        | Admin (global)                     | `require_admin`               |
-| Team Orders   | Delete All                    | Team Admin or Admin (global)       | `require_team_admin`          |
-| Team Orders   | Create, Update, Delete Single | Team Member or above               | `require_team_member`         |
-| Team Members  | Add, Remove, Update Role      | Team Admin or Admin (global)       | `require_team_admin`          |
-| User          | Create                        | Admin or Team Admin (any team)     | `require_admin_or_team_admin` |
-| User          | Update, Delete (by ID/email)  | Self, Admin, or Team Admin (shared team) | `require_self_or_admin_or_team_admin` |
-| Items         | Create, Update, Delete        | Admin (global)                     | `require_admin`               |
-| Roles         | Create, Update, Delete        | Admin (global)                     | `require_admin`               |
-| All read-only | GET endpoints                 | Any authenticated user             | JWT auth middleware            |
+| Resource      | Action                        | Required Role                              | Enforced By                             |
+| ------------- | ----------------------------- | ------------------------------------------ | --------------------------------------- |
+| Team          | Create, Update, Delete        | Admin (global)                             | `require_admin`                         |
+| Team Orders   | Delete All                    | Team Admin or Admin (global)               | `require_team_admin`                    |
+| Team Orders   | Create, Update, Delete Single | Team Member or above                       | `require_team_member`                   |
+| Team Members  | Add, Remove, Update Role      | Team Admin or Admin (global)               | `require_team_admin`                    |
+| User          | Create                        | Admin or Team Admin (any team)             | `require_admin_or_team_admin`           |
+| User          | Update, Delete (by ID/email)  | Self, Admin, or Team Admin (shared team)   | `require_self_or_admin_or_team_admin`   |
+| Items         | Create, Update, Delete        | Admin (global)                             | `require_admin`                         |
+| Roles         | Create, Update, Delete        | Admin (global)                             | `require_admin`                         |
+| All read-only | GET endpoints                 | Any authenticated user                     | JWT auth middleware                     |
 
 ## Role Definitions
 
