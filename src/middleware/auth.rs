@@ -449,8 +449,7 @@ mod tests {
     #[actix_web::test]
     async fn generate_token_pair_returns_two_distinct_tokens() {
         let user_id = Uuid::now_v7();
-        let auth = generate_token_pair(user_id, TEST_SECRET)
-            .unwrap();
+        let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
 
         assert!(!auth.access_token.is_empty());
         assert!(!auth.refresh_token.is_empty());
@@ -462,8 +461,7 @@ mod tests {
     #[actix_web::test]
     async fn access_token_has_correct_claims() {
         let user_id = Uuid::now_v7();
-        let auth = generate_token_pair(user_id, TEST_SECRET)
-            .unwrap();
+        let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
 
         let token_data = decode::<Claims>(
             &auth.access_token,
@@ -484,8 +482,7 @@ mod tests {
     #[actix_web::test]
     async fn refresh_token_has_correct_claims() {
         let user_id = Uuid::now_v7();
-        let auth = generate_token_pair(user_id, TEST_SECRET)
-            .unwrap();
+        let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
 
         let token_data = decode::<Claims>(
             &auth.refresh_token,
@@ -506,8 +503,7 @@ mod tests {
     #[actix_web::test]
     async fn verify_jwt_succeeds_with_valid_token() {
         let user_id = Uuid::now_v7();
-        let auth = generate_token_pair(user_id, TEST_SECRET)
-            .unwrap();
+        let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
 
         let result = verify_jwt(&auth.access_token, TEST_SECRET);
         assert!(result.is_ok());
@@ -517,8 +513,7 @@ mod tests {
     #[actix_web::test]
     async fn verify_jwt_fails_with_wrong_secret() {
         let user_id = Uuid::now_v7();
-        let auth = generate_token_pair(user_id, TEST_SECRET)
-            .unwrap();
+        let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
 
         let result = verify_jwt(&auth.access_token, "wrong-secret");
         assert!(result.is_err());
@@ -546,8 +541,7 @@ mod tests {
     #[actix_web::test]
     async fn verify_jwt_fails_with_tampered_token() {
         let user_id = Uuid::now_v7();
-        let auth = generate_token_pair(user_id, TEST_SECRET)
-            .unwrap();
+        let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
 
         let mut bytes = auth.access_token.into_bytes();
         let idx = bytes.len() - 2;
@@ -564,10 +558,8 @@ mod tests {
         let key = &DecodingKey::from_secret(TEST_SECRET.as_ref());
         let val = &Validation::default();
 
-        let auth1 = generate_token_pair(user_id, TEST_SECRET)
-            .unwrap();
-        let auth2 = generate_token_pair(user_id, TEST_SECRET)
-            .unwrap();
+        let auth1 = generate_token_pair(user_id, TEST_SECRET).unwrap();
+        let auth2 = generate_token_pair(user_id, TEST_SECRET).unwrap();
 
         let jtis: Vec<Uuid> = [
             &auth1.access_token,

@@ -1317,9 +1317,10 @@ async fn delete_order_item_returns_true_then_false() {
         .unwrap();
     assert!(deleted);
 
-    let deleted_again = db::delete_order_item(&mut client, order.teamorders_id, item.item_id, team_id)
-        .await
-        .unwrap();
+    let deleted_again =
+        db::delete_order_item(&mut client, order.teamorders_id, item.item_id, team_id)
+            .await
+            .unwrap();
     assert!(!deleted_again);
 
     // Cleanup
