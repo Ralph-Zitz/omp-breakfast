@@ -16,10 +16,11 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Dependencies — `jsonwebtoken` Pulls Vulnerable and Unnecessary Crypto Crates
 
-- [ ] **#132 — `rust_crypto` feature enables ~15 unused crates including vulnerable `rsa` (RUSTSEC-2023-0071); granular `["hmac", "sha2"]` features are available**
+- [ ] **#132 — `rust_crypto` feature enables ~15 unused crates including vulnerable `rsa` (RUSTSEC-2023-0071); granular `["hmac", "sha2"]` features are available but do not work**
   - File: `Cargo.toml` (jsonwebtoken dependency)
-  - Problem: `features = ["rust_crypto"]` pulls `rsa`, `ed25519-dalek`, `p256`, `p384`, `rand` — none of which are used (only HS256). The `rsa` crate has an unfixable timing side-channel advisory. `jsonwebtoken` 10.3.0 supports individual feature selection.
-  - Fix: Change `features = ["rust_crypto"]` to `features = ["hmac", "sha2"]`. This eliminates the advisory and removes ~15 crates from the dependency tree.
+  - Problem: `features = ["rust_crypto"]` pulls `rsa`, `ed25519-dalek`, `p256`, `p384`, `rand` — none of which are used (only HS256). The `rsa` crate has an unfixable timing side-channel advisory.
+  - Attempted fix: Changed `features = ["rust_crypto"]` to `features = ["hmac", "sha2"]`. This compiled but all JWT tests failed at runtime: jsonwebtoken 10.x requires either `rust_crypto` or `aws_lc_rs` to auto-install a `CryptoProvider`. The granular `hmac`/`sha2` features do not register a provider, causing `"Could not automatically determine the process-level CryptoProvider"` errors. Manual `CryptoProvider::install_default()` calls would be needed, which is invasive.
+  - Status: **Blocked on upstream.** Requires `jsonwebtoken` to either support granular features with auto-provider registration, or to split the `rust_crypto` feature so HS-only usage doesn't pull RSA/EC crates. Reverted to `features = ["rust_crypto"]`.
   - Source commands: `dependency-check`
 
 ## Important Items
@@ -408,11 +409,11 @@ See that file for the full history of 103 resolved findings.
 
 - All 170 backend unit tests pass (148 lib + 22 healthcheck); 67 API integration tests pass; 86 DB integration tests pass; 23 WASM tests pass. Total: 346 tests, 0 failures.
 - Backend unit test breakdown: config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, db/migrate: 34, healthcheck: 22 = **170 total**.
-- `cargo audit` reports 1 vulnerability: `rsa` 0.9.10 via `jsonwebtoken` (RUSTSEC-2023-0071). **Fixable** — see #132 (switch to `["hmac", "sha2"]` features).
+- `cargo audit` reports 1 vulnerability: `rsa` 0.9.10 via `jsonwebtoken` (RUSTSEC-2023-0071). **Blocked on upstream** — see #132 (granular features don't work with jsonwebtoken 10.x's CryptoProvider model).
 - Clippy is clean on both backend and frontend.
 - `cargo fmt --check` is clean on both crates.
 - RBAC enforcement is correct across all handlers per the policy table.
 - OpenAPI spec is synchronized with routes (41 operations).
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132), 2 important (#143, #145), 17 minor, 29 informational. Total: 49 open items.
+- Open items summary: 1 critical (#132 — blocked on upstream), 2 important (#143, #145), 17 minor, 29 informational. Total: 49 open items.
 - 103 resolved items moved to `.claude/resolved-findings.md` (6 critical, 37 important, 55 minor, 5 informational).
