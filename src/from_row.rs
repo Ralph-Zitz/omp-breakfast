@@ -25,7 +25,10 @@ impl std::error::Error for FromRowError {}
 /// Trait for converting a `tokio_postgres::Row` into a typed struct.
 pub trait FromRow: Sized {
     /// Convert an owned row into the target type.
-    fn from_row(row: Row) -> Result<Self, FromRowError>;
+    /// Default implementation delegates to `from_row_ref`.
+    fn from_row(row: Row) -> Result<Self, FromRowError> {
+        Self::from_row_ref(&row)
+    }
     /// Convert a borrowed row into the target type.
     fn from_row_ref(row: &Row) -> Result<Self, FromRowError>;
 }
@@ -43,16 +46,11 @@ fn map_err(column: &str, e: tokio_postgres::Error) -> FromRowError {
 // ── UserEntry ───────────────────────────────────────────────────────────────
 
 use crate::models::{
-    CreateItemEntry, CreateRoleEntry, CreateTeamEntry, CreateUserEntry, ItemEntry, OrderEntry,
-    RoleEntry, TeamEntry, TeamOrderEntry, UpdateItemEntry, UpdateRoleEntry, UpdateTeamEntry,
-    UpdateUserEntry, UserEntry,
+    ItemEntry, OrderEntry, RoleEntry, TeamEntry, TeamOrderEntry, UpdateUserEntry, UserEntry,
+    UserInTeams, UsersInTeam,
 };
 
 impl FromRow for UserEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
     fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
         Ok(Self {
             user_id: row.try_get("user_id").map_err(|e| map_err("user_id", e))?,
@@ -72,10 +70,6 @@ impl FromRow for UserEntry {
 // ── UpdateUserEntry ─────────────────────────────────────────────────────────
 
 impl FromRow for UpdateUserEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
     fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
         Ok(Self {
             user_id: row.try_get("user_id").map_err(|e| map_err("user_id", e))?,
@@ -93,36 +87,9 @@ impl FromRow for UpdateUserEntry {
     }
 }
 
-// ── CreateUserEntry ─────────────────────────────────────────────────────────
-
-impl FromRow for CreateUserEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            firstname: row
-                .try_get("firstname")
-                .map_err(|e| map_err("firstname", e))?,
-            lastname: row
-                .try_get("lastname")
-                .map_err(|e| map_err("lastname", e))?,
-            email: row.try_get("email").map_err(|e| map_err("email", e))?,
-            password: row
-                .try_get("password")
-                .map_err(|e| map_err("password", e))?,
-        })
-    }
-}
-
 // ── TeamEntry ───────────────────────────────────────────────────────────────
 
 impl FromRow for TeamEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
     fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
         Ok(Self {
             team_id: row.try_get("team_id").map_err(|e| map_err("team_id", e))?,
@@ -134,43 +101,9 @@ impl FromRow for TeamEntry {
     }
 }
 
-// ── CreateTeamEntry ─────────────────────────────────────────────────────────
-
-impl FromRow for CreateTeamEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            tname: row.try_get("tname").map_err(|e| map_err("tname", e))?,
-            descr: row.try_get("descr").map_err(|e| map_err("descr", e))?,
-        })
-    }
-}
-
-// ── UpdateTeamEntry ─────────────────────────────────────────────────────────
-
-impl FromRow for UpdateTeamEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            tname: row.try_get("tname").map_err(|e| map_err("tname", e))?,
-            descr: row.try_get("descr").map_err(|e| map_err("descr", e))?,
-        })
-    }
-}
-
 // ── RoleEntry ───────────────────────────────────────────────────────────────
 
 impl FromRow for RoleEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
     fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
         Ok(Self {
             role_id: row.try_get("role_id").map_err(|e| map_err("role_id", e))?,
@@ -181,41 +114,9 @@ impl FromRow for RoleEntry {
     }
 }
 
-// ── CreateRoleEntry ─────────────────────────────────────────────────────────
-
-impl FromRow for CreateRoleEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            title: row.try_get("title").map_err(|e| map_err("title", e))?,
-        })
-    }
-}
-
-// ── UpdateRoleEntry ─────────────────────────────────────────────────────────
-
-impl FromRow for UpdateRoleEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            title: row.try_get("title").map_err(|e| map_err("title", e))?,
-        })
-    }
-}
-
 // ── ItemEntry ───────────────────────────────────────────────────────────────
 
 impl FromRow for ItemEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
     fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
         Ok(Self {
             item_id: row.try_get("item_id").map_err(|e| map_err("item_id", e))?,
@@ -227,43 +128,9 @@ impl FromRow for ItemEntry {
     }
 }
 
-// ── CreateItemEntry ─────────────────────────────────────────────────────────
-
-impl FromRow for CreateItemEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            descr: row.try_get("descr").map_err(|e| map_err("descr", e))?,
-            price: row.try_get("price").map_err(|e| map_err("price", e))?,
-        })
-    }
-}
-
-// ── UpdateItemEntry ─────────────────────────────────────────────────────────
-
-impl FromRow for UpdateItemEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            descr: row.try_get("descr").map_err(|e| map_err("descr", e))?,
-            price: row.try_get("price").map_err(|e| map_err("price", e))?,
-        })
-    }
-}
-
 // ── TeamOrderEntry ──────────────────────────────────────────────────────────
 
 impl FromRow for TeamOrderEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
     fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
         Ok(Self {
             teamorders_id: row
@@ -286,10 +153,6 @@ impl FromRow for TeamOrderEntry {
 // ── OrderEntry ──────────────────────────────────────────────────────────────
 
 impl FromRow for OrderEntry {
-    fn from_row(row: Row) -> Result<Self, FromRowError> {
-        Self::from_row_ref(&row)
-    }
-
     fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
         Ok(Self {
             orders_teamorders_id: row
@@ -302,6 +165,41 @@ impl FromRow for OrderEntry {
                 .try_get("orders_team_id")
                 .map_err(|e| map_err("orders_team_id", e))?,
             amt: row.try_get("amt").map_err(|e| map_err("amt", e))?,
+        })
+    }
+}
+
+// ── UsersInTeam ─────────────────────────────────────────────────────────────
+
+impl FromRow for UsersInTeam {
+    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
+        Ok(Self {
+            user_id: row.try_get("user_id").map_err(|e| map_err("user_id", e))?,
+            firstname: row
+                .try_get("firstname")
+                .map_err(|e| map_err("firstname", e))?,
+            lastname: row
+                .try_get("lastname")
+                .map_err(|e| map_err("lastname", e))?,
+            email: row.try_get("email").map_err(|e| map_err("email", e))?,
+            title: row.try_get("title").map_err(|e| map_err("title", e))?,
+        })
+    }
+}
+
+// ── UserInTeams ─────────────────────────────────────────────────────────────
+
+impl FromRow for UserInTeams {
+    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
+        Ok(Self {
+            tname: row.try_get("tname").map_err(|e| map_err("tname", e))?,
+            title: row.try_get("title").map_err(|e| map_err("title", e))?,
+            firstname: row
+                .try_get("firstname")
+                .map_err(|e| map_err("firstname", e))?,
+            lastname: row
+                .try_get("lastname")
+                .map_err(|e| map_err("lastname", e))?,
         })
     }
 }
@@ -401,23 +299,18 @@ mod tests {
         fn _assert_from_row<T: FromRow>() {}
         _assert_from_row::<UserEntry>();
         _assert_from_row::<UpdateUserEntry>();
-        _assert_from_row::<CreateUserEntry>();
     }
 
     #[test]
     fn from_row_trait_is_implemented_for_all_entry_types() {
         fn _assert_from_row<T: FromRow>() {}
         _assert_from_row::<TeamEntry>();
-        _assert_from_row::<CreateTeamEntry>();
-        _assert_from_row::<UpdateTeamEntry>();
         _assert_from_row::<RoleEntry>();
-        _assert_from_row::<CreateRoleEntry>();
-        _assert_from_row::<UpdateRoleEntry>();
         _assert_from_row::<ItemEntry>();
-        _assert_from_row::<CreateItemEntry>();
-        _assert_from_row::<UpdateItemEntry>();
         _assert_from_row::<TeamOrderEntry>();
         _assert_from_row::<OrderEntry>();
+        _assert_from_row::<UsersInTeam>();
+        _assert_from_row::<UserInTeams>();
     }
 
     // ── FromRowError variants are distinct ──────────────────────────────

@@ -875,7 +875,7 @@ async fn create_team_order_returns_entry() {
         order.duedate,
         Some(NaiveDate::from_ymd_opt(2026, 6, 15).unwrap())
     );
-    assert_eq!(order.closed, Some(false));
+    assert_eq!(order.closed, false);
 
     // Cleanup
     db::delete_team_order(&client, team_id, order.teamorders_id)
@@ -987,7 +987,7 @@ async fn update_team_order_changes_fields() {
         updated.duedate,
         Some(NaiveDate::from_ymd_opt(2026, 12, 25).unwrap())
     );
-    assert_eq!(updated.closed, Some(true));
+    assert_eq!(updated.closed, true);
 
     // Cleanup
     db::delete_team_order(&client, team_id, order.teamorders_id)

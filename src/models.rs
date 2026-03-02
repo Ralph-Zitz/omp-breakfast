@@ -57,6 +57,11 @@ pub struct StatusResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct RevokedResponse {
+    pub revoked: bool,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct DeletedResponse {
     pub deleted: bool,
 }
@@ -274,7 +279,7 @@ pub struct TeamOrderEntry {
     pub teamorders_team_id: Uuid,
     pub teamorders_user_id: Option<Uuid>,
     pub duedate: Option<chrono::NaiveDate>,
-    pub closed: Option<bool>,
+    pub closed: bool,
     pub created: DateTime<Utc>,
     pub changed: DateTime<Utc>,
 }

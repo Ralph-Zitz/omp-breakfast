@@ -5,6 +5,7 @@ pub mod teams;
 pub mod users;
 
 use crate::{db, errors::Error, models::*};
+use crate::middleware::auth::ROLE_TEAM_ADMIN;
 use actix_web::{HttpMessage, HttpRequest, HttpResponse, Responder, web::Data};
 use deadpool_postgres::{Client, Pool};
 use tracing::{error, instrument};
@@ -32,11 +33,12 @@ pub async fn require_team_member(
 ) -> Result<(), Error> {
     let user_id = requesting_user_id(req)
         .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
-    // Global admin bypass
-    if db::is_admin(client, user_id).await? {
+    // Combined admin + team role check in a single DB round-trip
+    let (is_admin, team_role) = db::check_team_access(client, team_id, user_id).await?;
+    if is_admin {
         return Ok(());
     }
-    match db::get_member_role(client, team_id, user_id).await? {
+    match team_role {
         Some(_) => Ok(()),
         None => Err(Error::Forbidden("Team membership required".to_string())),
     }
@@ -62,12 +64,13 @@ pub async fn require_team_admin(
 ) -> Result<(), Error> {
     let user_id = requesting_user_id(req)
         .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
-    // Global admin bypass
-    if db::is_admin(client, user_id).await? {
+    // Combined admin + team role check in a single DB round-trip
+    let (is_admin, team_role) = db::check_team_access(client, team_id, user_id).await?;
+    if is_admin {
         return Ok(());
     }
-    match db::get_member_role(client, team_id, user_id).await? {
-        Some(role) if role == "Team Admin" => Ok(()),
+    match team_role {
+        Some(role) if role == ROLE_TEAM_ADMIN => Ok(()),
         Some(_) => Err(Error::Forbidden("Team admin role required".to_string())),
         None => Err(Error::Forbidden("Team membership required".to_string())),
     }
@@ -137,6 +140,7 @@ pub async fn require_self_or_admin_or_team_admin(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::middleware::auth::TOKEN_TYPE_ACCESS;
     use actix_web::error::ResponseError;
     use actix_web::test::TestRequest;
     use uuid::Uuid;
@@ -149,7 +153,7 @@ mod tests {
             exp: 9999999999,
             iat: 1000000000,
             jti: Uuid::now_v7(),
-            token_type: "access".to_string(),
+            token_type: TOKEN_TYPE_ACCESS.to_string(),
         });
         req
     }

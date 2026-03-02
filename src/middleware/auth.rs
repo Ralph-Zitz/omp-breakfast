@@ -27,6 +27,15 @@ const CACHE_TTL_SECONDS: i64 = 300;
 // Auth cache maximum entries
 const CACHE_MAX_SIZE: usize = 1000;
 
+// ── Token type constants ────────────────────────────────────────────────────
+pub const TOKEN_TYPE_ACCESS: &str = "access";
+pub const TOKEN_TYPE_REFRESH: &str = "refresh";
+pub const TOKEN_TYPE_BEARER: &str = "Bearer";
+
+// ── Role name constants ─────────────────────────────────────────────────────
+pub const ROLE_ADMIN: &str = "Admin";
+pub const ROLE_TEAM_ADMIN: &str = "Team Admin";
+
 #[instrument(skip(jwt_secret), level = "debug")]
 fn generate_token(
     user_id: Uuid,
@@ -49,34 +58,34 @@ fn generate_token(
 }
 
 #[instrument(skip(jwt_secret), level = "debug")]
-pub async fn generate_token_pair(user_id: Uuid, jwt_secret: String) -> Result<Auth, Error> {
+pub fn generate_token_pair(user_id: Uuid, jwt_secret: &str) -> Result<Auth, Error> {
     let access_token = generate_token(
         user_id,
-        &jwt_secret,
-        "access",
+        jwt_secret,
+        TOKEN_TYPE_ACCESS,
         Duration::try_minutes(ACCESS_TOKEN_DURATION_MINUTES).expect("valid duration"),
     )
     .map_err(Error::Jwt)?;
     let refresh_token = generate_token(
         user_id,
-        &jwt_secret,
-        "refresh",
+        jwt_secret,
+        TOKEN_TYPE_REFRESH,
         Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration"),
     )
     .map_err(Error::Jwt)?;
     Ok(Auth {
         access_token,
         refresh_token,
-        token_type: "Bearer".to_string(),
+        token_type: TOKEN_TYPE_BEARER.to_string(),
         expires_in: ACCESS_TOKEN_DURATION_MINUTES * 60,
     })
 }
 
 #[instrument(skip(jwt_secret), level = "debug")]
-pub async fn verify_jwt(token: String, jwt_secret: String) -> Result<TokenData<Claims>, Error> {
+pub fn verify_jwt(token: &str, jwt_secret: &str) -> Result<TokenData<Claims>, Error> {
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
     let validation = Validation::new(Algorithm::HS256);
-    let result = decode::<Claims>(&token, &decoding_key, &validation)?;
+    let result = decode::<Claims>(token, &decoding_key, &validation)?;
     Ok(result)
 }
 
@@ -162,10 +171,10 @@ pub async fn jwt_validator(
         }
     };
     let jwt_secret = &state.jwtsecret;
-    let claims = verify_jwt(credentials.token().to_string(), jwt_secret.clone()).await;
+    let claims = verify_jwt(credentials.token(), jwt_secret);
     if let Ok(c) = claims {
         // Only accept access tokens for API endpoints
-        if c.claims.token_type != "access" {
+        if c.claims.token_type != TOKEN_TYPE_ACCESS {
             warn!(token_type = %c.claims.token_type, "Invalid token type, access token required");
             return Err((
                 actix_web::error::ErrorUnauthorized(
@@ -227,10 +236,10 @@ pub async fn refresh_validator(
         }
     };
     let jwt_secret = &state.jwtsecret;
-    let claims = verify_jwt(credentials.token().to_string(), jwt_secret.clone()).await;
+    let claims = verify_jwt(credentials.token(), jwt_secret);
     if let Ok(c) = claims {
         // Only accept refresh tokens
-        if c.claims.token_type != "refresh" {
+        if c.claims.token_type != TOKEN_TYPE_REFRESH {
             warn!(token_type = %c.claims.token_type, "Invalid token type, refresh token required");
             return Err((
                 actix_web::error::ErrorUnauthorized(
@@ -440,22 +449,20 @@ mod tests {
     #[actix_web::test]
     async fn generate_token_pair_returns_two_distinct_tokens() {
         let user_id = Uuid::now_v7();
-        let auth = generate_token_pair(user_id, TEST_SECRET.to_string())
-            .await
+        let auth = generate_token_pair(user_id, TEST_SECRET)
             .unwrap();
 
         assert!(!auth.access_token.is_empty());
         assert!(!auth.refresh_token.is_empty());
         assert_ne!(auth.access_token, auth.refresh_token);
-        assert_eq!(auth.token_type, "Bearer");
+        assert_eq!(auth.token_type, TOKEN_TYPE_BEARER);
         assert_eq!(auth.expires_in, ACCESS_TOKEN_DURATION_MINUTES * 60);
     }
 
     #[actix_web::test]
     async fn access_token_has_correct_claims() {
         let user_id = Uuid::now_v7();
-        let auth = generate_token_pair(user_id, TEST_SECRET.to_string())
-            .await
+        let auth = generate_token_pair(user_id, TEST_SECRET)
             .unwrap();
 
         let token_data = decode::<Claims>(
@@ -466,7 +473,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(token_data.claims.sub, user_id);
-        assert_eq!(token_data.claims.token_type, "access");
+        assert_eq!(token_data.claims.token_type, TOKEN_TYPE_ACCESS);
         let expected_exp = Utc::now().timestamp() + ACCESS_TOKEN_DURATION_MINUTES * 60;
         assert!(
             (token_data.claims.exp - expected_exp).abs() < 60,
@@ -477,8 +484,7 @@ mod tests {
     #[actix_web::test]
     async fn refresh_token_has_correct_claims() {
         let user_id = Uuid::now_v7();
-        let auth = generate_token_pair(user_id, TEST_SECRET.to_string())
-            .await
+        let auth = generate_token_pair(user_id, TEST_SECRET)
             .unwrap();
 
         let token_data = decode::<Claims>(
@@ -489,7 +495,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(token_data.claims.sub, user_id);
-        assert_eq!(token_data.claims.token_type, "refresh");
+        assert_eq!(token_data.claims.token_type, TOKEN_TYPE_REFRESH);
         let expected_exp = Utc::now().timestamp() + REFRESH_TOKEN_DURATION_DAYS * 86400;
         assert!(
             (token_data.claims.exp - expected_exp).abs() < 60,
@@ -500,11 +506,10 @@ mod tests {
     #[actix_web::test]
     async fn verify_jwt_succeeds_with_valid_token() {
         let user_id = Uuid::now_v7();
-        let auth = generate_token_pair(user_id, TEST_SECRET.to_string())
-            .await
+        let auth = generate_token_pair(user_id, TEST_SECRET)
             .unwrap();
 
-        let result = verify_jwt(auth.access_token, TEST_SECRET.to_string()).await;
+        let result = verify_jwt(&auth.access_token, TEST_SECRET);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().claims.sub, user_id);
     }
@@ -512,11 +517,10 @@ mod tests {
     #[actix_web::test]
     async fn verify_jwt_fails_with_wrong_secret() {
         let user_id = Uuid::now_v7();
-        let auth = generate_token_pair(user_id, TEST_SECRET.to_string())
-            .await
+        let auth = generate_token_pair(user_id, TEST_SECRET)
             .unwrap();
 
-        let result = verify_jwt(auth.access_token, "wrong-secret".to_string()).await;
+        let result = verify_jwt(&auth.access_token, "wrong-secret");
         assert!(result.is_err());
     }
 
@@ -530,20 +534,19 @@ mod tests {
                 exp: (Utc::now() - Duration::try_hours(1).unwrap()).timestamp(),
                 iat: (Utc::now() - Duration::try_hours(2).unwrap()).timestamp(),
                 jti: Uuid::now_v7(),
-                token_type: "access".to_string(),
+                token_type: TOKEN_TYPE_ACCESS.to_string(),
             };
             encode(&Header::default(), &claims, &encoding_key).unwrap()
         };
 
-        let result = verify_jwt(token, TEST_SECRET.to_string()).await;
+        let result = verify_jwt(&token, TEST_SECRET);
         assert!(result.is_err());
     }
 
     #[actix_web::test]
     async fn verify_jwt_fails_with_tampered_token() {
         let user_id = Uuid::now_v7();
-        let auth = generate_token_pair(user_id, TEST_SECRET.to_string())
-            .await
+        let auth = generate_token_pair(user_id, TEST_SECRET)
             .unwrap();
 
         let mut bytes = auth.access_token.into_bytes();
@@ -551,7 +554,7 @@ mod tests {
         bytes[idx] = if bytes[idx] == b'A' { b'B' } else { b'A' };
         let tampered = String::from_utf8(bytes).unwrap();
 
-        let result = verify_jwt(tampered, TEST_SECRET.to_string()).await;
+        let result = verify_jwt(&tampered, TEST_SECRET);
         assert!(result.is_err());
     }
 
@@ -561,11 +564,9 @@ mod tests {
         let key = &DecodingKey::from_secret(TEST_SECRET.as_ref());
         let val = &Validation::default();
 
-        let auth1 = generate_token_pair(user_id, TEST_SECRET.to_string())
-            .await
+        let auth1 = generate_token_pair(user_id, TEST_SECRET)
             .unwrap();
-        let auth2 = generate_token_pair(user_id, TEST_SECRET.to_string())
-            .await
+        let auth2 = generate_token_pair(user_id, TEST_SECRET)
             .unwrap();
 
         let jtis: Vec<Uuid> = [

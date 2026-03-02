@@ -29,14 +29,14 @@ pub async fn get_teams(state: Data<State>) -> Result<impl Responder, Error> {
 
 #[utoipa::path(
     get,
-    path = "/api/v1.0/teams/{id}",
+    path = "/api/v1.0/teams/{team_id}",
     responses(
         (status = 200, description = "Team found", body = TeamEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 404, description = "Team not found", body = ErrorResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the Team")
+        ("team_id", description = "Unique UUID of the Team")
     ),
     security(("bearer_auth" = [])),
 )]
@@ -78,7 +78,7 @@ pub async fn create_team(
 
 #[utoipa::path(
     delete,
-    path = "/api/v1.0/teams/{id}",
+    path = "/api/v1.0/teams/{team_id}",
     responses(
         (status = 200, description = "Team deleted successfully", body = DeletedResponse),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
@@ -86,7 +86,7 @@ pub async fn create_team(
         (status = 404, description = "Team not deleted", body = DeletedResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the Team")
+        ("team_id", description = "Unique UUID of the Team")
     ),
     security(("bearer_auth" = [])),
 )]
@@ -109,7 +109,7 @@ pub async fn delete_team(
 
 #[utoipa::path(
     put,
-    path = "/api/v1.0/teams/{id}",
+    path = "/api/v1.0/teams/{team_id}",
     request_body = UpdateTeamEntry,
     responses(
         (status = 200, description = "Team updated successfully", body = TeamEntry),
@@ -118,7 +118,7 @@ pub async fn delete_team(
         (status = 404, description = "Team not updated", body = ErrorResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the Team")
+        ("team_id", description = "Unique UUID of the Team")
     ),
     security(("bearer_auth" = [])),
 )]
@@ -139,14 +139,14 @@ pub async fn update_team(
 
 #[utoipa::path(
     get,
-    path = "/api/v1.0/teams/{id}/users",
+    path = "/api/v1.0/teams/{team_id}/users",
     responses(
         (status = 200, description = "List of Users in the Team", body = [UsersInTeam]),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 404, description = "No users found", body = ErrorResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the Team")
+        ("team_id", description = "Unique UUID of the Team")
     ),
     security(("bearer_auth" = [])),
 )]

@@ -30,14 +30,14 @@ pub async fn get_roles(state: Data<State>) -> Result<impl Responder, Error> {
 
 #[utoipa::path(
     get,
-    path = "/api/v1.0/roles/{id}",
+    path = "/api/v1.0/roles/{role_id}",
     responses(
         (status = 200, description = "Role found", body = RoleEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 404, description = "Role not found", body = ErrorResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the Role")
+        ("role_id", description = "Unique UUID of the Role")
     ),
     security(("bearer_auth" = [])),
 )]
@@ -79,7 +79,7 @@ pub async fn create_role(
 
 #[utoipa::path(
     delete,
-    path = "/api/v1.0/roles/{id}",
+    path = "/api/v1.0/roles/{role_id}",
     responses(
         (status = 200, description = "Role deleted successfully", body = DeletedResponse),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
@@ -87,7 +87,7 @@ pub async fn create_role(
         (status = 404, description = "Role not deleted", body = DeletedResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the Role")
+        ("role_id", description = "Unique UUID of the Role")
     ),
     security(("bearer_auth" = [])),
 )]
@@ -109,7 +109,7 @@ pub async fn delete_role(
 
 #[utoipa::path(
     put,
-    path = "/api/v1.0/roles/{id}",
+    path = "/api/v1.0/roles/{role_id}",
     request_body = UpdateRoleEntry,
     responses(
         (status = 200, description = "Role updated successfully", body = RoleEntry),
@@ -118,7 +118,7 @@ pub async fn delete_role(
         (status = 404, description = "Role not updated", body = ErrorResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the Role")
+        ("role_id", description = "Unique UUID of the Role")
     ),
     security(("bearer_auth" = [])),
 )]

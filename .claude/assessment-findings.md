@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-02 (full re-assessment — 45 new findings: #85–#129)
+Last assessed: 2026-03-02 (full re-assessment — 45 new findings: #85–#129; findings #94–#107, #109–#111, #114 fixed in v0.6.3)
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -140,7 +140,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Code Quality — `verify_jwt` and `generate_token_pair` Are Unnecessarily Async
 
-- [ ] **#94 — Functions contain no `.await` but are marked `async`**
+- [x] **#94 — Functions contain no `.await` but are marked `async`**
   - File: `src/middleware/auth.rs` lines 52, 77
   - Problem: Creates unnecessary `Future` wrappers on every auth call. Every caller must `.await` them but the compiler generates state-machine code for no benefit.
   - Fix: Change to `pub fn`. Remove `.await` from callers.
@@ -148,7 +148,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Code Quality — Auth Functions Take `String` by Value
 
-- [ ] **#95 — `verify_jwt` and `generate_token_pair` take `String` instead of `&str`**
+- [x] **#95 — `verify_jwt` and `generate_token_pair` take `String` instead of `&str`**
   - File: `src/middleware/auth.rs` lines 52, 77
   - Problem: Forces `.clone()` at every call site (`state.jwtsecret.clone()`, `credentials.token().to_string()`).
   - Fix: Change signatures to take `&str`.
@@ -156,7 +156,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Code Quality — Magic Strings for Role Names and Token Types
 
-- [ ] **#96 — `"Admin"`, `"Team Admin"`, `"access"`, `"refresh"` scattered as raw strings**
+- [x] **#96 — `"Admin"`, `"Team Admin"`, `"access"`, `"refresh"` scattered as raw strings**
   - Files: `src/db/membership.rs`, `src/handlers/mod.rs`, `src/middleware/auth.rs`
   - Problem: A typo would silently break RBAC or token validation.
   - Fix: Define `const` values or enums (e.g., `pub const ADMIN: &str = "Admin";`).
@@ -164,7 +164,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Code Quality — `StatusResponse` Reused for Token Revocation
 
-- [ ] **#97 — Token revocation returns `{"up": true}` instead of a revocation-specific response**
+- [x] **#97 — Token revocation returns `{"up": true}` instead of a revocation-specific response**
   - File: `src/handlers/users.rs` line 150
   - Problem: `StatusResponse { up: true }` is the health-check response type. Reusing it for `/auth/revoke` is semantically wrong.
   - Fix: Create a dedicated `RevokedResponse` or use `DeletedResponse`.
@@ -172,7 +172,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Code Quality — Dead `FromRow` Implementations for Input DTOs
 
-- [ ] **#98 — 7 `FromRow` implementations exist for types never read from DB rows**
+- [x] **#98 — 7 `FromRow` implementations exist for types never read from DB rows**
   - File: `src/from_row.rs` (CreateUserEntry, CreateTeamEntry, UpdateTeamEntry, CreateRoleEntry, UpdateRoleEntry, CreateItemEntry, UpdateItemEntry)
   - Problem: These types are input DTOs (deserialized from JSON). No DB function ever constructs them from a row.
   - Fix: Remove the unused `FromRow` implementations.
@@ -180,7 +180,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Code Quality — `FromRow` Boilerplate
 
-- [ ] **#99 — `from_row` always delegates to `from_row_ref` — 13 identical function bodies**
+- [x] **#99 — `from_row` always delegates to `from_row_ref` — 13 identical function bodies**
   - File: `src/from_row.rs`
   - Problem: Every `FromRow` implementation has the same `fn from_row(row: Row) -> ... { Self::from_row_ref(&row) }` body.
   - Fix: Add a default implementation in the trait: `fn from_row(row: Row) -> ... { Self::from_row_ref(&row) }`.
@@ -188,7 +188,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Code Quality — `UsersInTeam`/`UserInTeams` Bypass `FromRow`
 
-- [ ] **#100 — Manual row mapping in `get_team_users` and `get_user_teams` instead of `FromRow`**
+- [x] **#100 — Manual row mapping in `get_team_users` and `get_user_teams` instead of `FromRow`**
   - File: `src/db/teams.rs` lines 27–46, 155–183
   - Problem: Two functions use copy-pasted manual `try_get` logic instead of the `FromRow` trait used everywhere else.
   - Fix: Implement `FromRow` for `UsersInTeam` and `UserInTeams`.
@@ -196,7 +196,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Database — Missing FK Index on `teamorders.teamorders_user_id`
 
-- [ ] **#101 — `teamorders_user_id` foreign key is not indexed**
+- [x] **#101 — `teamorders_user_id` foreign key is not indexed**
   - File: `migrations/V1__initial_schema.sql`
   - Problem: Queries joining on this column or `ON DELETE RESTRICT` checks on user deletion will seq-scan `teamorders`.
   - Fix: Add `CREATE INDEX idx_teamorders_user ON teamorders (teamorders_user_id);` in a new V3 migration.
@@ -204,7 +204,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Database — Missing FK Index on `orders.orders_team_id`
 
-- [ ] **#102 — `orders_team_id` has no index; queries filter on it**
+- [x] **#102 — `orders_team_id` has no index; queries filter on it**
   - File: `migrations/V1__initial_schema.sql`
   - Problem: `get_order_items` and `delete_order_item` filter on `orders_team_id`, causing seq-scans.
   - Fix: Add `CREATE INDEX idx_orders_team ON orders (orders_team_id);` in a new V3 migration.
@@ -212,7 +212,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Database — Redundant Index `idx_orders_tid`
 
-- [ ] **#103 — Composite PK already provides B-tree on leading column**
+- [x] **#103 — Composite PK already provides B-tree on leading column**
   - File: `migrations/V1__initial_schema.sql` line 126
   - Problem: `idx_orders_tid` on `(orders_teamorders_id)` is redundant — the PK `(orders_teamorders_id, orders_item_id)` already covers it.
   - Fix: Drop the index in a new migration.
@@ -220,7 +220,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Database — `ON DELETE CASCADE` on `orders.orders_item_id` Destroys History
 
-- [ ] **#104 — Deleting a breakfast item silently removes it from all historical orders**
+- [x] **#104 — Deleting a breakfast item silently removes it from all historical orders**
   - File: `migrations/V1__initial_schema.sql` line 99
   - Problem: `ON DELETE CASCADE` on the FK from `orders.orders_item_id` to `items.item_id` means deleting an item destroys order history.
   - Fix: Change to `ON DELETE RESTRICT` (prevent deletion of items in use) or implement soft-delete.
@@ -228,7 +228,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Database — `memberof.memberof_role_id` Allows NULL
 
-- [ ] **#105 — A membership without a role bypasses RBAC**
+- [x] **#105 — A membership without a role bypasses RBAC**
   - File: `migrations/V1__initial_schema.sql` line 65
   - Problem: `memberof_role_id` has no `NOT NULL` constraint. A row with NULL role_id passes membership checks but has no role, creating undefined RBAC behavior.
   - Fix: Add `ALTER TABLE memberof ALTER COLUMN memberof_role_id SET NOT NULL;` in a V3 migration.
@@ -236,7 +236,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Code Quality — `TeamOrderEntry.closed` Type Mismatch
 
-- [ ] **#106 — `closed` is `Option<bool>` but DB column is `NOT NULL DEFAULT FALSE`**
+- [x] **#106 — `closed` is `Option<bool>` but DB column is `NOT NULL DEFAULT FALSE`**
   - File: `src/models.rs`
   - Problem: The Rust model will never receive `None` — it will always be `Some(true)` or `Some(false)`.
   - Fix: Change to `pub closed: bool`.
@@ -244,7 +244,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Documentation — OpenAPI Path Parameter Names Are Generic
 
-- [ ] **#107 — 15 handlers use `{id}` in utoipa path instead of descriptive names like `{user_id}`**
+- [x] **#107 — 15 handlers use `{id}` in utoipa path instead of descriptive names like `{user_id}`**
   - Files: `src/handlers/users.rs`, `src/handlers/teams.rs`, `src/handlers/items.rs`, `src/handlers/roles.rs`
   - Problem: Swagger UI shows generic `id` parameter names instead of descriptive ones. The `delete_user_by_email` route also misleadingly names the email segment `{user_id}` in routes.rs.
   - Fix: Update utoipa `path` attributes to match actix route parameter names.
@@ -260,7 +260,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Performance — RBAC Helpers Make Sequential DB Queries
 
-- [ ] **#109 — `require_team_member` and `require_team_admin` make 2 DB round-trips**
+- [x] **#109 — `require_team_member` and `require_team_admin` make 2 DB round-trips**
   - File: `src/handlers/mod.rs` lines 30–79
   - Problem: For non-admin users (the common case), both `is_admin()` and `get_member_role()` execute sequentially. Could be combined.
   - Fix: Create a single query checking both admin and team role in one `EXISTS`.
@@ -268,7 +268,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Security — Missing HSTS Header
 
-- [ ] **#110 — No `Strict-Transport-Security` despite TLS enforcement**
+- [x] **#110 — No `Strict-Transport-Security` despite TLS enforcement**
   - File: `src/server.rs` (DefaultHeaders section)
   - Problem: Without HSTS, a first-visit browser is vulnerable to SSL stripping for the initial HTTP request (before redirect).
   - Fix: Add `.add(("Strict-Transport-Security", "max-age=31536000; includeSubDomains"))` to `DefaultHeaders`.
@@ -276,7 +276,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Security — Missing `X-Content-Type-Options` Header
 
-- [ ] **#111 — No `X-Content-Type-Options: nosniff` header set**
+- [x] **#111 — No `X-Content-Type-Options: nosniff` header set**
   - File: `src/server.rs` (DefaultHeaders section)
   - Problem: Older browsers may MIME-sniff responses.
   - Fix: Add `X-Content-Type-Options: nosniff` to `DefaultHeaders`.
@@ -300,7 +300,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Error Handling — `FromRowError::ColumnNotFound` Maps to HTTP 404
 
-- [ ] **#114 — Missing column (programming error) returns "not found" instead of 500**
+- [x] **#114 — Missing column (programming error) returns "not found" instead of 500**
   - File: `src/errors.rs` lines 118–123
   - Problem: `ColumnNotFound` indicates a schema mismatch (programming error), not a missing resource. Mapping it to 404 could mislead clients and mask bugs.
   - Fix: Map to 500 Internal Server Error, same as `Conversion`.

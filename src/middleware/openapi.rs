@@ -212,12 +212,12 @@ mod tests {
             "should contain /api/v1.0/users"
         );
         assert!(
-            paths["/api/v1.0/users/{id}"].is_object(),
-            "should contain /api/v1.0/users/{{id}}"
+            paths["/api/v1.0/users/{user_id}"].is_object(),
+            "should contain /api/v1.0/users/{{user_id}}"
         );
         assert!(
-            paths["/api/v1.0/users/{id}/teams"].is_object(),
-            "should contain /api/v1.0/users/{{id}}/teams"
+            paths["/api/v1.0/users/{user_id}/teams"].is_object(),
+            "should contain /api/v1.0/users/{{user_id}}/teams"
         );
         assert!(
             paths["/api/v1.0/users/email/{email}"].is_object(),
@@ -234,18 +234,13 @@ mod tests {
             "should contain /api/v1.0/teams"
         );
         assert!(
-            paths["/api/v1.0/teams/{id}"].is_object(),
-            "should contain /api/v1.0/teams/{{id}}"
+            paths["/api/v1.0/teams/{team_id}"].is_object(),
+            "should contain /api/v1.0/teams/{{team_id}}"
         );
-        // team_users (GET) uses {id}, add_team_member (POST) uses {team_id}
-        // — utoipa generates separate path entries for each param name
-        assert!(
-            paths["/api/v1.0/teams/{id}/users"].is_object(),
-            "should contain /api/v1.0/teams/{{id}}/users (GET team_users)"
-        );
+        // team_users (GET) and add_team_member (POST) now both use {team_id}
         assert!(
             paths["/api/v1.0/teams/{team_id}/users"].is_object(),
-            "should contain /api/v1.0/teams/{{team_id}}/users (POST add_team_member)"
+            "should contain /api/v1.0/teams/{{team_id}}/users"
         );
         assert!(
             paths["/api/v1.0/teams/{team_id}/users/{user_id}"].is_object(),
@@ -290,8 +285,8 @@ mod tests {
             "should contain /api/v1.0/items"
         );
         assert!(
-            paths["/api/v1.0/items/{id}"].is_object(),
-            "should contain /api/v1.0/items/{{id}}"
+            paths["/api/v1.0/items/{item_id}"].is_object(),
+            "should contain /api/v1.0/items/{{item_id}}"
         );
     }
 
@@ -304,8 +299,8 @@ mod tests {
             "should contain /api/v1.0/roles"
         );
         assert!(
-            paths["/api/v1.0/roles/{id}"].is_object(),
-            "should contain /api/v1.0/roles/{{id}}"
+            paths["/api/v1.0/roles/{role_id}"].is_object(),
+            "should contain /api/v1.0/roles/{{role_id}}"
         );
     }
 
@@ -343,6 +338,7 @@ mod tests {
         let schemas = &doc["components"]["schemas"];
         let expected = [
             "StatusResponse",
+            "RevokedResponse",
             "Auth",
             "TokenRequest",
             "UserEntry",

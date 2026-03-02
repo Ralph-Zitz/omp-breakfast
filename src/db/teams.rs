@@ -25,23 +25,11 @@ pub async fn get_user_teams(client: &Client, uid: Uuid) -> Result<Vec<UserInTeam
         .await
         .map_err(Error::Db)?
         .iter()
-        .filter_map(|row| {
-            match (
-                row.try_get("tname"),
-                row.try_get("title"),
-                row.try_get("firstname"),
-                row.try_get("lastname"),
-            ) {
-                (Ok(tname), Ok(title), Ok(firstname), Ok(lastname)) => Some(UserInTeams {
-                    tname,
-                    title,
-                    firstname,
-                    lastname,
-                }),
-                _ => {
-                    warn!("Failed to map user-in-teams row — skipping");
-                    None
-                }
+        .filter_map(|row| match UserInTeams::from_row_ref(row) {
+            Ok(entry) => Some(entry),
+            Err(e) => {
+                warn!(error = %e, "Failed to map user-in-teams row — skipping");
+                None
             }
         })
         .collect::<Vec<UserInTeams>>();
@@ -157,27 +145,11 @@ pub async fn get_team_users(client: &Client, tid: Uuid) -> Result<Vec<UsersInTea
         .await
         .map_err(Error::Db)?
         .iter()
-        .filter_map(|row| {
-            match (
-                row.try_get("user_id"),
-                row.try_get("firstname"),
-                row.try_get("lastname"),
-                row.try_get("email"),
-                row.try_get("title"),
-            ) {
-                (Ok(user_id), Ok(firstname), Ok(lastname), Ok(email), Ok(title)) => {
-                    Some(UsersInTeam {
-                        user_id,
-                        firstname,
-                        lastname,
-                        email,
-                        title,
-                    })
-                }
-                _ => {
-                    warn!("Failed to map users-in-team row — skipping");
-                    None
-                }
+        .filter_map(|row| match UsersInTeam::from_row_ref(row) {
+            Ok(entry) => Some(entry),
+            Err(e) => {
+                warn!(error = %e, "Failed to map users-in-team row — skipping");
+                None
             }
         })
         .collect::<Vec<UsersInTeam>>();

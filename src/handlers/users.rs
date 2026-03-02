@@ -4,7 +4,7 @@ use crate::{
     handlers::*,
     middleware::auth::{
         generate_token_pair, invalidate_cache, is_token_revoked, revoke_token, verify_jwt,
-        REFRESH_TOKEN_DURATION_DAYS,
+        REFRESH_TOKEN_DURATION_DAYS, TOKEN_TYPE_REFRESH,
     },
     models::*,
     validate::validate,
@@ -36,14 +36,14 @@ pub async fn get_users(state: Data<State>) -> Result<impl Responder, Error> {
 
 #[utoipa::path(
     get,
-    path = "/api/v1.0/users/{id}",
+    path = "/api/v1.0/users/{user_id}",
     responses(
         (status = 200, description = "User found", body = UserEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 404, description = "User not found", body = ErrorResponse),
     ),
     params(
-        ("id", description = "Unique UUID of User")
+        ("user_id", description = "Unique UUID of User")
     ),
     security(("bearer_auth" = [])),
 )]
@@ -67,7 +67,7 @@ pub async fn get_user(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
 pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Responder, Error> {
     let cache = &state.cache;
     if let Some(cached) = cache.get(&basic.user_id().to_string()) {
-        let auth = generate_token_pair(cached.user.user_id, state.jwtsecret.clone()).await?;
+        let auth = generate_token_pair(cached.user.user_id, &state.jwtsecret)?;
         Ok(HttpResponse::Ok().json(auth))
     } else {
         return Err(Error::Unauthorized("Unauthorized".to_string()));
@@ -88,12 +88,11 @@ pub async fn refresh_token(
     credentials: BearerAuth,
     state: Data<State>,
 ) -> Result<impl Responder, Error> {
-    let jwt_secret = state.jwtsecret.clone();
-    let claims = verify_jwt(credentials.token().to_string(), jwt_secret.clone()).await?;
+    let claims = verify_jwt(credentials.token(), &state.jwtsecret)?;
 
     // Defence-in-depth: refresh_validator middleware already rejects non-refresh tokens
     // before this handler is reached, but we check again here as a safety net.
-    if claims.claims.token_type != "refresh" {
+    if claims.claims.token_type != TOKEN_TYPE_REFRESH {
         return Err(Error::Unauthorized(
             "Invalid token type, refresh token required".to_string(),
         ));
@@ -115,7 +114,7 @@ pub async fn refresh_token(
     revoke_token(&client, &state, &claims.claims.jti.to_string(), expires_at).await?;
 
     // Issue a new token pair
-    let auth = generate_token_pair(claims.claims.sub, jwt_secret).await?;
+    let auth = generate_token_pair(claims.claims.sub, &state.jwtsecret)?;
     Ok(HttpResponse::Ok().json(auth))
 }
 
@@ -124,7 +123,7 @@ pub async fn refresh_token(
     path = "/auth/revoke",
     request_body = TokenRequest,
     responses(
-        (status = 200, description = "Token revoked successfully", body = StatusResponse),
+        (status = 200, description = "Token revoked successfully", body = RevokedResponse),
         (status = 400, description = "Invalid token", body = ErrorResponse),
         (status = 403, description = "Forbidden - cannot revoke another user's token", body = ErrorResponse),
     ),
@@ -136,8 +135,7 @@ pub async fn revoke_user_token(
     json: Json<TokenRequest>,
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
-    let jwt_secret = state.jwtsecret.clone();
-    let token_data = verify_jwt(json.into_inner().token, jwt_secret).await?;
+    let token_data = verify_jwt(&json.into_inner().token, &state.jwtsecret)?;
 
     // Ownership check: the token being revoked must belong to the requesting user,
     // unless the requester is a global admin.
@@ -164,7 +162,7 @@ pub async fn revoke_user_token(
     )
     .await?;
 
-    Ok(HttpResponse::Ok().json(StatusResponse { up: true }))
+    Ok(HttpResponse::Ok().json(RevokedResponse { revoked: true }))
 }
 
 #[utoipa::path(
@@ -204,7 +202,7 @@ pub async fn create_user(
 
 #[utoipa::path(
     delete,
-    path = "/api/v1.0/users/{id}",
+    path = "/api/v1.0/users/{user_id}",
     responses(
         (status = 200, description = "User deleted successfully", body = DeletedResponse),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
@@ -212,7 +210,7 @@ pub async fn create_user(
         (status = 404, description = "User not deleted", body = DeletedResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the User")
+        ("user_id", description = "Unique UUID of the User")
     ),
     security(("bearer_auth" = [])),
 )]
@@ -288,7 +286,7 @@ pub async fn delete_user_by_email(
 
 #[utoipa::path(
     put,
-    path = "/api/v1.0/users/{id}",
+    path = "/api/v1.0/users/{user_id}",
     request_body = UpdateUserRequest,
     responses(
         (status = 200, description = "User updated successfully", body = UserEntry),
@@ -297,7 +295,7 @@ pub async fn delete_user_by_email(
         (status = 404, description = "User not updated", body = ErrorResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the User"),
+        ("user_id", description = "Unique UUID of the User"),
         UpdateUserRequest
     ),
     security(("bearer_auth" = [])),
@@ -323,13 +321,13 @@ pub async fn update_user(
 
 #[utoipa::path(
     get,
-    path = "/api/v1.0/users/{id}/teams",
+    path = "/api/v1.0/users/{user_id}/teams",
     responses(
         (status = 200, description = "List of Teams the User is a member of", body = [UserInTeams]),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the User")
+        ("user_id", description = "Unique UUID of the User")
     ),
     security(("bearer_auth" = [])),
 )]

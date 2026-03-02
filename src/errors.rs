@@ -121,9 +121,9 @@ impl ResponseError for Error {
                 // Keep these for a rainy day - i.e. for fine grained error handling
                 match e {
                     crate::from_row::FromRowError::ColumnNotFound(col) => {
-                        warn!(error = %e, column = %col, "DB mapper column not found");
-                        HttpResponse::NotFound().json(ErrorResponse {
-                            error: e.to_string(),
+                        error!(error = %e, column = %col, "DB mapper column not found");
+                        HttpResponse::InternalServerError().json(ErrorResponse {
+                            error: "Internal server error".to_string(),
                         })
                     }
                     crate::from_row::FromRowError::Conversion(msg) => {
@@ -318,10 +318,10 @@ mod tests {
     }
 
     #[test]
-    fn db_mapper_column_not_found_returns_404() {
+    fn db_mapper_column_not_found_returns_500() {
         let err = Error::DbMapper(crate::from_row::FromRowError::ColumnNotFound("test".into()));
         let resp = err.error_response();
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[test]

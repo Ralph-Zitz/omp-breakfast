@@ -395,6 +395,11 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         App::new()
             .wrap(TracingLogger::default())
             .wrap(cors)
+            .wrap(
+                DefaultHeaders::new()
+                    .add(("Strict-Transport-Security", "max-age=31536000; includeSubDomains"))
+                    .add(("X-Content-Type-Options", "nosniff")),
+            )
             .app_data(state.clone())
             .app_data(swagger_config.clone())
             .configure(routes)

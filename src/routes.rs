@@ -72,8 +72,8 @@ pub fn routes(cfg: &mut ServiceConfig) {
                                 .route(get().to(user_teams)),
                         )
                         .service(
-                            resource("/email/{user_id}")
-                                .name("/users/email/user_id")
+                            resource("/email/{email}")
+                                .name("/users/email/email")
                                 .route(delete().to(delete_user_by_email)),
                         ),
                 )

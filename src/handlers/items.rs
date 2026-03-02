@@ -29,14 +29,14 @@ pub async fn get_items(state: Data<State>) -> Result<impl Responder, Error> {
 
 #[utoipa::path(
     get,
-    path = "/api/v1.0/items/{id}",
+    path = "/api/v1.0/items/{item_id}",
     responses(
         (status = 200, description = "Item found", body = ItemEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 404, description = "Item not found", body = ErrorResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the Item")
+        ("item_id", description = "Unique UUID of the Item")
     ),
     security(("bearer_auth" = [])),
 )]
@@ -78,7 +78,7 @@ pub async fn create_item(
 
 #[utoipa::path(
     delete,
-    path = "/api/v1.0/items/{id}",
+    path = "/api/v1.0/items/{item_id}",
     responses(
         (status = 200, description = "Item deleted successfully", body = DeletedResponse),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
@@ -86,7 +86,7 @@ pub async fn create_item(
         (status = 404, description = "Item not deleted", body = DeletedResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the Item")
+        ("item_id", description = "Unique UUID of the Item")
     ),
     security(("bearer_auth" = [])),
 )]
@@ -108,7 +108,7 @@ pub async fn delete_item(
 
 #[utoipa::path(
     put,
-    path = "/api/v1.0/items/{id}",
+    path = "/api/v1.0/items/{item_id}",
     request_body = UpdateItemEntry,
     responses(
         (status = 200, description = "Item updated successfully", body = ItemEntry),
@@ -117,7 +117,7 @@ pub async fn delete_item(
         (status = 404, description = "Item not updated", body = ErrorResponse),
     ),
     params(
-        ("id", description = "Unique UUID of the Item")
+        ("item_id", description = "Unique UUID of the Item")
     ),
     security(("bearer_auth" = [])),
 )]

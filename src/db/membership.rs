@@ -1,4 +1,6 @@
 use crate::errors::Error;
+use crate::from_row::FromRow;
+use crate::middleware::auth::{ROLE_ADMIN, ROLE_TEAM_ADMIN};
 use crate::models::*;
 use deadpool_postgres::Client;
 use uuid::Uuid;
@@ -12,7 +14,7 @@ pub async fn is_admin_or_team_admin(client: &Client, user_id: Uuid) -> Result<bo
                     SELECT 1
                     FROM memberof m
                     JOIN roles r ON r.role_id = m.memberof_role_id
-                    WHERE m.memberof_user_id = $1 AND r.title IN ('Admin', 'Team Admin')
+                    WHERE m.memberof_user_id = $1 AND r.title IN ($2, $3)
                 ) AS is_admin_or_team_admin
             "#,
         )
@@ -20,7 +22,7 @@ pub async fn is_admin_or_team_admin(client: &Client, user_id: Uuid) -> Result<bo
         .map_err(Error::Db)?;
 
     let row = client
-        .query_one(&statement, &[&user_id])
+        .query_one(&statement, &[&user_id, &ROLE_ADMIN, &ROLE_TEAM_ADMIN])
         .await
         .map_err(Error::Db)?;
 
@@ -43,7 +45,7 @@ pub async fn is_team_admin_of_user(
                     JOIN roles admin_r ON admin_r.role_id = admin_m.memberof_role_id
                     JOIN memberof target_m ON target_m.memberof_team_id = admin_m.memberof_team_id
                     WHERE admin_m.memberof_user_id = $1
-                      AND admin_r.title = 'Team Admin'
+                      AND admin_r.title = $3
                       AND target_m.memberof_user_id = $2
                 ) AS is_team_admin_of_user
             "#,
@@ -52,7 +54,7 @@ pub async fn is_team_admin_of_user(
         .map_err(Error::Db)?;
 
     let row = client
-        .query_one(&statement, &[&requesting_user_id, &target_user_id])
+        .query_one(&statement, &[&requesting_user_id, &target_user_id, &ROLE_TEAM_ADMIN])
         .await
         .map_err(Error::Db)?;
 
@@ -68,7 +70,7 @@ pub async fn is_admin(client: &Client, user_id: Uuid) -> Result<bool, Error> {
                     SELECT 1
                     FROM memberof m
                     JOIN roles r ON r.role_id = m.memberof_role_id
-                    WHERE m.memberof_user_id = $1 AND r.title = 'Admin'
+                    WHERE m.memberof_user_id = $1 AND r.title = $2
                 ) AS is_admin
             "#,
         )
@@ -76,7 +78,7 @@ pub async fn is_admin(client: &Client, user_id: Uuid) -> Result<bool, Error> {
         .map_err(Error::Db)?;
 
     let row = client
-        .query_one(&statement, &[&user_id])
+        .query_one(&statement, &[&user_id, &ROLE_ADMIN])
         .await
         .map_err(Error::Db)?;
 
@@ -106,6 +108,46 @@ pub async fn get_member_role(
         .map_err(Error::Db)?;
 
     Ok(rows.first().map(|r| r.get("title")))
+}
+
+/// Combined RBAC check: returns whether the user is a global admin and their
+/// role in the specified team (if any), in a single database round-trip.
+/// Used by `require_team_member` and `require_team_admin` handlers.
+pub async fn check_team_access(
+    client: &Client,
+    team_id: Uuid,
+    user_id: Uuid,
+) -> Result<(bool, Option<String>), Error> {
+    let statement = client
+        .prepare(
+            r#"
+                SELECT
+                    EXISTS(
+                        SELECT 1
+                        FROM memberof m
+                        JOIN roles r ON r.role_id = m.memberof_role_id
+                        WHERE m.memberof_user_id = $1 AND r.title = $3
+                    ) AS is_admin,
+                    (
+                        SELECT r.title
+                        FROM memberof m
+                        JOIN roles r ON r.role_id = m.memberof_role_id
+                        WHERE m.memberof_team_id = $2 AND m.memberof_user_id = $1
+                        LIMIT 1
+                    ) AS team_role
+            "#,
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    let row = client
+        .query_one(&statement, &[&user_id, &team_id, &ROLE_ADMIN])
+        .await
+        .map_err(Error::Db)?;
+
+    let is_admin: bool = row.get("is_admin");
+    let team_role: Option<String> = row.get("team_role");
+    Ok((is_admin, team_role))
 }
 
 pub async fn add_team_member(
@@ -150,13 +192,7 @@ pub async fn add_team_member(
         .await
         .map_err(Error::Db)?;
 
-    let result = UsersInTeam {
-        user_id: row.try_get("user_id").map_err(Error::Db)?,
-        firstname: row.try_get("firstname").map_err(Error::Db)?,
-        lastname: row.try_get("lastname").map_err(Error::Db)?,
-        email: row.try_get("email").map_err(Error::Db)?,
-        title: row.try_get("title").map_err(Error::Db)?,
-    };
+    let result = UsersInTeam::from_row_ref(&row)?;
 
     tx.commit().await.map_err(Error::Db)?;
 
@@ -228,13 +264,7 @@ pub async fn update_member_role(
         .await
         .map_err(Error::Db)?;
 
-    let result = UsersInTeam {
-        user_id: row.try_get("user_id").map_err(Error::Db)?,
-        firstname: row.try_get("firstname").map_err(Error::Db)?,
-        lastname: row.try_get("lastname").map_err(Error::Db)?,
-        email: row.try_get("email").map_err(Error::Db)?,
-        title: row.try_get("title").map_err(Error::Db)?,
-    };
+    let result = UsersInTeam::from_row_ref(&row)?;
 
     tx.commit().await.map_err(Error::Db)?;
 
