@@ -146,9 +146,7 @@ pub async fn revoke_user_token(
 
     let client: Client = get_client(&state.pool).await?;
 
-    if token_data.claims.sub != requester_id
-        && !db::is_admin(&client, requester_id).await?
-    {
+    if token_data.claims.sub != requester_id && !db::is_admin(&client, requester_id).await? {
         return Err(Error::Forbidden(
             "Cannot revoke another user's token".to_string(),
         ));

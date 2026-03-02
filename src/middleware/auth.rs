@@ -58,7 +58,7 @@ fn generate_token(
     encode(&headers, &claims, &encoding_key)
 }
 
-#[must_use]
+#[must_use = "token pair should be sent to the client or stored"]
 #[instrument(skip(jwt_secret), level = "debug")]
 pub fn generate_token_pair(user_id: Uuid, jwt_secret: &str) -> Result<Auth, Error> {
     let access_token = generate_token(
@@ -83,7 +83,7 @@ pub fn generate_token_pair(user_id: Uuid, jwt_secret: &str) -> Result<Auth, Erro
     })
 }
 
-#[must_use]
+#[must_use = "verified claims must be inspected or propagated"]
 #[instrument(skip(jwt_secret), level = "debug")]
 pub fn verify_jwt(token: &str, jwt_secret: &str) -> Result<TokenData<Claims>, Error> {
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
