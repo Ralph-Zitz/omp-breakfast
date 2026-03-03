@@ -3,12 +3,7 @@ server:
   port: 8080
   secret: "Very Secret"
   jwtsecret: "Very Secret"
-  s3_key_id: ""
-  s3_key_secret: ""
   git_version: ""
-
-database:
-  url: "postgres://actix:actix@localhost/actix"
 
 pg:
   user: actix

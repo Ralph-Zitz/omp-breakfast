@@ -453,6 +453,41 @@ Last updated: 2026-03-03
 
 ## Minor Items
 
+### Code Quality — Dead S3 Config Fields
+
+- [x] **#59 — `s3_key_id` and `s3_key_secret` are loaded and stored but never used**
+  - Files: `src/config.rs`, `src/models.rs`, `src/server.rs`, `src/routes.rs`, `src/middleware/auth.rs`, `tests/api_tests.rs`, `config/default.yml`, `config/development.yml`, `config/production.yml`
+  - Fix: Removed `s3_key_id` and `s3_key_secret` fields from `ServerConfig` and `State`. Removed all occurrences from state construction in server, routes, middleware, and test helpers. Removed from all three config YAML files.
+  - Source commands: `review`, `practices-audit`
+
+### Code Quality — Dead `database.url` Config Field
+
+- [x] **#68 — `database.url` field in `Settings` is configured but unused**
+  - Files: `src/config.rs`, `src/server.rs`, `config/default.yml`, `config/development.yml`
+  - Fix: Removed the `Database` struct and `database` field from `Settings`. Removed `database:` sections from config YAML files. Removed `settings_database_url` test. Removed `database` field from all `Settings` constructions in server.rs tests.
+  - Source commands: `review`, `practices-audit`
+
+### Security — Seed Data Uses Hardcoded Argon2 Salt
+
+- [x] **#70 — All seed users share the same Argon2 hash with a hardcoded salt**
+  - File: `database_seed.sql`
+  - Fix: Added prominent `⚠ WARNING: DO NOT RUN IN PRODUCTION ⚠` banner at the top of the file with explanation about hardcoded credentials.
+  - Source commands: `security-audit`, `db-review`
+
+### Security — No Account Lockout After Failed Auth Attempts
+
+- [x] **#73 — Failed authentication is rate-limited but no lockout policy exists**
+  - Files: `src/models.rs`, `src/middleware/auth.rs`, `CLAUDE.md`
+  - Fix: Added `login_attempts: DashMap<String, Vec<DateTime<Utc>>>` to `State`. Added `is_account_locked`, `record_failed_attempt`, and `clear_failed_attempts` helpers. `basic_validator` now checks lockout (HTTP 429) before processing credentials, records failed attempts on all failure paths, and clears on success. Constants: 5 attempts in 15-minute window. Added 5 unit tests. Updated CLAUDE.md.
+  - Source commands: `security-audit`
+
+### Deployment — Production Config Has Placeholder Hostname
+
+- [x] **#75 — `config/production.yml` uses `pick.a.proper.hostname` as the PG host**
+  - File: `src/server.rs`
+  - Fix: Added startup panic when `pg.host` is `pick.a.proper.hostname` and `ENV=production`. Updated CLAUDE.md production safety documentation.
+  - Source commands: `practices-audit`, `review`
+
 ### Database — Inconsistent Row Mapping Pattern
 
 - [x] **#6 — `get_team_users` uses `.map()` instead of `filter_map` + `warn!()`**

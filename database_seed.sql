@@ -1,4 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════════════════
+   ⚠  WARNING: DO NOT RUN IN PRODUCTION ⚠
+
+   This file contains DEVELOPMENT/TESTING seed data with hardcoded passwords
+   and identical Argon2 hashes. Running this against a production database
+   would create accounts with known credentials.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
    SEED DATA for DEVELOPMENT and TESTING
 
    This script inserts test/development data into an existing schema.

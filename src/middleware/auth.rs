@@ -51,6 +51,13 @@ pub const ROLE_TEAM_ADMIN: &str = "Team Admin";
 pub const JWT_ISSUER: &str = "omp-breakfast";
 pub const JWT_AUDIENCE: &str = "omp-breakfast";
 
+// ── Account lockout ─────────────────────────────────────────────────────────
+/// Maximum failed login attempts before locking the account.
+const LOCKOUT_THRESHOLD: usize = 5;
+/// Lockout window in seconds (15 minutes). Only failures within this window
+/// count toward the threshold.
+const LOCKOUT_WINDOW_SECONDS: i64 = 900;
+
 #[instrument(skip(jwt_secret), level = "debug")]
 fn generate_token(
     user_id: Uuid,
@@ -162,6 +169,33 @@ pub async fn is_token_revoked(
 pub fn invalidate_cache(state: Data<State>, key: &str) -> bool {
     let cache = &state.cache;
     cache.remove(key).is_some()
+}
+
+/// Check whether the account for `email` is locked out due to too many
+/// recent failed login attempts.
+fn is_account_locked(state: &Data<State>, email: &str) -> bool {
+    let cutoff = Utc::now() - Duration::try_seconds(LOCKOUT_WINDOW_SECONDS).expect("valid duration");
+    if let Some(mut attempts) = state.login_attempts.get_mut(email) {
+        // Prune attempts outside the window
+        attempts.retain(|t| *t > cutoff);
+        attempts.len() >= LOCKOUT_THRESHOLD
+    } else {
+        false
+    }
+}
+
+/// Record a failed login attempt for `email`.
+fn record_failed_attempt(state: &Data<State>, email: &str) {
+    state
+        .login_attempts
+        .entry(email.to_string())
+        .or_default()
+        .push(Utc::now());
+}
+
+/// Clear failed login attempts for `email` (called on successful login).
+fn clear_failed_attempts(state: &Data<State>, email: &str) {
+    state.login_attempts.remove(email);
 }
 
 #[instrument(skip(credentials, req), level = "debug")]
@@ -335,6 +369,16 @@ pub async fn basic_validator(
             ));
         }
     };
+    // Check account lockout before processing credentials
+    if is_account_locked(state, credentials.user_id()) {
+        warn!(user = %credentials.user_id(), "Account temporarily locked due to too many failed login attempts");
+        return Err((
+            actix_web::error::ErrorTooManyRequests(ErrorResponse {
+                error: "Account temporarily locked due to too many failed login attempts. Try again later.".to_string(),
+            }),
+            req,
+        ));
+    }
     let cache = &state.cache;
     let client = match get_client(&state.pool).await {
         Ok(c) => c,
@@ -404,6 +448,7 @@ pub async fn basic_validator(
                         let _ = crate::argon2_hasher().verify_password(b"dummy-equalize", &dummy);
                     }
                     warn!(user = %credentials.user_id(), "Unknown user attempted authentication");
+                    record_failed_attempt(state, credentials.user_id());
                     return Err((
                         actix_web::error::ErrorUnauthorized(ErrorResponse {
                             error: "Unauthorized access".to_string(),
@@ -428,9 +473,13 @@ pub async fn basic_validator(
             }
         };
         match crate::argon2_hasher().verify_password(pswd.as_bytes(), &parsed_hash) {
-            Ok(_) => Ok(req),
+            Ok(_) => {
+                clear_failed_attempts(state, credentials.user_id());
+                Ok(req)
+            }
             Err(_) => {
                 warn!(user = %credentials.user_id(), "Invalid password for user");
+                record_failed_attempt(state, credentials.user_id());
                 Err((
                     actix_web::error::ErrorUnauthorized(ErrorResponse {
                         error: "Unauthorized access".to_string(),
@@ -441,6 +490,7 @@ pub async fn basic_validator(
         }
     } else {
         warn!(user = %credentials.user_id(), "Missing password in basic auth");
+        record_failed_attempt(state, credentials.user_id());
         Err((
             actix_web::error::ErrorUnauthorized(ErrorResponse {
                 error: "Unauthorized access".to_string(),
@@ -467,10 +517,9 @@ mod tests {
         Data::new(State {
             pool,
             jwtsecret: TEST_SECRET.to_string(),
-            s3_key_id: String::new(),
-            s3_key_secret: String::new(),
             cache: dashmap::DashMap::new(),
             token_blacklist: dashmap::DashMap::new(),
+            login_attempts: dashmap::DashMap::new(),
         })
     }
 
@@ -676,5 +725,82 @@ mod tests {
         let result = crate::argon2_hasher().verify_password(b"dummy-equalize", &hash);
         // The result doesn't matter (it won't match); we just need it to not panic
         let _ = result;
+    }
+
+    // -- Account lockout --
+
+    #[test]
+    fn is_account_locked_below_threshold() {
+        let state = test_state();
+        let email = "test@example.com";
+        // Record LOCKOUT_THRESHOLD - 1 failures — account should NOT be locked
+        for _ in 0..LOCKOUT_THRESHOLD - 1 {
+            record_failed_attempt(&state, email);
+        }
+        assert!(
+            !is_account_locked(&state, email),
+            "Account should not be locked below threshold"
+        );
+    }
+
+    #[test]
+    fn is_account_locked_at_threshold() {
+        let state = test_state();
+        let email = "test@example.com";
+        for _ in 0..LOCKOUT_THRESHOLD {
+            record_failed_attempt(&state, email);
+        }
+        assert!(
+            is_account_locked(&state, email),
+            "Account should be locked at threshold"
+        );
+    }
+
+    #[test]
+    fn clear_failed_attempts_unlocks() {
+        let state = test_state();
+        let email = "test@example.com";
+        for _ in 0..LOCKOUT_THRESHOLD {
+            record_failed_attempt(&state, email);
+        }
+        assert!(is_account_locked(&state, email));
+        clear_failed_attempts(&state, email);
+        assert!(
+            !is_account_locked(&state, email),
+            "Account should be unlocked after clearing attempts"
+        );
+    }
+
+    #[test]
+    fn old_attempts_expire_from_window() {
+        let state = test_state();
+        let email = "test@example.com";
+        // Insert attempts with timestamps outside the lockout window
+        let old_time =
+            Utc::now() - Duration::try_seconds(LOCKOUT_WINDOW_SECONDS + 1).expect("valid duration");
+        state
+            .login_attempts
+            .entry(email.to_string())
+            .or_default()
+            .extend(vec![old_time; LOCKOUT_THRESHOLD]);
+        assert!(
+            !is_account_locked(&state, email),
+            "Expired attempts should not trigger lockout"
+        );
+    }
+
+    #[test]
+    fn lockout_is_per_email() {
+        let state = test_state();
+        let email_a = "a@example.com";
+        let email_b = "b@example.com";
+        for _ in 0..LOCKOUT_THRESHOLD {
+            record_failed_attempt(&state, email_a);
+        }
+        assert!(is_account_locked(&state, email_a));
+        assert!(
+            !is_account_locked(&state, email_b),
+            "Lockout should be per-email"
+        );
     }
 }

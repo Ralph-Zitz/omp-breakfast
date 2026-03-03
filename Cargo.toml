@@ -1,6 +1,6 @@
 [package]
 name = "breakfast"
-version = "0.7.2"
+version = "0.7.3"
 authors = ["Ralph Zitz <Ralph.Zitz@LEGO.com>"]
 edition = "2024"
 readme = "README.md"

@@ -213,10 +213,9 @@ mod tests {
         Data::new(State {
             pool,
             jwtsecret: "test".into(),
-            s3_key_id: String::new(),
-            s3_key_secret: String::new(),
             cache: DashMap::new(),
             token_blacklist: DashMap::new(),
+            login_attempts: DashMap::new(),
         })
     }
 

@@ -32,7 +32,7 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
 
 ### Code Quality — Dead S3 Config Fields
 
-- [ ] **#59 — `s3_key_id` and `s3_key_secret` are loaded and stored but never used**
+- [x] **#59 — `s3_key_id` and `s3_key_secret` are loaded and stored but never used**
   - Files: `src/models.rs` (`State` struct), `src/config.rs` (`ServerConfig` struct), `src/server.rs` (state construction), `config/default.yml`, `config/development.yml`, `config/production.yml`
   - Problem: The `s3_key_id` and `s3_key_secret` fields are defined in `ServerConfig`, loaded from config files, stored in `State`, and propagated through all test helpers, but no handler, middleware, or DB function ever reads them.
   - Fix: Either remove the fields entirely or document the intent in CLAUDE.md's Unfinished Work section.
@@ -40,7 +40,7 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
 
 ### Code Quality — Dead `database.url` Config Field
 
-- [ ] **#68 — `database.url` field in `Settings` is configured but unused**
+- [x] **#68 — `database.url` field in `Settings` is configured but unused**
   - Files: `src/config.rs` (`Database` struct with `#[allow(dead_code)]`), `config/default.yml`, `config/development.yml`
   - Problem: The `Database` struct contains a single `url` field marked `#[allow(dead_code)]`. The DB pool is created from the `pg.*` config fields.
   - Fix: Remove the `Database` struct and its `database` field from `Settings`. Remove `database:` sections from config files.
@@ -48,7 +48,7 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
 
 ### Security — Seed Data Uses Hardcoded Argon2 Salt
 
-- [ ] **#70 — All seed users share the same Argon2 hash with a hardcoded salt**
+- [x] **#70 — All seed users share the same Argon2 hash with a hardcoded salt**
   - File: `database_seed.sql`
   - Problem: All 5 seed users have identical Argon2id password hashes. While dev-only, this creates risk if accidentally run against production.
   - Fix: Add a prominent `-- WARNING: DO NOT RUN IN PRODUCTION` comment at the top.
@@ -64,7 +64,7 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
 
 ### Security — No Account Lockout After Failed Auth Attempts
 
-- [ ] **#73 — Failed authentication is rate-limited but no lockout policy exists**
+- [x] **#73 — Failed authentication is rate-limited but no lockout policy exists**
   - Files: `src/routes.rs`, `src/handlers/users.rs`
   - Problem: The `/auth` endpoint has rate limiting but no account-level lockout after N consecutive failures.
   - Fix: Track failed login attempts per email. Lock after threshold (e.g., 5 failures in 15 minutes).
@@ -72,7 +72,7 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
 
 ### Deployment — Production Config Has Placeholder Hostname
 
-- [ ] **#75 — `config/production.yml` uses `pick.a.proper.hostname` as the PG host**
+- [x] **#75 — `config/production.yml` uses `pick.a.proper.hostname` as the PG host**
   - File: `config/production.yml`
   - Problem: Placeholder string with no startup validation catch.
   - Fix: Add a startup check similar to the secret-validation panic.
@@ -626,6 +626,6 @@ See that file for the full history of resolved findings.
 - All SQL queries use parameterized prepared statements — zero injection risk.
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
 - No regressions detected against 176 resolved findings.
-- Open items summary: 1 critical (#132 blocked), 0 important, 36 minor, 48 informational. **Total: 85 open items**.
+- Open items summary: 1 critical (#132 blocked), 0 important, 31 minor, 48 informational. **Total: 80 open items**.
 - 176 resolved items in `.claude/resolved-findings.md`.
 - Highest finding number: #301.

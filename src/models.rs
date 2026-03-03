@@ -55,16 +55,16 @@ pub struct CachedUser {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct State {
     pub pool: Pool,
     pub jwtsecret: String,
-    pub s3_key_id: String,
-    pub s3_key_secret: String,
     pub cache: DashMap<String, CachedUser>,
     /// Revoked token JTIs mapped to their original expiry time.
     /// Entries are evicted by the background cleanup task once expired.
     pub token_blacklist: DashMap<String, DateTime<Utc>>,
+    /// Failed login attempt timestamps per email, for account lockout.
+    /// Entries older than the lockout window are pruned on each check.
+    pub login_attempts: DashMap<String, Vec<DateTime<Utc>>>,
 }
 
 #[derive(Serialize, ToSchema)]

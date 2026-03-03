@@ -10,22 +10,12 @@ pub struct ServerConfig {
     pub port: u16,
     pub secret: String,
     pub jwtsecret: String,
-    pub s3_key_id: String,
-    pub s3_key_secret: String,
     pub git_version: String,
 }
 
 #[derive(Deserialize)]
-#[allow(dead_code)]
-pub struct Database {
-    pub url: String,
-}
-
-#[derive(Deserialize)]
-#[allow(dead_code)]
 pub struct Settings {
     pub server: ServerConfig,
-    pub database: Database,
     pub pg: deadpool_postgres::Config,
     pub db_ca_cert: Option<String>,
 }
@@ -138,18 +128,6 @@ mod tests {
         assert_eq!(settings.pg.dbname, Some("actix".to_string()));
         assert_eq!(settings.pg.port, Some(5432));
         assert_eq!(settings.pg.password, Some("actix".to_string()));
-    }
-
-    #[test]
-    fn settings_database_url() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe { clean_env() };
-
-        let settings = Settings::new().expect("should load config");
-        assert!(
-            settings.database.url.starts_with("postgres://"),
-            "database URL should be a postgres connection string"
-        );
     }
 
     #[test]

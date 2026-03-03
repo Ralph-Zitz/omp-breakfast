@@ -322,6 +322,14 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         warn!("Using default database credentials — acceptable for development only");
     }
 
+    // Reject placeholder database hostname in production
+    let pg_host = settings.pg.host.as_deref().unwrap_or("localhost");
+    if is_production && pg_host == "pick.a.proper.hostname" {
+        panic!(
+            "FATAL: Database host must be changed from the placeholder value in production. Set BREAKFAST_PG_HOST environment variable."
+        );
+    }
+
     // Database pool
     let pool = settings
         .pg
@@ -348,10 +356,9 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     let state = Data::new(State {
         pool,
         jwtsecret: settings.server.jwtsecret.clone(),
-        s3_key_id: settings.server.s3_key_id.clone(),
-        s3_key_secret: settings.server.s3_key_secret.clone(),
         cache: DashMap::new(),
         token_blacklist: DashMap::new(),
+        login_attempts: DashMap::new(),
     });
 
     // Swagger UI config
@@ -764,12 +771,7 @@ mod tests {
                 port: 8080,
                 secret: "secret".to_string(),
                 jwtsecret: "jwtsecret".to_string(),
-                s3_key_id: String::new(),
-                s3_key_secret: String::new(),
                 git_version: "test".to_string(),
-            },
-            database: crate::config::Database {
-                url: "postgres://localhost/test".to_string(),
             },
             pg: deadpool_postgres::Config::new(),
             db_ca_cert: None,
@@ -794,12 +796,7 @@ mod tests {
                 port: 8080,
                 secret: "secret".to_string(),
                 jwtsecret: "jwtsecret".to_string(),
-                s3_key_id: String::new(),
-                s3_key_secret: String::new(),
                 git_version: "test".to_string(),
-            },
-            database: crate::config::Database {
-                url: "postgres://localhost/test".to_string(),
             },
             pg: deadpool_postgres::Config::new(),
             db_ca_cert: Some(ca_path.to_string()),
@@ -818,12 +815,7 @@ mod tests {
                 port: 8080,
                 secret: "secret".to_string(),
                 jwtsecret: "jwtsecret".to_string(),
-                s3_key_id: String::new(),
-                s3_key_secret: String::new(),
                 git_version: "test".to_string(),
-            },
-            database: crate::config::Database {
-                url: "postgres://localhost/test".to_string(),
             },
             pg: deadpool_postgres::Config::new(),
             db_ca_cert: Some("/nonexistent/path/ca.pem".to_string()),

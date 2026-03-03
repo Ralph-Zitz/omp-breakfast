@@ -126,6 +126,7 @@ tests/
 - JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation
 - Token revocation uses a DB-backed `token_blacklist` table (persisted across restarts) with an in-memory `dashmap::DashMap` cache for fast-path lookups. A background task runs every hour to clean up expired entries from both the database (via `db::cleanup_expired_tokens`) and the in-memory map (via `DashMap::retain()`).
 - Auth cache uses TTL (5min) and max-size (1000 entries) with FIFO eviction
+- Account lockout: after 5 failed login attempts within 15 minutes, the account is temporarily locked (HTTP 429). Attempts are tracked in-memory per email and cleared on successful login.
 - RBAC: Four roles — Admin (global superuser), Team Admin (team-scoped), Member, Guest. JWT claims stored in request extensions.
 - GET RBAC policy: All GET endpoints require only JWT authentication — no team-scoped RBAC. Data visibility is open to all authenticated users (no multi-tenant isolation). Team-scoped RBAC is enforced only on mutations (POST/PUT/DELETE) within individual handlers.
 - Global Admin RBAC: `require_admin` helper checks if user holds "Admin" role in any team (via `db::is_admin`); gates team CUD, items CUD, roles CUD. Admin bypasses all team-scoped and self-only checks.
@@ -136,7 +137,7 @@ tests/
 - Self-or-Admin-or-Team-Admin RBAC: `require_self_or_admin_or_team_admin` helper gates user mutations (update, delete); allows the user themselves, a global Admin, or a Team Admin of any team where the target user is also a member (checked via `db::is_team_admin_of_user` — a self-join on `memberof`). The legacy `require_self_or_admin` helper is retained but no longer used by any handler.
 - `Error::Forbidden` variant maps to HTTP 403 for authorization failures
 - `Error::Unauthorized` variant maps to HTTP 401 for authentication failures
-- Production safety: server panics at startup if `server.secret` or `server.jwtsecret` is still the default value when `ENV=production`, or if `pg.user` or `pg.password` is still the default `actix`
+- Production safety: server panics at startup if `server.secret` or `server.jwtsecret` is still the default value when `ENV=production`, if `pg.user` or `pg.password` is still the default `actix`, or if `pg.host` is still the placeholder `pick.a.proper.hostname`
 - Error responses are JSON `{"error": "..."}` via `ErrorResponse` struct; DB constraint violations return sanitized messages (never raw SQL)
 - List queries (`get_users`, `get_teams`, `get_roles`, `get_items`, `get_team_orders`, `get_order_items`) log a `warn!()` when a row fails to map instead of silently dropping it
 - `get_user_teams` and `get_team_users` return an empty `[]` (200 OK) when no records are found, rather than a 404 error
@@ -330,8 +331,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 162 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 90 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 189 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
+- 86 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - 90 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
