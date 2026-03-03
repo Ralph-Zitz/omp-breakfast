@@ -661,7 +661,7 @@ async fn create_and_list_team_orders() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users: Vec<Value> = test::read_body_json(resp).await;
-    let user_id = users
+    let _user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
         .unwrap()["user_id"]
@@ -737,7 +737,7 @@ async fn non_member_cannot_create_team_order() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users: Vec<Value> = test::read_body_json(resp).await;
-    let user_id = users
+    let _user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U1_F.U1_L@LEGO.com"))
         .unwrap()["user_id"]
@@ -1467,7 +1467,7 @@ async fn admin_can_manage_any_team_orders() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users: Vec<Value> = test::read_body_json(resp).await;
-    let admin_user_id = users
+    let _admin_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
         .unwrap()["user_id"]
@@ -2076,7 +2076,7 @@ async fn create_get_update_delete_order_item() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users: Vec<Value> = test::read_body_json(resp).await;
-    let user_id = users
+    let _user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
         .unwrap()["user_id"]
@@ -2228,7 +2228,7 @@ async fn duplicate_order_item_returns_409() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users: Vec<Value> = test::read_body_json(resp).await;
-    let user_id = users
+    let _user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
         .unwrap()["user_id"]
@@ -2322,7 +2322,7 @@ async fn non_member_cannot_create_order_item() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users: Vec<Value> = test::read_body_json(resp).await;
-    let u4_user_id = users
+    let _u4_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
         .unwrap()["user_id"]
@@ -2464,7 +2464,7 @@ async fn admin_can_manage_order_items_on_any_team() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users: Vec<Value> = test::read_body_json(resp).await;
-    let admin_user_id = users
+    let _admin_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
         .unwrap()["user_id"]
@@ -2571,7 +2571,7 @@ async fn closed_order_rejects_add_item() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users: Vec<Value> = test::read_body_json(resp).await;
-    let admin_user_id = users
+    let _admin_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
         .unwrap()["user_id"]
@@ -2663,7 +2663,7 @@ async fn closed_order_rejects_update_item() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users: Vec<Value> = test::read_body_json(resp).await;
-    let admin_user_id = users
+    let _admin_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
         .unwrap()["user_id"]
@@ -2771,7 +2771,7 @@ async fn closed_order_rejects_delete_item() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users: Vec<Value> = test::read_body_json(resp).await;
-    let admin_user_id = users
+    let _admin_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
         .unwrap()["user_id"]
@@ -2878,7 +2878,7 @@ async fn reopened_order_allows_item_mutations() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users: Vec<Value> = test::read_body_json(resp).await;
-    let admin_user_id = users
+    let _admin_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
         .unwrap()["user_id"]
@@ -3945,7 +3945,7 @@ async fn admin_can_bulk_delete_team_orders() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users: Vec<Value> = test::read_body_json(resp).await;
-    let admin_id = users
+    let _admin_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
         .unwrap()["user_id"]
