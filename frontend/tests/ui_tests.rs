@@ -127,7 +127,9 @@ fn mock_token(sub: &str) -> String {
 // ─── Fetch mocking helpers ──────────────────────────────────────────────────
 
 /// Replace `window.fetch` with a mock that returns a successful auth
-/// response for `POST /auth` and user details for `GET /api/v1.0/users/*`.
+/// response for `POST /auth`, user details for `GET /api/v1.0/users/*`,
+/// empty team list for `GET /api/v1.0/users/*/teams`, and accepts
+/// `POST /auth/revoke` (fire-and-forget from logout).
 fn install_mock_fetch_success() {
     let token = mock_token("12345678-1234-1234-1234-1234567890ab");
     let js = format!(
@@ -135,6 +137,8 @@ fn install_mock_fetch_success() {
             window.__original_fetch = window.fetch;
             window.fetch = function(input) {{
                 var url = (typeof input === 'string') ? input : input.url;
+
+                // POST /auth (login)
                 if (url.endsWith('/auth')) {{
                     return Promise.resolve(new Response(
                         JSON.stringify({{
@@ -146,17 +150,38 @@ fn install_mock_fetch_success() {
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
+
+                // GET /api/v1.0/users/*/teams — must come BEFORE the general /users/ check
+                if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify([]),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/users/*
                 if (url.includes('/api/v1.0/users/')) {{
                     return Promise.resolve(new Response(
                         JSON.stringify({{
                             user_id: "12345678-1234-1234-1234-1234567890ab",
                             firstname: "John",
                             lastname: "Doe",
-                            email: "john@example.com"
+                            email: "john@example.com",
+                            created: "2025-01-01T00:00:00Z",
+                            changed: "2025-01-01T00:00:00Z"
                         }}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
+
+                // POST /auth/revoke (fire-and-forget from logout)
+                if (url.includes('/auth/revoke')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up": true}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
                 return Promise.resolve(new Response("Not Found", {{ status: 404 }}));
             }};
         }})()"#,
@@ -741,6 +766,12 @@ fn install_mock_fetch_user_401() {
             window.__original_fetch = window.fetch;
             window.fetch = function(input) {
                 var url = (typeof input === 'string') ? input : input.url;
+                if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {
+                    return Promise.resolve(new Response(
+                        JSON.stringify([]),
+                        { status: 200, headers: { "Content-Type": "application/json" } }
+                    ));
+                }
                 if (url.includes('/api/v1.0/users/')) {
                     return Promise.resolve(new Response(
                         JSON.stringify({"error":"Unauthorized"}),
@@ -840,6 +871,16 @@ async fn test_loading_page_shown_during_session_restore() {
             window.__original_fetch = window.fetch;
             window.fetch = function(input) {
                 var url = (typeof input === 'string') ? input : input.url;
+                if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {
+                    return new Promise(function(resolve) {
+                        setTimeout(function() {
+                            resolve(new Response(
+                                JSON.stringify([]),
+                                { status: 200, headers: { "Content-Type": "application/json" } }
+                            ));
+                        }, 2000);
+                    });
+                }
                 if (url.includes('/api/v1.0/users/')) {
                     return new Promise(function(resolve) {
                         setTimeout(function() {
@@ -848,7 +889,9 @@ async fn test_loading_page_shown_during_session_restore() {
                                     user_id: "12345678-1234-1234-1234-1234567890ab",
                                     firstname: "John",
                                     lastname: "Doe",
-                                    email: "john@example.com"
+                                    email: "john@example.com",
+                                    created: "2025-01-01T00:00:00Z",
+                                    changed: "2025-01-01T00:00:00Z"
                                 }),
                                 { status: 200, headers: { "Content-Type": "application/json" } }
                             ));
@@ -952,6 +995,14 @@ fn install_mock_fetch_refresh_retry() {
                     ));
                 }}
 
+                // GET /api/v1.0/users/*/teams — return empty team list
+                if (url.includes('/api/v1.0/users/') && url.endsWith('/teams') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify([]),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
                 // GET /api/v1.0/users/* — 401 on first call, 200 on subsequent
                 if (url.includes('/api/v1.0/users/') && method === 'GET') {{
                     window.__user_fetch_count++;
@@ -966,7 +1017,9 @@ fn install_mock_fetch_refresh_retry() {
                             user_id: "12345678-1234-1234-1234-1234567890ab",
                             firstname: "Refreshed",
                             lastname: "User",
-                            email: "refreshed@example.com"
+                            email: "refreshed@example.com",
+                            created: "2025-01-01T00:00:00Z",
+                            changed: "2025-01-01T00:00:00Z"
                         }}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
@@ -1123,6 +1176,14 @@ fn install_mock_fetch_double_failure() {
                 if (url.includes('/auth/revoke')) {{
                     return Promise.resolve(new Response(
                         JSON.stringify({{"up": true}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/users/*/teams — return empty team list
+                if (url.includes('/api/v1.0/users/') && url.endsWith('/teams') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify([]),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
