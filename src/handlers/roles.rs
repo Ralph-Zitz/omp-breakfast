@@ -8,7 +8,6 @@ use crate::{
 use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
 };
-use deadpool_postgres::Client;
 use tracing::instrument;
 use uuid::Uuid;
 

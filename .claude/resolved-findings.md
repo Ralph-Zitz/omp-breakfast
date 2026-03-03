@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-03
+Last updated: 2026-03-06
 
 ## Critical Items
 
@@ -987,6 +987,18 @@ Last updated: 2026-03-03
   - Resolution: Removed `js-sys = "0.3"` from `[dev-dependencies]`.
   - Source commands: `dependency-check`
 
+### API — `memberof.joined` and `memberof.changed` Timestamps Not Exposed
+
+- [x] **#115 — `joined` and `changed` columns stored in DB but not returned by API**
+  - Resolution: Added `joined: DateTime<Utc>` and `role_changed: DateTime<Utc>` fields to `UsersInTeam` and `UserInTeams` structs, updated `FromRow` impls, and updated all SQL queries in `db/teams.rs` and `db/membership.rs` to select `memberof.joined, memberof.changed as role_changed`.
+  - Source commands: `api-completeness`
+
+### API Design — GET Endpoints Have No Team-Scoped RBAC
+
+- [x] **#117 — Any authenticated user can read any team's data**
+  - Resolution: Documented as intentional design decision in `src/routes.rs` doc comment and CLAUDE.md Key Conventions section.
+  - Source commands: `api-completeness`, `security-audit`
+
 ## Informational Items
 
 ### Architecture — Defence-in-Depth Notes
@@ -1071,8 +1083,122 @@ Last updated: 2026-03-03
   - Resolution: Incorrect premise — verified that order GET handlers (`get_order_items`, `get_order_item`, `get_team_orders`, `get_team_order`) do NOT call `require_team_member`. Only mutation handlers enforce team membership. Consistent with deliberate open-read design (#117). Finding removed.
   - Source commands: `test-gaps`
 
+### Testing — `validate_optional_password` Has No Unit Tests
+
+- [x] **#172 — Custom validator for `UpdateUserRequest.password` has zero test coverage**
+  - Resolution: Added 5 unit tests in `src/models.rs`: rejects too short, rejects too long, accepts valid, boundary min (7→err, 8→ok), boundary max (128→ok, 129→err).
+  - Source commands: `test-gaps`
+
+### Testing — No API Test for `user_teams` Endpoint
+
+- [x] **#173 — `GET /api/v1.0/users/{user_id}/teams` has no API-level integration test**
+  - Resolution: Added 2 API tests in `tests/api_tests.rs`: `user_teams_returns_teams_for_seed_admin` and `user_teams_returns_empty_for_user_with_no_teams`.
+  - Source commands: `test-gaps`
+
+### Testing — `check_team_access` Combined RBAC Query Has No Direct Test
+
+- [x] **#174 — Core RBAC query tested only indirectly through API-level tests**
+  - Resolution: Added 4 DB tests in `tests/db_tests.rs`: admin-in-own-team, regular-member, non-member, admin-in-unrelated-team.
+  - Source commands: `test-gaps`
+
+### Testing — No Test for Malformed Path Parameters
+
+- [x] **#175 — `GET /api/v1.0/users/not-a-uuid` → 400 path is untested**
+  - Resolution: Added `malformed_uuid_path_returns_400` API test.
+  - Source commands: `test-gaps`
+
+### Testing — No Test for JSON Error Handler
+
+- [x] **#176 — Oversized/malformed JSON body error paths are untested**
+  - Resolution: Added `wrong_content_type_returns_415` and `invalid_json_body_returns_error` API tests.
+  - Source commands: `test-gaps`
+
+### Testing — No API Tests for `update_team` and `update_role` Success Paths
+
+- [x] **#177 — Admin happy path untested; only rejection path (`non_admin_cannot_*`) exists**
+  - Resolution: Added `admin_can_update_team` and `admin_can_update_role` API tests.
+  - Source commands: `test-gaps`
+
+### Testing — No Tests for `Location` Header in Create Responses
+
+- [x] **#178 — Only 4 of 7 create handlers build `Location` header via `url_for` but no test verifies it**
+  - Resolution: Added `create_item_returns_location_header` API test.
+  - Source commands: `test-gaps`
+
+### Testing — No Rate Limiting Behavior Test
+
+- [x] **#179 — No test verifies the 11th rapid auth request returns 429**
+  - Resolution: Added `auth_endpoint_rate_limits_after_burst` API test (sends 10+1 requests, verifies 429).
+  - Source commands: `test-gaps`
+
+### Testing — No Validation Tests for Order-Related Models
+
+- [x] **#180 — `CreateOrderEntry`, `UpdateOrderEntry`, `CreateTeamOrderEntry`, `UpdateTeamOrderEntry` derive `Validate` but have no tests**
+  - Resolution: Added 7 unit tests in `src/models.rs` covering `CreateOrderEntry`, `UpdateOrderEntry`, `CreateTeamOrderEntry`, and `UpdateTeamOrderEntry` validation.
+  - Source commands: `test-gaps`
+
+### Testing — No Test for Error Response Body Shape
+
+- [x] **#181 — Tests verify status codes but never assert response body matches `{"error": "..."}`**
+  - Resolution: Added `error_response_body_is_json_object_with_error_key` async test in `src/errors.rs` verifying JSON body shape for both 4xx and 5xx errors.
+  - Source commands: `test-gaps`
+
+### Code Quality — `UpdateUserEntry` Serves Dual Purpose
+
+- [x] **#183 — Struct used for both auth cache and DB row mapping**
+  - Resolution: Removed `Validate` derive and `#[validate(...)]` attributes from `UpdateUserEntry`, added doc comment explaining the struct's dual purpose.
+  - Source commands: `review`
+
+### Frontend — `authed_get` Only Supports GET
+
+- [x] **#184 — Future pages need `authed_post`, `authed_put`, `authed_delete` variants**
+  - Resolution: Added `HttpMethod` enum, `build_method_request()`, and generic `authed_request(method, url, body)` in `frontend/src/app.rs`. `authed_get` now delegates to it.
+  - Source commands: `review`
+
+### Deployment — Healthcheck Binary Hardcodes Port 8080
+
+- [x] **#185 — `let port = 8080;` is hardcoded in the healthcheck binary**
+  - Resolution: Changed healthcheck binary to read port from `HEALTH_PORT` env var with fallback to 8080.
+  - Source commands: `review`
+
+### Testing — Bulk Delete Team Orders Has No API Test
+
+- [x] **#204 — `DELETE /api/v1.0/teams/{id}/orders` RBAC and response untested at API level**
+  - Resolution: Added `admin_can_bulk_delete_team_orders` API test.
+  - Source commands: `test-gaps`
+
+### Testing — Update Member Role Has No API Test
+
+- [x] **#205 — `PUT /api/v1.0/teams/{id}/users/{id}` untested at API level**
+  - Resolution: Added `admin_can_update_member_role` API test.
+  - Source commands: `test-gaps`
+
+### Testing — Delete User by Email Success Path Untested
+
+- [x] **#206 — `DELETE /api/v1.0/users/email/{email}` success path has no API test**
+  - Resolution: Added `admin_can_delete_user_by_email` API test.
+  - Source commands: `test-gaps`
+
+### Testing — Token Revocation Ownership Check Untested
+
+- [x] **#207 — No test verifies that User A cannot revoke User B's token**
+  - Resolution: Added `non_admin_cannot_revoke_another_users_token` and `admin_can_revoke_another_users_token` API tests.
+  - Source commands: `test-gaps`
+
+### Testing — Team Users Has No API Test
+
+- [x] **#208 — `GET /api/v1.0/teams/{id}/users` has no API-level integration test**
+  - Resolution: Added `team_users_returns_members_of_seed_team` and `team_users_returns_empty_for_team_with_no_members` API tests.
+  - Source commands: `test-gaps`
+
+### Code Quality — Redundant `Client` Import in Handler Files
+
+- [x] **#209 — `use deadpool_postgres::Client;` redundant in `handlers/users.rs` and `handlers/roles.rs`**
+  - Resolution: Removed redundant `use deadpool_postgres::Client;` from `src/handlers/users.rs` and `src/handlers/roles.rs`.
+  - Source commands: `review`
+
 ## Notes
 
-- Total resolved items: 148 (6 critical, 43 important, 63 minor, 6 informational, plus items previously counted under different categories)
+- Total resolved items: 169 (6 critical, 43 important, 65 minor, 25 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

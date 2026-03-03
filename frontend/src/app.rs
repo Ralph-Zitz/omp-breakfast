@@ -1,5 +1,5 @@
 use base64::Engine;
-use gloo_net::http::Request;
+use gloo_net::http::{Request, RequestBuilder};
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 use web_sys::wasm_bindgen::JsCast;
@@ -124,35 +124,75 @@ async fn get_valid_token() -> Option<String> {
     Some(token)
 }
 
-/// Perform an authenticated GET request with automatic token refresh.
+/// HTTP methods supported by [`authed_request`].
+#[derive(Clone, Copy, Debug)]
+#[allow(dead_code)] // Post, Put, Delete will be used when mutation pages are implemented
+enum HttpMethod {
+    Get,
+    Post,
+    Put,
+    Delete,
+}
+
+/// Build a [`RequestBuilder`] for the given method and URL.
+fn build_method_request(method: HttpMethod, url: &str) -> RequestBuilder {
+    match method {
+        HttpMethod::Get => Request::get(url),
+        HttpMethod::Post => Request::post(url),
+        HttpMethod::Put => Request::put(url),
+        HttpMethod::Delete => Request::delete(url),
+    }
+}
+
+/// Perform an authenticated HTTP request with automatic token refresh.
 /// If the initial request returns 401, attempts a token refresh and retries once.
 /// Returns `None` if the request fails after retry or if no token is available.
-async fn authed_get(url: &str) -> Option<gloo_net::http::Response> {
+///
+/// For GET requests without a body, prefer the [`authed_get`] convenience wrapper.
+async fn authed_request(
+    method: HttpMethod,
+    url: &str,
+    body: Option<&serde_json::Value>,
+) -> Option<gloo_net::http::Response> {
     let token = match get_valid_token().await {
         Some(t) => t,
         None => return None,
     };
 
-    let resp = Request::get(url)
-        .header("Authorization", &format!("Bearer {}", token))
-        .send()
-        .await
-        .ok()?;
+    let send_once =
+        |tok: String, m: HttpMethod, u: String, b: Option<serde_json::Value>| async move {
+            let req = build_method_request(m, &u)
+                .header("Authorization", &format!("Bearer {}", tok));
+            match b.as_ref() {
+                Some(v) => req.json(v).ok()?.send().await.ok(),
+                None => req.send().await.ok(),
+            }
+        };
+
+    let body_owned = body.cloned();
+    let resp = send_once(
+        token,
+        method,
+        url.to_string(),
+        body_owned.clone(),
+    )
+    .await?;
 
     if resp.status() == 401 {
         // Token may have been revoked server-side — try refresh
         if let Some(new_token) = try_refresh_token().await {
-            let retry = Request::get(url)
-                .header("Authorization", &format!("Bearer {}", new_token))
-                .send()
-                .await
-                .ok()?;
-            return Some(retry);
+            return send_once(new_token, method, url.to_string(), body_owned).await;
         }
         return None;
     }
 
     Some(resp)
+}
+
+/// Perform an authenticated GET request with automatic token refresh.
+/// Convenience wrapper around [`authed_request`] for body-less GET requests.
+async fn authed_get(url: &str) -> Option<gloo_net::http::Response> {
+    authed_request(HttpMethod::Get, url, None).await
 }
 
 // ── Token revocation ────────────────────────────────────────────────────────

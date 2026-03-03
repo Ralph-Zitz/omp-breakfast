@@ -9,7 +9,7 @@ pub async fn get_user_teams(client: &Client, uid: Uuid) -> Result<Vec<UserInTeam
     let statement = client
         .prepare(
             r#"
-                select tname, title, firstname, lastname
+                select tname, title, firstname, lastname, memberof.joined, memberof.changed as role_changed
                 from memberof
                 join users on users.user_id = memberof.memberof_user_id
                 join teams on teams.team_id = memberof.memberof_team_id
@@ -133,7 +133,7 @@ pub async fn get_team_users(client: &Client, tid: Uuid) -> Result<Vec<UsersInTea
     let statement = client
         .prepare(
             r#"
-                select user_id, firstname, lastname, email, title
+                select user_id, firstname, lastname, email, title, memberof.joined, memberof.changed as role_changed
                 from memberof
                 join users on users.user_id = memberof.memberof_user_id
                 join teams on teams.team_id = memberof.memberof_team_id

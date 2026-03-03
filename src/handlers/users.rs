@@ -14,7 +14,6 @@ use actix_web::{
 };
 use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
 use chrono::{DateTime, Duration, Utc};
-use deadpool_postgres::Client;
 use tracing::instrument;
 use uuid::Uuid;
 

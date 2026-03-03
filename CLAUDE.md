@@ -123,6 +123,7 @@ tests/
 - Token revocation uses a DB-backed `token_blacklist` table (persisted across restarts) with an in-memory `dashmap::DashMap` cache for fast-path lookups. A background task runs every hour to clean up expired entries from both the database (via `db::cleanup_expired_tokens`) and the in-memory map (via `DashMap::retain()`).
 - Auth cache uses TTL (5min) and max-size (1000 entries) with FIFO eviction
 - RBAC: Four roles — Admin (global superuser), Team Admin (team-scoped), Member, Guest. JWT claims stored in request extensions.
+- GET RBAC policy: All GET endpoints require only JWT authentication — no team-scoped RBAC. Data visibility is open to all authenticated users (no multi-tenant isolation). Team-scoped RBAC is enforced only on mutations (POST/PUT/DELETE) within individual handlers.
 - Global Admin RBAC: `require_admin` helper checks if user holds "Admin" role in any team (via `db::is_admin`); gates team CUD, items CUD, roles CUD. Admin bypasses all team-scoped and self-only checks.
 - Admin-or-Team-Admin RBAC: `require_admin_or_team_admin` helper checks if user holds "Admin" or "Team Admin" role in any team (via `db::is_admin_or_team_admin`); gates user creation.
 - Team RBAC: `require_team_member` and `require_team_admin` helpers gate team-scoped mutations; both allow global Admin bypass. `require_team_admin` checks for "Team Admin" role in the specific team.
@@ -287,9 +288,9 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 149 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 70 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
-- 86 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 162 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
+- 90 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 90 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
 - Test DB uses `docker-compose.test.yml` overlay to expose port 5433 (avoids conflicts with dev DB on 5432)

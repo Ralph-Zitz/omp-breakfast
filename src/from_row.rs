@@ -185,6 +185,10 @@ impl FromRow for UsersInTeam {
                 .map_err(|e| map_err("lastname", e))?,
             email: row.try_get("email").map_err(|e| map_err("email", e))?,
             title: row.try_get("title").map_err(|e| map_err("title", e))?,
+            joined: row.try_get("joined").map_err(|e| map_err("joined", e))?,
+            role_changed: row
+                .try_get("role_changed")
+                .map_err(|e| map_err("role_changed", e))?,
         })
     }
 }
@@ -202,6 +206,10 @@ impl FromRow for UserInTeams {
             lastname: row
                 .try_get("lastname")
                 .map_err(|e| map_err("lastname", e))?,
+            joined: row.try_get("joined").map_err(|e| map_err("joined", e))?,
+            role_changed: row
+                .try_get("role_changed")
+                .map_err(|e| map_err("role_changed", e))?,
         })
     }
 }

@@ -24,7 +24,10 @@ fn status_line(response: &str) -> &str {
 
 fn main() -> ExitCode {
     let host = "localhost";
-    let port = 8080;
+    let port: u16 = std::env::var("HEALTH_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8080);
 
     // Build a TLS config that accepts any certificate (local/self-signed)
     let mut root_store = rustls::RootCertStore::empty();

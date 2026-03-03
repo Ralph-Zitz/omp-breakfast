@@ -53,6 +53,12 @@ pub fn routes(cfg: &mut ServiceConfig) {
                 .route(post().to(revoke_user_token)),
         )
         .service(
+            // All endpoints under /api/v1.0 require JWT authentication.
+            //
+            // GET endpoints intentionally require only JWT auth (no team-scoped RBAC).
+            // Data visibility is open to all authenticated users — there is no multi-tenant
+            // data isolation. Team-scoped RBAC is enforced only on mutations (POST/PUT/DELETE)
+            // within individual handlers via require_admin, require_team_admin, etc.
             scope("/api/v1.0")
                 .wrap(Compat::new(jwt_auth))
                 .app_data(

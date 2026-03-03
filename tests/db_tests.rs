@@ -2369,3 +2369,76 @@ async fn is_team_order_closed_returns_not_found_for_nonexistent_order() {
         err_msg
     );
 }
+
+// ===========================================================================
+// Group 11: check_team_access (#174)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn check_team_access_admin_in_own_team() {
+    let client = test_client().await;
+    let admin_id = seed_user_id(&client, "admin@admin.com").await;
+    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let (is_admin, team_role) = db::check_team_access(&client, team_id, admin_id)
+        .await
+        .expect("check_team_access should succeed");
+    assert!(is_admin, "admin should be recognized as global admin");
+    assert_eq!(
+        team_role,
+        Some("Admin".to_string()),
+        "admin should have Admin role in the team"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn check_team_access_regular_member() {
+    let client = test_client().await;
+    let member_id = seed_user_id(&client, "U1_F.U1_L@LEGO.com").await;
+    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let (is_admin, team_role) = db::check_team_access(&client, team_id, member_id)
+        .await
+        .expect("check_team_access should succeed");
+    assert!(!is_admin, "regular member should not be global admin");
+    assert_eq!(
+        team_role,
+        Some("Member".to_string()),
+        "U1_F should have Member role in the team"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn check_team_access_non_member() {
+    let client = test_client().await;
+    let member_id = seed_user_id(&client, "U1_F.U1_L@LEGO.com").await;
+    let team_id = seed_team_id(&client, "Pixel Bakers").await;
+    let (is_admin, team_role) = db::check_team_access(&client, team_id, member_id)
+        .await
+        .expect("check_team_access should succeed");
+    assert!(!is_admin, "U1_F should not be global admin");
+    assert!(
+        team_role.is_none(),
+        "U1_F should have no role in Pixel Bakers"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn check_team_access_admin_in_unrelated_team() {
+    let client = test_client().await;
+    let admin_id = seed_user_id(&client, "admin@admin.com").await;
+    let team_id = seed_team_id(&client, "Pixel Bakers").await;
+    let (is_admin, team_role) = db::check_team_access(&client, team_id, admin_id)
+        .await
+        .expect("check_team_access should succeed");
+    assert!(
+        is_admin,
+        "admin should still be recognized as global admin"
+    );
+    assert!(
+        team_role.is_none(),
+        "admin should have no role in Pixel Bakers (not a member)"
+    );
+}

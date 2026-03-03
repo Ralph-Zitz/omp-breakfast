@@ -179,7 +179,7 @@ pub async fn add_team_member(
     let query = tx
         .prepare(
             r#"
-                select user_id, firstname, lastname, email, title
+                select user_id, firstname, lastname, email, title, memberof.joined, memberof.changed as role_changed
                 from memberof
                 join users on users.user_id = memberof.memberof_user_id
                 join roles on roles.role_id = memberof.memberof_role_id
@@ -251,7 +251,7 @@ pub async fn update_member_role(
     let query = tx
         .prepare(
             r#"
-                select user_id, firstname, lastname, email, title
+                select user_id, firstname, lastname, email, title, memberof.joined, memberof.changed as role_changed
                 from memberof
                 join users on users.user_id = memberof.memberof_user_id
                 join roles on roles.role_id = memberof.memberof_role_id

@@ -90,28 +90,16 @@ pub struct UserEntry {
     pub changed: DateTime<Utc>,
 }
 
-#[derive(Deserialize, Serialize, Clone, Validate)]
+/// Internal DB row representation of a user (returned by `get_user_by_email`).
+/// This struct is NOT used as an API request body — see `UpdateUserRequest` for
+/// the API-facing update type. No `Validate` derive: the `password` field contains
+/// an Argon2 hash, not plaintext.
+#[derive(Deserialize, Serialize, Clone)]
 pub struct UpdateUserEntry {
     pub user_id: Uuid,
-    #[validate(length(
-        min = 2,
-        max = 50,
-        message = "firstname is required and must be between 2 and 50 characters"
-    ))]
     pub firstname: String,
-    #[validate(length(
-        min = 2,
-        max = 50,
-        message = "lastname is required and must be between 2 and 50 characters"
-    ))]
     pub lastname: String,
-    #[validate(email)]
     pub email: String,
-    #[validate(length(
-        min = 8,
-        max = 128,
-        message = "password is required and must be between 8 and 128 characters"
-    ))]
     pub password: String,
 }
 
@@ -196,6 +184,8 @@ pub struct UsersInTeam {
     pub lastname: String,
     pub email: String,
     pub title: String,
+    pub joined: DateTime<Utc>,
+    pub role_changed: DateTime<Utc>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -237,6 +227,8 @@ pub struct UserInTeams {
     pub title: String,
     pub firstname: String,
     pub lastname: String,
+    pub joined: DateTime<Utc>,
+    pub role_changed: DateTime<Utc>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -375,4 +367,122 @@ pub struct CreateOrderEntry {
 pub struct UpdateOrderEntry {
     #[validate(range(min = 1, message = "quantity must be at least 1"))]
     pub amt: i32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use validator::Validate;
+
+    // ── validate_optional_password (#172) ────────────────────────────────────
+
+    #[test]
+    fn validate_optional_password_rejects_too_short() {
+        let err = validate_optional_password(&"short".to_string()).unwrap_err();
+        assert_eq!(err.code, "password");
+        assert!(
+            err.message
+                .as_ref()
+                .unwrap()
+                .contains("at least 8 characters")
+        );
+    }
+
+    #[test]
+    fn validate_optional_password_rejects_too_long() {
+        let long = "a".repeat(129);
+        let err = validate_optional_password(&long).unwrap_err();
+        assert_eq!(err.code, "password");
+        assert!(
+            err.message
+                .as_ref()
+                .unwrap()
+                .contains("must not exceed 128")
+        );
+    }
+
+    #[test]
+    fn validate_optional_password_accepts_valid() {
+        assert!(validate_optional_password(&"validpass".to_string()).is_ok());
+    }
+
+    #[test]
+    fn validate_optional_password_boundary_min() {
+        // Exactly 8 characters — should be accepted
+        assert!(validate_optional_password(&"12345678".to_string()).is_ok());
+        // 7 characters — rejected
+        assert!(validate_optional_password(&"1234567".to_string()).is_err());
+    }
+
+    #[test]
+    fn validate_optional_password_boundary_max() {
+        // Exactly 128 characters — should be accepted
+        let max = "a".repeat(128);
+        assert!(validate_optional_password(&max).is_ok());
+        // 129 characters — rejected
+        let over = "a".repeat(129);
+        assert!(validate_optional_password(&over).is_err());
+    }
+
+    // ── Order model validation (#180) ────────────────────────────────────────
+
+    #[test]
+    fn create_order_entry_rejects_zero_quantity() {
+        let entry = CreateOrderEntry {
+            orders_item_id: Uuid::nil(),
+            amt: 0,
+        };
+        let err = entry.validate().unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("quantity must be at least 1"));
+    }
+
+    #[test]
+    fn create_order_entry_rejects_negative_quantity() {
+        let entry = CreateOrderEntry {
+            orders_item_id: Uuid::nil(),
+            amt: -1,
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn create_order_entry_accepts_positive_quantity() {
+        let entry = CreateOrderEntry {
+            orders_item_id: Uuid::nil(),
+            amt: 1,
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn update_order_entry_rejects_zero_quantity() {
+        let entry = UpdateOrderEntry { amt: 0 };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn update_order_entry_accepts_positive_quantity() {
+        let entry = UpdateOrderEntry { amt: 3 };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn create_team_order_entry_validates_with_no_rules() {
+        let entry = CreateTeamOrderEntry {
+            teamorders_user_id: Uuid::nil(),
+            duedate: None,
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn update_team_order_entry_validates_with_no_rules() {
+        let entry = UpdateTeamOrderEntry {
+            teamorders_user_id: None,
+            duedate: None,
+            closed: None,
+        };
+        assert!(entry.validate().is_ok());
+    }
 }

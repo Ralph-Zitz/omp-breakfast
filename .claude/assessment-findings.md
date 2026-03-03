@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-05
+Last assessed: 2026-03-06
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -131,14 +131,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Source commands: `practices-audit`
   - Action: Create `.env.example` listing available env vars.
 
-### API — `memberof.joined` and `memberof.changed` Timestamps Not Exposed
-
-- [ ] **#115 — `joined` and `changed` columns stored in DB but not returned by API**
-  - Files: `src/models.rs` (`UsersInTeam`, `UserInTeams`), `src/db/teams.rs`
-  - Problem: `memberof.joined` and `memberof.changed` timestamps are stored but neither model struct includes them, and DB queries don't select them.
-  - Source commands: `api-completeness`
-  - Action: Add to models and queries if frontend needs it.
-
 ### Frontend — Consumes Only 4 of 41 Endpoints
 
 - [ ] **#116 — Frontend only uses auth (3) + user-detail (1) endpoints**
@@ -146,14 +138,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Problem: 37 backend endpoints are fully implemented but await frontend page development.
   - Source commands: `api-completeness`
   - Action: Documented in CLAUDE.md Frontend Roadmap. Will be consumed as pages are built.
-
-### API Design — GET Endpoints Have No Team-Scoped RBAC
-
-- [ ] **#117 — Any authenticated user can read any team's data**
-  - Files: `src/handlers/teams.rs`, `src/handlers/orders.rs`, `src/handlers/users.rs`
-  - Problem: All GET endpoints only require JWT authentication, not team membership. Deliberate design choice.
-  - Source commands: `api-completeness`, `security-audit`
-  - Action: Document as intentional. Reconsider if multi-tenant isolation is needed.
 
 ### Deployment — Dev Config in Production Docker Image
 
@@ -231,153 +215,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Problem: Functions like `is_team_order_closed`, `get_member_role`, `is_team_admin_of_user` have nuanced behavior that warrants documentation.
   - Source commands: `review`
   - Action: Add doc comments incrementally when modifying these files.
-
-### Testing — `validate_optional_password` Has No Unit Tests
-
-- [ ] **#172 — Custom validator for `UpdateUserRequest.password` has zero test coverage**
-  - File: `src/models.rs` (`validate_optional_password`)
-  - Problem: If this validator silently passes short passwords, users could set weak passwords via PUT. The function uses a non-standard `&String` signature required by the `validator` crate.
-  - Source commands: `test-gaps`
-  - Action: Add tests for `Some("short")` → error, `Some("validpass")` → pass, `None` → skip.
-
-### Testing — No API Test for `user_teams` Endpoint
-
-- [ ] **#173 — `GET /api/v1.0/users/{user_id}/teams` has no API-level integration test**
-  - Files: `tests/api_tests.rs`, `src/handlers/users.rs`
-  - Problem: Tested at DB level but no API test verifies JSON shape, JWT requirement, or empty-array behavior.
-  - Source commands: `test-gaps`
-  - Action: Add `get_user_teams_returns_empty_array`, `get_user_teams_returns_memberships`, `get_user_teams_requires_jwt`.
-
-### Testing — `check_team_access` Combined RBAC Query Has No Direct Test
-
-- [ ] **#174 — Core RBAC query tested only indirectly through API-level tests**
-  - File: `src/db/membership.rs` (`check_team_access`)
-  - Problem: Returns `(is_admin, team_role)` tuple via correlated subquery + EXISTS. A subtle SQL bug could be masked.
-  - Source commands: `test-gaps`
-  - Action: Add 4 direct DB tests: admin in team, member, non-member, admin not in team.
-
-### Testing — No Test for Malformed Path Parameters
-
-- [ ] **#175 — `GET /api/v1.0/users/not-a-uuid` → 400 path is untested**
-  - Files: `tests/api_tests.rs`, `src/errors.rs` (`path_error_handler`)
-  - Source commands: `test-gaps`
-  - Action: Add `get_user_with_invalid_uuid_returns_400`.
-
-### Testing — No Test for JSON Error Handler
-
-- [ ] **#176 — Oversized/malformed JSON body error paths are untested**
-  - Files: `tests/api_tests.rs`, `src/errors.rs` (`json_error_handler`)
-  - Problem: Three sub-cases: ContentType → 415, deserialization → 422, other → 400. None tested.
-  - Source commands: `test-gaps`
-  - Action: Add `create_user_with_wrong_content_type_returns_415`, `create_user_with_invalid_json_returns_400`.
-
-### Testing — No API Tests for `update_team` and `update_role` Success Paths
-
-- [ ] **#177 — Admin happy path untested; only rejection path (`non_admin_cannot_*`) exists**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-  - Action: Add `update_team_as_admin_returns_200`, `update_role_as_admin_returns_200`.
-
-### Testing — No Tests for `Location` Header in Create Responses
-
-- [ ] **#178 — Only 4 of 7 create handlers build `Location` header via `url_for` but no test verifies it**
-  - Files: `tests/api_tests.rs`, `src/handlers/` (create handlers)
-  - Problem: If the named route string drifts, `url_for` silently fails (wrapped in `if let Ok`). Additionally, 3 create handlers lack the `Location` header entirely (see #219).
-  - Source commands: `test-gaps`
-  - Action: Add `create_user_sets_location_header`.
-
-### Testing — No Rate Limiting Behavior Test
-
-- [ ] **#179 — No test verifies the 11th rapid auth request returns 429**
-  - Files: `tests/api_tests.rs`, `src/routes.rs` (governor config)
-  - Source commands: `test-gaps`
-  - Action: Add `auth_endpoint_rate_limits_after_burst`.
-
-### Testing — No Validation Tests for Order-Related Models
-
-- [ ] **#180 — `CreateOrderEntry`, `UpdateOrderEntry`, `CreateTeamOrderEntry`, `UpdateTeamOrderEntry` derive `Validate` but have no tests**
-  - File: `src/models.rs`
-  - Source commands: `test-gaps`
-  - Action: Add basic validation tests to catch regressions if rules are added.
-
-### Testing — No Test for Error Response Body Shape
-
-- [ ] **#181 — Tests verify status codes but never assert response body matches `{"error": "..."}`**
-  - File: `src/errors.rs`
-  - Problem: A serialization change could break API clients.
-  - Source commands: `test-gaps`
-  - Action: Add `error_response_body_is_json_with_error_field`.
-
-### Code Quality — `UpdateUserEntry` Serves Dual Purpose
-
-- [ ] **#183 — Struct used for both auth cache and DB row mapping**
-  - File: `src/models.rs`
-  - Problem: Includes `password` hash (needed for cache verification) and derives `Validate` with password min-length rules (applies to plaintext, not hash).
-  - Source commands: `review`
-  - Action: Consider a dedicated `CachedUserData` type for the auth cache.
-
-### Frontend — `authed_get` Only Supports GET
-
-- [ ] **#184 — Future pages need `authed_post`, `authed_put`, `authed_delete` variants**
-  - File: `frontend/src/app.rs`
-  - Source commands: `review`
-  - Action: Build generic `authed_request(method, url, body?)` when implementing the next frontend page.
-
-### Deployment — Healthcheck Binary Hardcodes Port 8080
-
-- [ ] **#185 — `let port = 8080;` is hardcoded in the healthcheck binary**
-  - File: `src/bin/healthcheck.rs`
-  - Problem: Production with a different port would cause healthcheck failures.
-  - Source commands: `review`
-  - Action: Read port from environment or config.
-
-### Testing — Bulk Delete Team Orders Has No API Test
-
-- [ ] **#204 — `DELETE /api/v1.0/teams/{id}/orders` RBAC and response untested at API level**
-  - Files: `tests/api_tests.rs`, `src/handlers/teams.rs` (`delete_team_orders`)
-  - Problem: DB test exists but no API test verifies RBAC enforcement (require_team_admin) or HTTP response.
-  - Source commands: `test-gaps`
-  - Action: Add `bulk_delete_team_orders_as_team_admin`, `bulk_delete_team_orders_as_member_returns_403`.
-
-### Testing — Update Member Role Has No API Test
-
-- [ ] **#205 — `PUT /api/v1.0/teams/{id}/users/{id}` untested at API level**
-  - Files: `tests/api_tests.rs`, `src/handlers/teams.rs` (`update_member_role`)
-  - Problem: DB test exists but no API test verifies endpoint, RBAC, or response shape.
-  - Source commands: `test-gaps`
-  - Action: Add `update_member_role_as_team_admin_returns_200`, `update_member_role_as_member_returns_403`.
-
-### Testing — Delete User by Email Success Path Untested
-
-- [ ] **#206 — `DELETE /api/v1.0/users/email/{email}` success path has no API test**
-  - Files: `tests/api_tests.rs`, `src/handlers/users.rs` (`delete_user_by_email`)
-  - Problem: Only edge cases tested. The successful delete round-trip is not tested.
-  - Source commands: `test-gaps`
-  - Action: Add `admin_delete_user_by_email_returns_200`.
-
-### Testing — Token Revocation Ownership Check Untested
-
-- [ ] **#207 — No test verifies that User A cannot revoke User B's token**
-  - Files: `tests/api_tests.rs`, `src/handlers/users.rs` (`revoke_user_token`)
-  - Problem: Only self-revocation happy path tested. Cross-user revocation rejection untested.
-  - Source commands: `test-gaps`
-  - Action: Add `revoke_other_users_token_returns_403`, `admin_can_revoke_other_users_token`.
-
-### Testing — Team Users Has No API Test
-
-- [ ] **#208 — `GET /api/v1.0/teams/{id}/users` has no API-level integration test**
-  - Files: `tests/api_tests.rs`, `src/handlers/teams.rs` (`team_users`)
-  - Problem: DB test exists but no API test verifies JWT requirement, JSON shape, or empty-team behavior.
-  - Source commands: `test-gaps`
-  - Action: Add `get_team_users_returns_members`, `get_team_users_requires_jwt`.
-
-### Code Quality — Redundant `Client` Import in Handler Files
-
-- [ ] **#209 — `use deadpool_postgres::Client;` redundant in `handlers/users.rs` and `handlers/roles.rs`**
-  - Files: `src/handlers/users.rs` line 17, `src/handlers/roles.rs` line 11
-  - Problem: `Client` is already re-exported via `use crate::handlers::*` from `handlers/mod.rs`.
-  - Source commands: `review`
-  - Action: Remove the duplicate import.
 
 ### Frontend — Inconsistent `spawn_local` Import
 
@@ -656,8 +493,8 @@ See that file for the full history of resolved findings.
 
 ## Notes
 
-- All 171 backend unit tests pass (149 lib + 22 healthcheck); 70 API integration tests pass; 86 DB integration tests pass; 23 WASM tests pass. Total: 350 tests, 0 failures.
-- Backend unit test breakdown: config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 13, middleware/openapi: 14, from_row: 10, db/migrate: 34, healthcheck: 22 = **171 total**.
+- All 184 backend unit tests pass (162 lib + 22 healthcheck); 90 API integration tests pass; 90 DB integration tests pass; 23 WASM tests pass. Total: 387 tests, 0 failures.
+- Backend unit test breakdown: config: 7, errors: 16, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 13, middleware/openapi: 14, from_row: 10, db/migrate: 34, models: 12, healthcheck: 22 = **184 total**.
 - `cargo audit --ignore RUSTSEC-2023-0071` reports 0 vulnerabilities. RUSTSEC-2023-0071 (`rsa` 0.9.10 via `jsonwebtoken`) is intentionally ignored — **blocked on upstream**, see #132. Re-evaluate periodically whether the `rsa` crate or `jsonwebtoken` has shipped a fix.
 - All dependencies are up to date (`cargo outdated -R` shows zero outdated).
 - Clippy is clean on both backend and frontend.
@@ -665,5 +502,5 @@ See that file for the full history of resolved findings.
 - RBAC enforcement is correct across all handlers per the policy table.
 - OpenAPI spec is synchronized with routes (41 operations), with 3 annotation inaccuracies (#244, #245, and existing #220/#221).
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 blocked), 3 important (#240–#242), 21 minor, 51 informational. Total: 76 open items.
-- 147 resolved items in `.claude/resolved-findings.md` (146 prior + #236 removed as incorrect premise).
+- Open items summary: 1 critical (#132 blocked), 3 important (#240–#242), 19 minor, 32 informational. Total: 55 open items.
+- 169 resolved items in `.claude/resolved-findings.md`.

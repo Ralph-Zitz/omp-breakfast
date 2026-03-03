@@ -355,4 +355,28 @@ mod tests {
         // We can't easily read the body in a sync test, but we verify the status
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
+
+    // ── Error response body shape (#181) ─────────────────────────────────────
+
+    /// Verify that error responses have the JSON shape `{"error": "..."}`.
+    #[actix_web::test]
+    async fn error_response_body_is_json_object_with_error_key() {
+        use actix_web::body::to_bytes;
+
+        // 4xx — message is passed through
+        let err = Error::NotFound("resource missing".into());
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        let body = to_bytes(resp.into_body()).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json.is_object(), "body must be a JSON object");
+        assert_eq!(json["error"], "resource missing");
+
+        // 5xx — message is sanitized to "Internal server error"
+        let err = Error::Argon2("secret details".into());
+        let resp = err.error_response();
+        let body = to_bytes(resp.into_body()).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"], "Internal server error");
+    }
 }
