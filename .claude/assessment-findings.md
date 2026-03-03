@@ -208,14 +208,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Source commands: `review`
   - Action: Add `aria-hidden="true"` to the icon `<span>` elements.
 
-### Code Quality — Missing Doc Comments on DB Functions
-
-- [ ] **#129 — Public functions in `src/db/` lack doc comments**
-  - Files: `src/db/users.rs`, `src/db/teams.rs`, `src/db/roles.rs`, `src/db/items.rs`, `src/db/orders.rs`, `src/db/order_items.rs`
-  - Problem: Functions like `is_team_order_closed`, `get_member_role`, `is_team_admin_of_user` have nuanced behavior that warrants documentation.
-  - Source commands: `review`
-  - Action: Add doc comments incrementally when modifying these files.
-
 ### Frontend — Inconsistent `spawn_local` Import
 
 - [ ] **#210 — Session restore uses `wasm_bindgen_futures::spawn_local` while logout uses `leptos::task::spawn_local`**
@@ -502,5 +494,5 @@ See that file for the full history of resolved findings.
 - RBAC enforcement is correct across all handlers per the policy table.
 - OpenAPI spec is synchronized with routes (41 operations), with 3 annotation inaccuracies (#244, #245, and existing #220/#221).
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 blocked), 3 important (#240–#242), 19 minor, 32 informational. Total: 55 open items.
-- 169 resolved items in `.claude/resolved-findings.md`.
+- Open items summary: 1 critical (#132 blocked), 3 important (#240–#242), 19 minor, 31 informational. Total: 54 open items.
+- 170 resolved items in `.claude/resolved-findings.md`.

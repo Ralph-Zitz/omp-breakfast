@@ -62,6 +62,9 @@ async fn guard_open_order(
     Ok(())
 }
 
+/// Fetches all line items for a team order, ordered by item ID.
+///
+/// Rows that fail to map are logged with `warn!()` and skipped.
 pub async fn get_order_items(
     client: &Client,
     teamorder_id: Uuid,
@@ -91,6 +94,9 @@ pub async fn get_order_items(
     Ok(items)
 }
 
+/// Fetches a single line item by team order ID, item ID, and team ID.
+///
+/// Returns `Error::NotFound` if no matching line item exists.
 pub async fn get_order_item(
     client: &Client,
     teamorder_id: Uuid,
@@ -113,6 +119,9 @@ pub async fn get_order_item(
         .map_err(Error::DbMapper)
 }
 
+/// Adds a line item to a team order within a transaction. The order is
+/// locked with `SELECT ... FOR UPDATE` via [`guard_open_order`] to prevent
+/// modifications to closed orders.
 pub async fn create_order_item(
     client: &mut Client,
     teamorder_id: Uuid,
@@ -149,6 +158,11 @@ pub async fn create_order_item(
     Ok(result)
 }
 
+/// Updates the quantity (`amt`) of a line item within a transaction.
+/// The order is locked via [`guard_open_order`] to prevent modifications
+/// to closed orders.
+///
+/// Returns `Error::NotFound` if the line item does not exist.
 pub async fn update_order_item(
     client: &mut Client,
     teamorder_id: Uuid,
@@ -184,6 +198,11 @@ pub async fn update_order_item(
     Ok(result)
 }
 
+/// Deletes a line item from a team order within a transaction.
+/// The order is locked via [`guard_open_order`] to prevent modifications
+/// to closed orders.
+///
+/// Returns `true` if a row was deleted, `false` otherwise.
 pub async fn delete_order_item(
     client: &mut Client,
     teamorder_id: Uuid,

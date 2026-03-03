@@ -1197,8 +1197,15 @@ Last updated: 2026-03-06
   - Resolution: Removed redundant `use deadpool_postgres::Client;` from `src/handlers/users.rs` and `src/handlers/roles.rs`.
   - Source commands: `review`
 
+### Code Quality — Missing Doc Comments on DB Functions
+
+- [x] **#129 — Public functions in `src/db/` lack doc comments**
+  - Files: `src/db/users.rs`, `src/db/teams.rs`, `src/db/roles.rs`, `src/db/items.rs`, `src/db/orders.rs`, `src/db/order_items.rs`, `src/db/membership.rs`, `src/db/health.rs`
+  - Resolution: Added `///` doc comments to all 40 undocumented public functions across 8 DB module files. All 49 public functions in `src/db/` now have documentation.
+  - Source commands: `review`
+
 ## Notes
 
-- Total resolved items: 169 (6 critical, 43 important, 65 minor, 25 informational, plus items previously counted under different categories)
+- Total resolved items: 170 (6 critical, 43 important, 65 minor, 26 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

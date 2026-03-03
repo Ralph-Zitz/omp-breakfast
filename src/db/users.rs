@@ -6,6 +6,9 @@ use deadpool_postgres::Client;
 use tracing::warn;
 use uuid::Uuid;
 
+/// Fetches all users, ordered by first name then last name.
+///
+/// Rows that fail to map are logged with `warn!()` and skipped.
 pub async fn get_users(client: &Client) -> Result<Vec<UserEntry>, Error> {
     let statement = client
         .prepare("select user_id, firstname, lastname, email, created, changed from users order by firstname asc, lastname asc")
@@ -29,6 +32,9 @@ pub async fn get_users(client: &Client) -> Result<Vec<UserEntry>, Error> {
     Ok(users)
 }
 
+/// Fetches a single user by ID.
+///
+/// Returns `Error::NotFound` if no user exists with the given ID.
 pub async fn get_user(client: &Client, user_id: Uuid) -> Result<UserEntry, Error> {
     let statement = client
         .prepare("select user_id, firstname, lastname, email, created, changed from users where user_id = $1 limit 1")
@@ -44,6 +50,10 @@ pub async fn get_user(client: &Client, user_id: Uuid) -> Result<UserEntry, Error
         .map_err(Error::DbMapper)
 }
 
+/// Looks up a user by email address, returning an [`UpdateUserEntry`] that
+/// includes the password hash (for auth cache verification).
+///
+/// Returns `Error::NotFound` if no user exists with the given email.
 pub async fn get_user_by_email(client: &Client, email: &str) -> Result<UpdateUserEntry, Error> {
     let statement = client
         .prepare("select user_id, firstname, lastname, email, password from users where email = $1 limit 1")
@@ -59,6 +69,10 @@ pub async fn get_user_by_email(client: &Client, email: &str) -> Result<UpdateUse
         .map_err(Error::DbMapper)
 }
 
+/// Creates a new user, hashing the plaintext password with Argon2id before
+/// storing it.
+///
+/// Returns the created user (without password).
 pub async fn create_user(client: &Client, user: CreateUserEntry) -> Result<UserEntry, Error> {
     let statement = client
         .prepare(
@@ -86,6 +100,11 @@ pub async fn create_user(client: &Client, user: CreateUserEntry) -> Result<UserE
         .map_err(Error::DbMapper)
 }
 
+/// Updates a user's profile fields. If `password` is `Some`, the new password
+/// is hashed with Argon2id before storing; otherwise the existing hash is
+/// preserved.
+///
+/// Uses `query_opt` + 404 to avoid returning 500 for missing users.
 pub async fn update_user(
     client: &Client,
     uid: Uuid,
@@ -149,6 +168,8 @@ pub async fn update_user(
     }
 }
 
+/// Deletes a user by ID. Returns `true` if a row was deleted, `false` if
+/// the user did not exist.
 pub async fn delete_user(client: &Client, uid: Uuid) -> Result<bool, Error> {
     let statement = client
         .prepare("delete from users where user_id = $1")
@@ -163,6 +184,8 @@ pub async fn delete_user(client: &Client, uid: Uuid) -> Result<bool, Error> {
     Ok(result == 1)
 }
 
+/// Deletes a user by email address. Returns `true` if a row was deleted,
+/// `false` if no user matched.
 pub async fn delete_user_by_email(client: &Client, email: &str) -> Result<bool, Error> {
     let statement = client
         .prepare("delete from users where email = $1")

@@ -5,6 +5,10 @@ use deadpool_postgres::Client;
 use tracing::warn;
 use uuid::Uuid;
 
+/// Fetches all team orders for a team, ordered by creation date descending
+/// (newest first).
+///
+/// Rows that fail to map are logged with `warn!()` and skipped.
 pub async fn get_team_orders(client: &Client, team_id: Uuid) -> Result<Vec<TeamOrderEntry>, Error> {
     let statement = client
         .prepare(
@@ -36,6 +40,9 @@ pub async fn get_team_orders(client: &Client, team_id: Uuid) -> Result<Vec<TeamO
     Ok(orders)
 }
 
+/// Fetches a single team order by order ID and team ID.
+///
+/// Returns `Error::NotFound` if no matching order exists.
 pub async fn get_team_order(
     client: &Client,
     team_id: Uuid,
@@ -63,6 +70,7 @@ pub async fn get_team_order(
         .map_err(Error::DbMapper)
 }
 
+/// Creates a new team order with a due date and the creating user's ID.
 pub async fn create_team_order(
     client: &Client,
     team_id: Uuid,
@@ -90,6 +98,10 @@ pub async fn create_team_order(
         .map_err(Error::DbMapper)
 }
 
+/// Updates a team order. `COALESCE` is used so `None` fields preserve the
+/// existing value rather than writing NULL.
+///
+/// Uses `query_opt` + 404 to avoid returning 500 for missing orders.
 pub async fn update_team_order(
     client: &Client,
     team_id: Uuid,
@@ -129,6 +141,8 @@ pub async fn update_team_order(
         .map_err(Error::DbMapper)
 }
 
+/// Deletes a single team order by order ID and team ID. Returns `true` if
+/// a row was deleted, `false` if no matching order existed.
 pub async fn delete_team_order(
     client: &Client,
     team_id: Uuid,
@@ -147,6 +161,7 @@ pub async fn delete_team_order(
     Ok(result == 1)
 }
 
+/// Deletes all team orders for a team. Returns the number of rows deleted.
 pub async fn delete_team_orders(client: &Client, team_id: Uuid) -> Result<u64, Error> {
     let statement = client
         .prepare("delete from teamorders where teamorders_team_id = $1")

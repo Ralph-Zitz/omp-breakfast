@@ -3639,8 +3639,14 @@ async fn user_teams_returns_teams_for_seed_admin() {
     );
     // Verify membership timestamps are present (#115)
     let team = &teams[0];
-    assert!(team["joined"].is_string(), "joined timestamp should be present");
-    assert!(team["role_changed"].is_string(), "role_changed timestamp should be present");
+    assert!(
+        team["joined"].is_string(),
+        "joined timestamp should be present"
+    );
+    assert!(
+        team["role_changed"].is_string(),
+        "role_changed timestamp should be present"
+    );
 }
 
 #[actix_web::test]
@@ -3889,10 +3895,7 @@ async fn auth_endpoint_rate_limits_after_burst() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let creds = format!(
-        "Basic {}",
-        STANDARD.encode("admin@admin.com:Very Secret")
-    );
+    let creds = format!("Basic {}", STANDARD.encode("admin@admin.com:Very Secret"));
 
     // Send requests up to burst size (10)
     for i in 0..10 {
@@ -4130,11 +4133,7 @@ async fn admin_can_delete_user_by_email() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(
-        resp.status(),
-        200,
-        "admin should delete user by email"
-    );
+    assert_eq!(resp.status(), 200, "admin should delete user by email");
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["deleted"], true);
 }
@@ -4157,7 +4156,10 @@ async fn non_admin_cannot_revoke_another_users_token() {
     let req = test::TestRequest::post()
         .uri("/auth/revoke")
         .peer_addr(PEER)
-        .insert_header(("Authorization", format!("Bearer {}", user_auth.access_token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", user_auth.access_token),
+        ))
         .set_json(json!({"token": admin_auth.access_token}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -4181,7 +4183,10 @@ async fn admin_can_revoke_another_users_token() {
     let req = test::TestRequest::post()
         .uri("/auth/revoke")
         .peer_addr(PEER)
-        .insert_header(("Authorization", format!("Bearer {}", admin_auth.access_token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
         .set_json(json!({"token": user_auth.access_token}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -4194,14 +4199,13 @@ async fn admin_can_revoke_another_users_token() {
     // Verify the revoked token is now invalid
     let req = test::TestRequest::get()
         .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", user_auth.access_token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", user_auth.access_token),
+        ))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(
-        resp.status(),
-        401,
-        "revoked token should be rejected"
-    );
+    assert_eq!(resp.status(), 401, "revoked token should be rejected");
 }
 
 // ===========================================================================
@@ -4244,8 +4248,14 @@ async fn team_users_returns_members_of_seed_team() {
 
     // Check that membership timestamps are present (#115)
     let first = &users[0];
-    assert!(first["joined"].is_string(), "joined timestamp should be present");
-    assert!(first["role_changed"].is_string(), "role_changed timestamp should be present");
+    assert!(
+        first["joined"].is_string(),
+        "joined timestamp should be present"
+    );
+    assert!(
+        first["role_changed"].is_string(),
+        "role_changed timestamp should be present"
+    );
 }
 
 #[actix_web::test]

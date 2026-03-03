@@ -88,6 +88,8 @@ pub async fn is_admin(client: &Client, user_id: Uuid) -> Result<bool, Error> {
     Ok(row.get("is_admin"))
 }
 
+/// Returns the role title for a user in a specific team, or `None` if the
+/// user is not a member of that team.
 pub async fn get_member_role(
     client: &Client,
     team_id: Uuid,
@@ -153,6 +155,9 @@ pub async fn check_team_access(
     Ok((is_admin, team_role))
 }
 
+/// Adds a user to a team with the specified role inside a transaction.
+///
+/// Returns the new membership as a [`UsersInTeam`] with joined user/role details.
 pub async fn add_team_member(
     client: &mut Client,
     team_id: Uuid,
@@ -202,6 +207,8 @@ pub async fn add_team_member(
     Ok(result)
 }
 
+/// Removes a user from a team. Returns `true` if the membership was
+/// deleted, `false` if the user was not a member.
 pub async fn remove_team_member(
     client: &Client,
     team_id: Uuid,
@@ -220,6 +227,10 @@ pub async fn remove_team_member(
     Ok(result == 1)
 }
 
+/// Changes a member's role in a team inside a transaction.
+///
+/// Returns `Error::NotFound` if the user is not a member of the team.
+/// Returns the updated membership as a [`UsersInTeam`].
 pub async fn update_member_role(
     client: &mut Client,
     team_id: Uuid,

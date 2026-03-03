@@ -5,6 +5,9 @@ use deadpool_postgres::Client;
 use tracing::warn;
 use uuid::Uuid;
 
+/// Fetches all roles, ordered alphabetically by title.
+///
+/// Rows that fail to map are logged with `warn!()` and skipped.
 pub async fn get_roles(client: &Client) -> Result<Vec<RoleEntry>, Error> {
     let statement = client
         .prepare("select role_id, title, created, changed from roles order by title asc")
@@ -28,6 +31,9 @@ pub async fn get_roles(client: &Client) -> Result<Vec<RoleEntry>, Error> {
     Ok(roles)
 }
 
+/// Fetches a single role by ID.
+///
+/// Returns `Error::NotFound` if no role exists with the given ID.
 pub async fn get_role(client: &Client, role_id: Uuid) -> Result<RoleEntry, Error> {
     let statement = client
         .prepare("select role_id, title, created, changed from roles where role_id = $1 limit 1")
@@ -43,6 +49,7 @@ pub async fn get_role(client: &Client, role_id: Uuid) -> Result<RoleEntry, Error
         .map_err(Error::DbMapper)
 }
 
+/// Creates a new role and returns the created entry.
 pub async fn create_role(client: &Client, role: CreateRoleEntry) -> Result<RoleEntry, Error> {
     let statement = client
         .prepare("insert into roles (title) values ($1) returning role_id, title, created, changed")
@@ -56,6 +63,8 @@ pub async fn create_role(client: &Client, role: CreateRoleEntry) -> Result<RoleE
         .map_err(Error::DbMapper)
 }
 
+/// Deletes a role by ID. Returns `true` if a row was deleted, `false` if
+/// the role did not exist.
 pub async fn delete_role(client: &Client, rid: Uuid) -> Result<bool, Error> {
     let statement = client
         .prepare("delete from roles where role_id = $1")
@@ -70,6 +79,9 @@ pub async fn delete_role(client: &Client, rid: Uuid) -> Result<bool, Error> {
     Ok(result == 1)
 }
 
+/// Updates a role's title.
+///
+/// Uses `query_opt` + 404 to avoid returning 500 for missing roles.
 pub async fn update_role(
     client: &Client,
     rid: Uuid,

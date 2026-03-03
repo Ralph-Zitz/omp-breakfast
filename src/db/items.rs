@@ -4,6 +4,9 @@ use deadpool_postgres::Client;
 use tracing::warn;
 use uuid::Uuid;
 
+/// Fetches all breakfast items, ordered alphabetically by description.
+///
+/// Rows that fail to map are logged with `warn!()` and skipped.
 pub async fn get_items(client: &Client) -> Result<Vec<ItemEntry>, Error> {
     let statement = client
         .prepare("select item_id, descr, price, created, changed from items order by descr asc")
@@ -27,6 +30,9 @@ pub async fn get_items(client: &Client) -> Result<Vec<ItemEntry>, Error> {
     Ok(items)
 }
 
+/// Fetches a single breakfast item by ID.
+///
+/// Returns `Error::NotFound` if no item exists with the given ID.
 pub async fn get_item(client: &Client, item_id: Uuid) -> Result<ItemEntry, Error> {
     let statement = client
         .prepare(
@@ -44,6 +50,7 @@ pub async fn get_item(client: &Client, item_id: Uuid) -> Result<ItemEntry, Error
         .map_err(Error::DbMapper)
 }
 
+/// Creates a new breakfast item with a description and price.
 pub async fn create_item(client: &Client, item: CreateItemEntry) -> Result<ItemEntry, Error> {
     let statement = client
         .prepare(
@@ -63,6 +70,9 @@ pub async fn create_item(client: &Client, item: CreateItemEntry) -> Result<ItemE
         .map_err(Error::DbMapper)
 }
 
+/// Updates a breakfast item's description and price.
+///
+/// Uses `query_opt` + 404 to avoid returning 500 for missing items.
 pub async fn update_item(
     client: &Client,
     item_id: Uuid,
@@ -88,6 +98,8 @@ pub async fn update_item(
         .map_err(Error::DbMapper)
 }
 
+/// Deletes a breakfast item by ID. Returns `true` if a row was deleted,
+/// `false` if the item did not exist.
 pub async fn delete_item(client: &Client, item_id: Uuid) -> Result<bool, Error> {
     let statement = client
         .prepare("delete from items where item_id = $1")
