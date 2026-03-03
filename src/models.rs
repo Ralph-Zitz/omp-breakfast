@@ -325,7 +325,7 @@ fn validate_non_negative_price(
 pub struct TeamOrderEntry {
     pub teamorders_id: Uuid,
     pub teamorders_team_id: Uuid,
-    pub teamorders_user_id: Option<Uuid>,
+    pub teamorders_user_id: Uuid,
     pub duedate: Option<chrono::NaiveDate>,
     pub closed: bool,
     pub created: DateTime<Utc>,
@@ -334,7 +334,7 @@ pub struct TeamOrderEntry {
 
 #[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct CreateTeamOrderEntry {
-    pub teamorders_user_id: Option<Uuid>,
+    pub teamorders_user_id: Uuid,
     pub duedate: Option<chrono::NaiveDate>,
 }
 

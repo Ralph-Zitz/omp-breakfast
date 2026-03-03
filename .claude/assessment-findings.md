@@ -26,27 +26,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
-### Model/Schema Mismatch — `teamorders_user_id` Type Disagrees with V5 NOT NULL
-
-- [ ] **#240 — `CreateTeamOrderEntry.teamorders_user_id` is `Option<Uuid>` but V5 migration made column NOT NULL — causes 500 on null**
-  - Files: `src/models.rs` line 337 (`CreateTeamOrderEntry`), `src/db/orders.rs` line 87 (INSERT query)
-  - Problem: V5 migration (`ALTER TABLE teamorders ALTER COLUMN teamorders_user_id SET NOT NULL`) made the column non-nullable. The model still allows `None`, which passes as SQL `NULL` and triggers a DB constraint violation → 500 error instead of a 422 validation error.
-  - Fix: Change `teamorders_user_id: Option<Uuid>` to `teamorders_user_id: Uuid` in `CreateTeamOrderEntry`. This makes the field required in the JSON request body, producing a 422 deserialization error when omitted.
-  - Source commands: `api-completeness`, `db-review`
-
-- [ ] **#241 — `TeamOrderEntry.teamorders_user_id` is `Option<Uuid>` but column is NOT NULL — misleads API consumers**
-  - Files: `src/models.rs` line 328 (`TeamOrderEntry`), `src/from_row.rs` line 142 (row mapping)
-  - Problem: The response model exposes this field as nullable in OpenAPI docs and JSON responses, but the value will never be null after V5.
-  - Fix: Change `teamorders_user_id: Option<Uuid>` to `teamorders_user_id: Uuid` in `TeamOrderEntry`. Update the `from_row_ref` implementation to use `try_get::<_, Uuid>` instead of `try_get::<_, Option<Uuid>>`.
-  - Source commands: `api-completeness`, `db-review`
-
-### Documentation — CLAUDE.md Missing V5 Migration
-
-- [ ] **#242 — CLAUDE.md Project Structure tree does not list V5 migration**
-  - File: `CLAUDE.md` line 107
-  - Problem: The `migrations/` section lists V1 through V4 but omits `V5__trigger_and_notnull_fixes.sql`, added in commit `4cef19a`.
-  - Fix: Add `V5__trigger_and_notnull_fixes.sql – Trigger fix on users, NOT NULL on teamorders_user_id and memberof.joined` to the migration list.
-  - Source commands: `cross-ref-check`
+*All important items have been resolved. See `.claude/resolved-findings.md` for details.*
 
 ## Minor Items
 

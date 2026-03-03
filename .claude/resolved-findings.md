@@ -93,6 +93,25 @@ Last updated: 2026-03-05
   - Fix: Changed to generic wording: "all migration files in `migrations/` — the authoritative schema".
   - Source commands: `cross-ref-check`
 
+### Model/Schema Mismatch — `teamorders_user_id` Type Disagrees with V5 NOT NULL
+
+- [x] **#240 — `CreateTeamOrderEntry.teamorders_user_id` is `Option<Uuid>` but V5 migration made column NOT NULL — causes 500 on null**
+  - Files: `src/models.rs` (`CreateTeamOrderEntry`), `src/db/orders.rs` (INSERT query)
+  - Fix: Changed `teamorders_user_id: Option<Uuid>` to `teamorders_user_id: Uuid` in `CreateTeamOrderEntry`. Updated all tests and seed data to provide a non-null user_id.
+  - Source commands: `api-completeness`, `db-review`
+
+- [x] **#241 — `TeamOrderEntry.teamorders_user_id` is `Option<Uuid>` but column is NOT NULL — misleads API consumers**
+  - Files: `src/models.rs` (`TeamOrderEntry`), `src/from_row.rs` (row mapping)
+  - Fix: Changed `teamorders_user_id: Option<Uuid>` to `teamorders_user_id: Uuid` in `TeamOrderEntry`. The `from_row_ref` implementation auto-adjusted since it infers the type from the struct field.
+  - Source commands: `api-completeness`, `db-review`
+
+### Documentation — CLAUDE.md Missing V5 Migration
+
+- [x] **#242 — CLAUDE.md Project Structure tree does not list V5 migration**
+  - File: `CLAUDE.md`
+  - Fix: Added `V5__trigger_and_notnull_fixes.sql – Trigger fix on users, NOT NULL on teamorders_user_id and memberof.joined` to the migration list.
+  - Source commands: `cross-ref-check`
+
 ### Code Quality — Argon2 hasher duplicated in two places
 
 - [x] **#192 — Identical `Argon2::new(Algorithm::Argon2id, Version::V0x13, Params::default())` appears in two files**

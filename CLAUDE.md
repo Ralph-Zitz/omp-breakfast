@@ -105,6 +105,7 @@ migrations/
   V2__uuid_v7_defaults.sql – UUID v7 default migration (PostgreSQL 18+)
   V3__indexes_constraints.sql – Indexes, FK RESTRICT, NOT NULL constraints
   V4__schema_hardening.sql – Schema hardening migration
+  V5__trigger_and_notnull_fixes.sql – Trigger fix on users, NOT NULL on teamorders_user_id and memberof.joined
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
   db_tests.rs      – DB function integration tests (ignored without running DB)

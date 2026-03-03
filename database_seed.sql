@@ -166,13 +166,16 @@ WHERE
 ON CONFLICT (memberof_team_id, memberof_user_id) DO NOTHING;
 
 -- Seed team orders
-INSERT INTO teamorders (teamorders_team_id)
+INSERT INTO teamorders (teamorders_team_id, teamorders_user_id)
 SELECT
-  team_id
+  teams.team_id,
+  users.user_id
 FROM
-  teams
+  teams,
+  users
 WHERE
   teams.tname = 'League of Cool Coders'
+  AND users.email = 'admin@admin.com'
 ON CONFLICT DO NOTHING;
 
 -- Seed orders

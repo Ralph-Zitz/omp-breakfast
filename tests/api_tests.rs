@@ -655,11 +655,25 @@ async fn create_and_list_team_orders() {
         .unwrap()
         .to_string();
 
+    // Get user ID for the logged-in user
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+    let user_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap();
+
     // Create a new team order
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"duedate": "2026-03-15"}))
+        .set_json(json!({"teamorders_user_id": user_id, "duedate": "2026-03-15"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -717,11 +731,25 @@ async fn non_member_cannot_create_team_order() {
         .as_str()
         .unwrap();
 
+    // Get user ID for the logged-in user
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+    let user_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("U1_F.U1_L@LEGO.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap();
+
     // Try to create order → should be 403 (not a member of Pixel Bakers)
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"duedate": "2026-03-15"}))
+        .set_json(json!({"teamorders_user_id": user_id, "duedate": "2026-03-15"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -1433,11 +1461,25 @@ async fn admin_can_manage_any_team_orders() {
         .unwrap()
         .to_string();
 
+    // Get admin user ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+    let admin_user_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap();
+
     // Admin creates order on Pixel Bakers (not a member) → should succeed via bypass
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"duedate": "2026-06-01"}))
+        .set_json(json!({"teamorders_user_id": admin_user_id, "duedate": "2026-06-01"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -2028,11 +2070,25 @@ async fn create_get_update_delete_order_item() {
     assert!(!items.is_empty(), "seed data should have items");
     let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
+    // Get user ID for the logged-in user
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+    let user_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap();
+
     // Create a team order to hold items
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"duedate": "2026-07-01"}))
+        .set_json(json!({"teamorders_user_id": user_id, "duedate": "2026-07-01"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2166,11 +2222,25 @@ async fn duplicate_order_item_returns_409() {
     let items: Vec<Value> = test::read_body_json(resp).await;
     let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
+    // Get user ID for the logged-in user
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+    let user_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap();
+
     // Create a team order
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"duedate": "2026-08-01"}))
+        .set_json(json!({"teamorders_user_id": user_id, "duedate": "2026-08-01"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2246,11 +2316,25 @@ async fn non_member_cannot_create_order_item() {
     let items: Vec<Value> = test::read_body_json(resp).await;
     let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
+    // Get user ID for U4_F
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token_u4)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+    let u4_user_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap();
+
     // Create order as U4_F (team admin)
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token_u4)))
-        .set_json(json!({"duedate": "2026-09-01"}))
+        .set_json(json!({"teamorders_user_id": u4_user_id, "duedate": "2026-09-01"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2374,11 +2458,25 @@ async fn admin_can_manage_order_items_on_any_team() {
     let items: Vec<Value> = test::read_body_json(resp).await;
     let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
+    // Get admin user ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+    let admin_user_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap();
+
     // Admin creates order on Pixel Bakers (not a member) → bypass
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"duedate": "2026-10-01"}))
+        .set_json(json!({"teamorders_user_id": admin_user_id, "duedate": "2026-10-01"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2467,11 +2565,25 @@ async fn closed_order_rejects_add_item() {
         .unwrap()
         .to_string();
 
+    // Get admin user ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+    let admin_user_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap();
+
     // Create a team order
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"duedate": "2026-12-25"}))
+        .set_json(json!({"teamorders_user_id": admin_user_id, "duedate": "2026-12-25"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2545,11 +2657,25 @@ async fn closed_order_rejects_update_item() {
         .unwrap()
         .to_string();
 
+    // Get admin user ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+    let admin_user_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap();
+
     // Create a team order
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"duedate": "2026-12-26"}))
+        .set_json(json!({"teamorders_user_id": admin_user_id, "duedate": "2026-12-26"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2639,11 +2765,25 @@ async fn closed_order_rejects_delete_item() {
         .unwrap()
         .to_string();
 
+    // Get admin user ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+    let admin_user_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap();
+
     // Create a team order
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"duedate": "2026-12-27"}))
+        .set_json(json!({"teamorders_user_id": admin_user_id, "duedate": "2026-12-27"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2732,11 +2872,25 @@ async fn reopened_order_allows_item_mutations() {
         .unwrap()
         .to_string();
 
+    // Get admin user ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users: Vec<Value> = test::read_body_json(resp).await;
+    let admin_user_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap();
+
     // Create a team order
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"duedate": "2026-12-28"}))
+        .set_json(json!({"teamorders_user_id": admin_user_id, "duedate": "2026-12-28"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);

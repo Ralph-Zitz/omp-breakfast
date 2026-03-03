@@ -864,12 +864,13 @@ async fn create_duplicate_item_returns_error() {
 async fn create_team_order_returns_entry() {
     let client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
 
     let order = db::create_team_order(
         &client,
         team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: Some(NaiveDate::from_ymd_opt(2026, 6, 15).unwrap()),
         },
     )
@@ -900,14 +901,14 @@ async fn create_team_order_with_user_id() {
         &client,
         team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: Some(user_id),
+            teamorders_user_id: user_id,
             duedate: None,
         },
     )
     .await
     .expect("create_team_order with user should succeed");
 
-    assert_eq!(order.teamorders_user_id, Some(user_id));
+    assert_eq!(order.teamorders_user_id, user_id);
 
     // Cleanup
     db::delete_team_order(&client, team_id, order.teamorders_id)
@@ -935,12 +936,13 @@ async fn get_team_orders_returns_seed_data() {
 async fn get_team_order_by_id() {
     let client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
 
     let order = db::create_team_order(
         &client,
         team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: None,
         },
     )
@@ -964,12 +966,13 @@ async fn get_team_order_by_id() {
 async fn update_team_order_changes_fields() {
     let client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
 
     let order = db::create_team_order(
         &client,
         team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: None,
         },
     )
@@ -1006,12 +1009,13 @@ async fn update_team_order_changes_fields() {
 async fn delete_team_order_returns_true_then_false() {
     let client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
 
     let order = db::create_team_order(
         &client,
         team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: None,
         },
     )
@@ -1033,6 +1037,7 @@ async fn delete_team_order_returns_true_then_false() {
 #[ignore]
 async fn delete_team_orders_bulk() {
     let client = test_client().await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
 
     // Create a dedicated team to avoid interfering with seed data orders
     let tname = format!("dbtest-bulk-del-{}", Uuid::now_v7());
@@ -1045,7 +1050,7 @@ async fn delete_team_orders_bulk() {
         &client,
         team.team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: None,
         },
     )
@@ -1056,7 +1061,7 @@ async fn delete_team_orders_bulk() {
         &client,
         team.team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: None,
         },
     )
@@ -1087,6 +1092,7 @@ async fn delete_team_orders_bulk() {
 async fn create_order_item_returns_entry() {
     let mut client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
 
     // Create an item and order to work with
     let item_descr = format!("dbtest-oitem-{}", Uuid::now_v7());
@@ -1104,7 +1110,7 @@ async fn create_order_item_returns_entry() {
         &client,
         team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: None,
         },
     )
@@ -1167,6 +1173,7 @@ async fn get_order_items_returns_list() {
 async fn get_order_item_by_id() {
     let mut client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
 
     let item_descr = format!("dbtest-getoi-{}", Uuid::now_v7());
     let item = db::create_item(
@@ -1183,7 +1190,7 @@ async fn get_order_item_by_id() {
         &client,
         team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: None,
         },
     )
@@ -1222,6 +1229,7 @@ async fn get_order_item_by_id() {
 async fn update_order_item_changes_amt() {
     let mut client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
 
     let item_descr = format!("dbtest-updoi-{}", Uuid::now_v7());
     let item = db::create_item(
@@ -1238,7 +1246,7 @@ async fn update_order_item_changes_amt() {
         &client,
         team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: None,
         },
     )
@@ -1283,6 +1291,7 @@ async fn update_order_item_changes_amt() {
 async fn delete_order_item_returns_true_then_false() {
     let mut client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
 
     let item_descr = format!("dbtest-deloi-{}", Uuid::now_v7());
     let item = db::create_item(
@@ -1299,7 +1308,7 @@ async fn delete_order_item_returns_true_then_false() {
         &client,
         team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: None,
         },
     )
@@ -1343,6 +1352,7 @@ async fn delete_order_item_returns_true_then_false() {
 async fn duplicate_order_item_returns_error() {
     let mut client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
 
     let item_descr = format!("dbtest-dupoi-{}", Uuid::now_v7());
     let item = db::create_item(
@@ -1359,7 +1369,7 @@ async fn duplicate_order_item_returns_error() {
         &client,
         team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: None,
         },
     )
@@ -2274,13 +2284,14 @@ async fn update_user_updates_changed_timestamp() {
 async fn is_team_order_closed_returns_false_for_open_order() {
     let client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
 
     // Create a new order (defaults to closed = false)
     let order = db::create_team_order(
         &client,
         team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 25).unwrap()),
         },
     )
@@ -2303,13 +2314,14 @@ async fn is_team_order_closed_returns_false_for_open_order() {
 async fn is_team_order_closed_returns_true_for_closed_order() {
     let client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
 
     // Create a new order
     let order = db::create_team_order(
         &client,
         team_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: None,
+            teamorders_user_id: user_id,
             duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 26).unwrap()),
         },
     )

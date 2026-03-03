@@ -106,7 +106,7 @@ CREATE INDEX idx_memberof_role ON memberof (memberof_role_id);
 CREATE TABLE teamorders (
   teamorders_id uuid DEFAULT uuidv7 () PRIMARY KEY,
   teamorders_team_id uuid NOT NULL,
-  teamorders_user_id uuid,
+  teamorders_user_id uuid NOT NULL,
   duedate date,
   closed boolean NOT NULL DEFAULT FALSE,
   created timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -357,13 +357,16 @@ WHERE
   AND teams.tname = 'Pixel Bakers'
   AND roles.title = 'Member';
 
-INSERT INTO teamorders (teamorders_team_id)
+INSERT INTO teamorders (teamorders_team_id, teamorders_user_id)
 SELECT
-  team_id
+  teams.team_id,
+  users.user_id
 FROM
-  teams
+  teams,
+  users
 WHERE
-  teams.tname = 'League of Cool Coders';
+  teams.tname = 'League of Cool Coders'
+  AND users.email = 'admin@admin.com';
 
 INSERT INTO orders (orders_teamorders_id, orders_item_id, orders_team_id, amt)
 SELECT
