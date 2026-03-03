@@ -110,7 +110,7 @@ pub async fn update_team_order(
         .map_err(Error::Db)?;
 
     client
-        .query_one(
+        .query_opt(
             &statement,
             &[
                 &order.teamorders_user_id,
@@ -121,6 +121,8 @@ pub async fn update_team_order(
             ],
         )
         .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("Team order not found".to_string()))
         .map(TeamOrderEntry::from_row)?
         .map_err(Error::DbMapper)
 }

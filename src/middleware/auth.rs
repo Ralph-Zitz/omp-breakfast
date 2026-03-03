@@ -12,6 +12,19 @@ use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
 use argon2::password_hash::{PasswordHash, PasswordVerifier};
 use chrono::{DateTime, Duration, Utc};
 use deadpool_postgres::Client;
+
+/// Pre-computed Argon2id hash used for timing-equalization when a non-existent
+/// user attempts authentication.  Without this, the server returns ~1ms for
+/// unknown emails vs ~100ms for wrong passwords on existing accounts, letting
+/// an attacker enumerate valid emails by measuring response times.
+///
+/// The hash is for the string "dummy" and is **never** expected to match:
+///
+/// ```text
+/// argon2id, v=19, m=19456, t=2, p=1
+/// salt = "dHlwaW5nZXF1YWxpemVy"   (base-64 of "typingequalizer")
+/// ```
+static DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$dHlwaW5nZXF1YWxpemVy$QvwUmVBE5xpmfcBAnqUhQDQecbVnqjhAhj4cXN0OPWE";
 use jsonwebtoken::{
     Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode,
 };
@@ -376,6 +389,12 @@ pub async fn basic_validator(
                     entry
                 }
                 Err(_) => {
+                    // Perform a dummy Argon2id verify to equalize response time
+                    // with the existing-user-wrong-password path, preventing
+                    // user-enumeration via timing side-channel.
+                    if let Ok(dummy) = PasswordHash::new(DUMMY_HASH) {
+                        let _ = crate::argon2_hasher().verify_password(b"dummy-equalize", &dummy);
+                    }
                     warn!(user = %credentials.user_id(), "Unknown user attempted authentication");
                     return Err((
                         actix_web::error::ErrorUnauthorized(ErrorResponse {
@@ -640,5 +659,22 @@ mod tests {
         let state = test_state();
         let removed = invalidate_cache(state, "nonexistent@example.com");
         assert!(!removed);
+    }
+
+    #[test]
+    fn dummy_hash_is_valid_argon2id() {
+        // Ensure the DUMMY_HASH constant used for timing-equalization is a
+        // valid Argon2id hash that can be parsed by `PasswordHash::new`.
+        let parsed = PasswordHash::new(DUMMY_HASH);
+        assert!(
+            parsed.is_ok(),
+            "DUMMY_HASH must be a valid Argon2id hash string: {:?}",
+            parsed.err()
+        );
+        // Verify that the dummy verification runs without panic
+        let hash = parsed.unwrap();
+        let result = crate::argon2_hasher().verify_password(b"dummy-equalize", &hash);
+        // The result doesn't matter (it won't match); we just need it to not panic
+        let _ = result;
     }
 }

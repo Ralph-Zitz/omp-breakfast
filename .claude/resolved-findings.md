@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-03
+Last updated: 2026-03-04
 
 ## Critical Items
 
@@ -379,6 +379,30 @@ Last updated: 2026-03-03
 - [x] **#145 — Default Postgres credentials `actix/actix` used with no startup validation (unlike server/JWT secrets)**
   - Resolution: Added production panic checks for default `pg.user` and `pg.password` in `src/server.rs`, matching the existing pattern for server/JWT secrets.
   - Source commands: `security-audit`
+
+### Bug — 5 Update DB Functions Return HTTP 500 Instead of 404 for Missing Resources
+
+- [x] **#212 — `update_team`, `update_role`, `update_item`, `update_team_order`, `update_order_item` use `query_one` which maps not-found to 500**
+  - Resolution: Changed all five functions to use `query_opt()` + `.ok_or_else(|| Error::NotFound("... not found"))`, matching the `update_user` pattern. Added permanent convention note to `CLAUDE.md` to prevent future regression.
+  - Source commands: `review`, `db-review`
+
+### Security — User Enumeration via Authentication Timing Side-Channel
+
+- [x] **#213 — Non-existent users return ~1ms vs ~100ms for wrong-password on existing users**
+  - Resolution: Added `DUMMY_HASH` static constant and dummy `argon2_hasher().verify_password()` call in the user-not-found branch of `basic_validator` in `src/middleware/auth.rs`. Added `dummy_hash_is_valid_argon2id` unit test.
+  - Source commands: `security-audit`
+
+### Testing — No Test for Admin Role Escalation Guard
+
+- [x] **#214 — Both `add_team_member` and `update_member_role` have escalation guards but no test exercises them**
+  - Resolution: Added `team_admin_cannot_assign_admin_role_via_add_member` and `team_admin_cannot_assign_admin_role_via_update_role` API integration tests in `tests/api_tests.rs`.
+  - Source commands: `test-gaps`, `rbac-rules`
+
+### Testing — No Test for Password Update → Re-Login Round-Trip
+
+- [x] **#215 — Password change via PUT is never tested with subsequent authentication**
+  - Resolution: Added `update_user_password_then_reauthenticate` API integration test in `tests/api_tests.rs`.
+  - Source commands: `test-gaps`
 
 ## Minor Items
 
@@ -856,6 +880,6 @@ Last updated: 2026-03-03
 
 ## Notes
 
-- Total resolved items: 113 (6 critical, 39 important, 63 minor, 5 informational)
+- Total resolved items: 125 (6 critical, 43 important, 63 minor, 5 informational, plus 8 items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

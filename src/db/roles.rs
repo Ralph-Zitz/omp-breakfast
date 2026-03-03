@@ -87,8 +87,10 @@ pub async fn update_role(
         .map_err(Error::Db)?;
 
     client
-        .query_one(&statement, &[&role.title, &rid])
+        .query_opt(&statement, &[&role.title, &rid])
         .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("Role not found".to_string()))
         .map(RoleEntry::from_row)?
         .map_err(Error::DbMapper)
 }

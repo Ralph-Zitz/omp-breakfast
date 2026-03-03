@@ -80,8 +80,10 @@ pub async fn update_item(
         .map_err(Error::Db)?;
 
     client
-        .query_one(&statement, &[&item.descr, &item.price, &item_id])
+        .query_opt(&statement, &[&item.descr, &item.price, &item_id])
         .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("Item not found".to_string()))
         .map(ItemEntry::from_row)?
         .map_err(Error::DbMapper)
 }

@@ -121,8 +121,10 @@ pub async fn update_team(
         .map_err(Error::Db)?;
 
     client
-        .query_one(&statement, &[&team.tname, &team.descr, &tid])
+        .query_opt(&statement, &[&team.tname, &team.descr, &tid])
         .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("Team not found".to_string()))
         .map(TeamEntry::from_row)?
         .map_err(Error::DbMapper)
 }

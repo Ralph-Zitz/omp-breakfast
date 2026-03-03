@@ -24,40 +24,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Mitigation: `cargo audit --ignore RUSTSEC-2023-0071` is used in the Makefile, CI, and assessment commands to acknowledge the advisory while keeping audit runs clean for other vulnerabilities. **This ignore must be re-evaluated periodically** — check whether a new `rsa` release resolves RUSTSEC-2023-0071 or whether `jsonwebtoken` adds HS-only feature support.
   - Source commands: `dependency-check`
 
-## Important Items
-
-### Bug — 5 Update DB Functions Return HTTP 500 Instead of 404 for Missing Resources
-
-- [ ] **#212 — `update_team`, `update_role`, `update_item`, `update_team_order`, `update_order_item` use `query_one` which maps not-found to 500**
-  - Files: `src/db/teams.rs` line 124 (`update_team`), `src/db/roles.rs` line 89 (`update_role`), `src/db/items.rs` line 83 (`update_item`), `src/db/orders.rs` line 113 (`update_team_order`), `src/db/order_items.rs` line 176 (`update_order_item`)
-  - Problem: These five update functions use `client.query_one(...)` which returns a `tokio_postgres::Error` ("query returned an unexpected number of rows") when the UPDATE affects zero rows (record doesn't exist). This maps to `Error::Db` → HTTP 500. By contrast, `update_user` in `src/db/users.rs` correctly uses `query_opt()` + `.ok_or_else(|| Error::NotFound(...))` to return 404. The OpenAPI specs for these endpoints document 404 responses that can never actually occur.
-  - Fix: Change all five functions to use `query_opt(...)` with `.ok_or_else(|| Error::NotFound("... not found"))`, matching the `update_user` pattern.
-  - Source commands: `review`, `db-review`
-
-### Security — User Enumeration via Authentication Timing Side-Channel
-
-- [ ] **#213 — Non-existent users return ~1ms vs ~100ms for wrong-password on existing users**
-  - File: `src/middleware/auth.rs` lines 378–387 (`basic_validator` cache-miss error branch)
-  - Problem: When a non-existent user attempts Basic Auth, the cache miss triggers a `get_user_by_email` DB lookup that fails, and the function returns immediately (~1–5ms). When an existing user provides a wrong password, the lookup succeeds and Argon2id verification runs (~100–300ms) before returning 401. This ~100x timing difference allows an attacker to enumerate valid email addresses by measuring response times.
-  - Fix: When `get_user_by_email` returns `Err` (user not found), perform a dummy `argon2_hasher().verify_password(b"dummy", &dummy_hash)` against a pre-computed static hash before returning 401. This equalizes response time regardless of whether the email exists.
-  - Source commands: `security-audit`
-
-### Testing — No Test for Admin Role Escalation Guard
-
-- [ ] **#214 — Both `add_team_member` and `update_member_role` have escalation guards but no test exercises them**
-  - Files: `tests/api_tests.rs`, `src/handlers/teams.rs` lines 361–371 (`add_team_member` guard), lines 439–449 (`update_member_role` guard)
-  - Problem: Both handlers contain identical logic preventing non-admin users from assigning the "Admin" role. This is a critical security guard — a Team Admin could escalate to global Admin if this logic regressed. **No API or DB test exercises this path.** The existing `team_admin_can_add_and_remove_member` test uses the "Member" role only.
-  - Fix: Add `team_admin_cannot_assign_admin_role_via_add_member` (POST with role_id of "Admin" → 403) and `team_admin_cannot_assign_admin_role_via_update_role` (PUT with role_id of "Admin" → 403).
-  - Source commands: `test-gaps`, `rbac-rules`
-
-### Testing — No Test for Password Update → Re-Login Round-Trip
-
-- [ ] **#215 — Password change via PUT is never tested with subsequent authentication**
-  - Files: `tests/api_tests.rs`, `src/handlers/users.rs` line 305 (`update_user`), `src/db/users.rs`
-  - Problem: `create_user_then_authenticate_round_trip` proves Argon2 hashing works for user creation, but no test updates a password via `PUT /api/v1.0/users/{id}` with `"password": "newpassword"` then authenticates with the new password. If the `update_user` DB function's password-hashing branch had a bug, users would be locked out after password changes.
-  - Fix: Add test: `update_user_password_then_reauthenticate` — update password, login with new password (200), login with old password (401).
-  - Source commands: `test-gaps`
-
 ## Minor Items
 
 ### Code Quality — Dead S3 Config Fields
@@ -701,8 +667,8 @@ See that file for the full history of resolved findings.
 
 ## Notes
 
-- All 170 backend unit tests pass (148 lib + 22 healthcheck); 67 API integration tests pass; 86 DB integration tests pass; 23 WASM tests pass. Total: 346 tests, 0 failures.
-- Backend unit test breakdown: config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, db/migrate: 34, healthcheck: 22 = **170 total**.
+- All 171 backend unit tests pass (149 lib + 22 healthcheck); 70 API integration tests pass; 86 DB integration tests pass; 23 WASM tests pass. Total: 350 tests, 0 failures.
+- Backend unit test breakdown: config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 13, middleware/openapi: 14, from_row: 10, db/migrate: 34, healthcheck: 22 = **171 total**.
 - `cargo audit --ignore RUSTSEC-2023-0071` reports 0 vulnerabilities. RUSTSEC-2023-0071 (`rsa` 0.9.10 via `jsonwebtoken`) is intentionally ignored — **blocked on upstream**, see #132. Re-evaluate periodically whether the `rsa` crate or `jsonwebtoken` has shipped a fix.
 - All dependencies are up to date (`cargo outdated -R` shows zero outdated).
 - Clippy is clean on both backend and frontend.
@@ -710,5 +676,5 @@ See that file for the full history of resolved findings.
 - RBAC enforcement is correct across all handlers per the policy table.
 - OpenAPI spec is synchronized with routes (41 operations), with 2 minor annotation inaccuracies (#220, #221).
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 blocked), 4 important (#212, #213, #214, #215), 32 minor, 39 informational. Total: 76 open items.
-- 121 resolved items in `.claude/resolved-findings.md`.
+- Open items summary: 1 critical (#132 blocked), 0 important, 32 minor, 39 informational. Total: 72 open items.
+- 125 resolved items in `.claude/resolved-findings.md`.

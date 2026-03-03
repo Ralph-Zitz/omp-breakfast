@@ -172,9 +172,10 @@ pub async fn update_order_item(
         .map_err(Error::Db)?;
 
     let row = tx
-        .query_one(&statement, &[&order.amt, &teamorder_id, &item_id, &team_id])
+        .query_opt(&statement, &[&order.amt, &teamorder_id, &item_id, &team_id])
         .await
-        .map_err(Error::Db)?;
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("Order item not found".to_string()))?;
 
     let result = OrderEntry::from_row(row).map_err(Error::DbMapper)?;
 

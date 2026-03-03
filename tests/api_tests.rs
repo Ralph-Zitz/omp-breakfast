@@ -3128,3 +3128,320 @@ async fn non_admin_cannot_update_role() {
         "non-admin should not be able to update roles"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Escalation guard: Team Admin cannot assign global Admin role
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn team_admin_cannot_assign_admin_role_via_add_member() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U4_F is Team Admin of "League of Cool Coders"
+    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let ta_token = &ta_auth.access_token;
+
+    // Get the LoCC team ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Get the "Admin" role ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let roles: Vec<Value> = test::read_body_json(resp).await;
+    let admin_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Admin"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a temp user to use as the target
+    let admin_auth: Auth = login_admin(&app).await;
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .set_json(json!({
+            "firstname": "EscGuard",
+            "lastname": "Test",
+            "email": "escguard.add@test.com",
+            "password": "securepassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let new_user: Value = test::read_body_json(resp).await;
+    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
+
+    // Team Admin tries to add user with Admin role → should be 403
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .set_json(json!({
+            "user_id": new_user_id,
+            "role_id": admin_role_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "team admin must not assign global Admin role via add_team_member"
+    );
+
+    // Clean up: delete the temp user
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", new_user_id))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn team_admin_cannot_assign_admin_role_via_update_role() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U4_F is Team Admin of "League of Cool Coders"
+    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let ta_token = &ta_auth.access_token;
+
+    // Get the LoCC team ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Get role IDs for "Member" and "Admin"
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let roles: Vec<Value> = test::read_body_json(resp).await;
+    let member_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Member"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let admin_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Admin"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a temp user and add as Member first
+    let admin_auth: Auth = login_admin(&app).await;
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .set_json(json!({
+            "firstname": "EscGuard",
+            "lastname": "Update",
+            "email": "escguard.update@test.com",
+            "password": "securepassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let new_user: Value = test::read_body_json(resp).await;
+    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
+
+    // Add user as Member (Team Admin can do this)
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .set_json(json!({
+            "user_id": new_user_id,
+            "role_id": member_role_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201, "team admin should add user as Member");
+
+    // Team Admin tries to update user's role to Admin → should be 403
+    let req = test::TestRequest::put()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/users/{}",
+            team_id, new_user_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .set_json(json!({
+            "role_id": admin_role_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "team admin must not escalate a member to global Admin via update_member_role"
+    );
+
+    // Clean up: remove member then delete user
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/users/{}",
+            team_id, new_user_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", new_user_id))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ---------------------------------------------------------------------------
+// Password update → re-login round-trip
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn update_user_password_then_reauthenticate() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let test_email = "pwchange.test@example.com";
+    let original_password = "OriginalPass!123";
+    let new_password = "ChangedPass!456";
+
+    // 1. Create a temp user
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "PwChange",
+            "lastname": "Test",
+            "email": test_email,
+            "password": original_password
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let user: Value = test::read_body_json(resp).await;
+    let user_id = user["user_id"].as_str().unwrap().to_string();
+
+    // 2. Authenticate with the original password → should succeed
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:{}", test_email, original_password))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "original password should work before change"
+    );
+
+    // 3. Update password via PUT
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "PwChange",
+            "lastname": "Test",
+            "email": test_email,
+            "password": new_password
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "password update should succeed");
+
+    // 4. Authenticate with the NEW password → should succeed
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:{}", test_email, new_password))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "new password should work after change");
+
+    // 5. Authenticate with the OLD password → should fail
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:{}", test_email, original_password))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        401,
+        "old password must not work after change"
+    );
+
+    // Clean up: admin deletes the temp user
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "cleanup: admin should delete temp user");
+}
