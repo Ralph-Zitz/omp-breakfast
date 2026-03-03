@@ -9,10 +9,7 @@ use crate::{
 use actix_web::HttpMessage;
 use actix_web::{dev::ServiceRequest, web::Data};
 use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
-use argon2::{
-    Algorithm as Argon2Algorithm, Argon2, Params, Version as Argon2Version,
-    password_hash::{PasswordHash, PasswordVerifier},
-};
+use argon2::password_hash::{PasswordHash, PasswordVerifier};
 use chrono::{DateTime, Duration, Utc};
 use deadpool_postgres::Client;
 use jsonwebtoken::{
@@ -403,11 +400,7 @@ pub async fn basic_validator(
                 ));
             }
         };
-        match Argon2::new(
-            Argon2Algorithm::Argon2id,
-            Argon2Version::V0x13,
-            Params::default(),
-        )
+        match crate::argon2_hasher()
         .verify_password(pswd.as_bytes(), &parsed_hash)
         {
             Ok(_) => Ok(req),
@@ -448,7 +441,6 @@ mod tests {
             .expect("dummy pool");
         Data::new(State {
             pool,
-            secret: "secret".to_string(),
             jwtsecret: TEST_SECRET.to_string(),
             s3_key_id: String::new(),
             s3_key_secret: String::new(),

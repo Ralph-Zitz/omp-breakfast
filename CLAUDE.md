@@ -104,6 +104,7 @@ migrations/
   V1__initial_schema.sql – Refinery migration for the database schema
   V2__uuid_v7_defaults.sql – UUID v7 default migration (PostgreSQL 18+)
   V3__indexes_constraints.sql – Indexes, FK RESTRICT, NOT NULL constraints
+  V4__schema_hardening.sql – Schema hardening migration
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
   db_tests.rs      – DB function integration tests (ignored without running DB)

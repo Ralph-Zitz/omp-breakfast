@@ -50,7 +50,6 @@ async fn test_state() -> Data<State> {
         .expect("failed to create test pool");
     Data::new(State {
         pool,
-        secret: "Very Secret".to_string(),
         jwtsecret: "Very Secret".to_string(),
         s3_key_id: String::new(),
         s3_key_secret: String::new(),

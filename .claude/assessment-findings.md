@@ -23,71 +23,7 @@ This file is **generated and maintained by the project assessment process** defi
   - Status: **Blocked on upstream.** Requires `jsonwebtoken` to either support granular features with auto-provider registration, or to split the `rust_crypto` feature so HS-only usage doesn't pull RSA/EC crates. Reverted to `features = ["rust_crypto"]`.
   - Source commands: `dependency-check`
 
-### RBAC — Privilege Escalation via Team Admin Role Assignment
-
-- [ ] **#186 — Team Admin can assign the "Admin" role, escalating any user to global superuser**
-  - Files: `src/handlers/teams.rs` (`add_team_member` ~L358, `update_member_role` ~L434)
-  - Problem: Both handlers accept an arbitrary `role_id` from the request body, guarded only by `require_team_admin`. There is no validation that a Team Admin cannot assign the "Admin" role. Attack path: (1) `GET /api/v1.0/roles` → obtain UUID of "Admin" role, (2) `PUT /api/v1.0/teams/{team_id}/users/{self}` with `{"role_id": "<admin-role-uuid>"}` → self-promote to global Admin. Since `is_admin` checks for "Admin" role in **any** team, this grants full superuser access.
-  - Fix: In both `add_team_member` and `update_member_role`, when the requester is a Team Admin (not a global Admin), fetch the role by `role_id` and reject with `Error::Forbidden` if `role.title == ROLE_ADMIN`. Only global Admins should be able to assign the Admin role.
-  - Source commands: `rbac-rules`
-
 ## Important Items
-
-### Database — `get_team_order` returns 500 instead of 404
-
-- [ ] **#187 — `get_team_order` uses `query_one` instead of `query_opt` — missing orders return 500 Internal Server Error**
-  - File: `src/db/orders.rs` line 58
-  - Problem: All other single-record GET functions (`get_user`, `get_team`, `get_role`, `get_item`, `get_order_item`) use `query_opt` + `.ok_or_else(|| Error::NotFound(...))`. `get_team_order` uses `query_one`, which returns a raw `tokio_postgres::Error` on no rows, mapped to `Error::Db` → HTTP 500. The OpenAPI spec promises a 404 response.
-  - Fix: Replace `query_one` with `query_opt`, then `ok_or_else(|| Error::NotFound("Team order not found".into()))`, then `.map(TeamOrderEntry::from_row)?.map_err(Error::DbMapper)`.
-  - Source commands: `db-review`, `review`
-
-### Database — `update_user` returns 500 instead of 404
-
-- [ ] **#188 — Both branches of `update_user` use `query_one` — missing users return 500**
-  - File: `src/db/users.rs` lines 124–146
-  - Problem: `update_user` has two branches (with password update and without). Both use `query_one`. If the `user_id` doesn't match any row, it returns a raw DB error (500) instead of a clean 404.
-  - Fix: Switch both branches to `query_opt` + `ok_or_else(|| Error::NotFound("User not found".into()))`.
-  - Source commands: `db-review`, `review`
-
-### Dead Code — `State.secret` field stored but never read
-
-- [ ] **#189 — `State.secret` is loaded from config and stored but never accessed after construction**
-  - File: `src/models.rs` line 58, `src/server.rs` line 350
-  - Problem: The `secret` field is stored in `State` via `settings.server.secret.clone()`, but `state.secret` is never read by any handler, middleware, or DB function. Only `settings.server.secret` is used during startup validation. The `#[allow(dead_code)]` on `State` masks the warning.
-  - Fix: Remove the `secret` field from `State` and its construction in `server.rs`. If it's reserved for future use, add a `// TODO:` comment explaining the intent.
-  - Source commands: `practices-audit`
-
-### Documentation — CLAUDE.md Project Structure tree missing V4 migration
-
-- [ ] **#190 — `V4__schema_hardening.sql` exists on disk but is missing from the Project Structure tree**
-  - File: `CLAUDE.md` (Project Structure section, migrations block)
-  - Problem: The file tree only shows V1–V3 migrations. V4 was added but the tree was not updated.
-  - Fix: Add `V4__schema_hardening.sql – Schema hardening migration` to the migrations section of the tree.
-  - Source commands: `cross-ref-check`, `practices-audit`
-
-### Documentation — `api-completeness.md` migration enumeration excludes V4
-
-- [ ] **#191 — `api-completeness.md` line 7 enumerates V1–V3 as exhaustive, implying V4 doesn't exist**
-  - File: `.claude/commands/api-completeness.md` line 7
-  - Problem: The parenthetical "(V1 schema, V2 UUID defaults, V3 indexes/constraints — the authoritative schema)" reads as a complete list, but V4 is not mentioned.
-  - Fix: Update to include V4, or use generic wording: "all migration files in `migrations/` — the authoritative schema".
-  - Source commands: `cross-ref-check`
-
-### Code Quality — Argon2 hasher duplicated in two places
-
-- [ ] **#192 — Identical `Argon2::new(Algorithm::Argon2id, Version::V0x13, Params::default())` appears in two files**
-  - Files: `src/db/users.rs` lines 14–16 (`argon2_hasher()` private fn), `src/middleware/auth.rs` lines 404–408 (inline construction)
-  - Problem: If Argon2 parameters are changed in one place but not the other, password verification breaks silently.
-  - Fix: Extract `argon2_hasher()` to a shared location (e.g., `src/lib.rs` or a new `src/crypto.rs`) and use it in both `db/users.rs` and `middleware/auth.rs`.
-  - Source commands: `review`
-
-### Validation — No range validation on order item quantities
-
-- [ ] **#193 — `CreateOrderEntry.amt` and `UpdateOrderEntry.amt` accept zero/negative quantities**
-  - File: `src/models.rs` lines 346–352
-  - Problem: `amt: i32` has no `#[validate(range(...))]`. The DB has `CHECK (amt >= 0)` but allows `amt = 0` (semantically meaningless), and negative values would only be caught at the DB layer with an unfriendly error.
-  - Fix: Add `#[validate(range(min = 1, message = "quantity must be at least 1"))]` to `amt` in both `CreateOrderEntry` and `UpdateOrderEntry`.
-  - Source commands: `db-review`, `review`, `security-audit`
 
 ## Minor Items
 
@@ -545,8 +481,8 @@ See that file for the full history of resolved findings.
 - All dependencies are up to date (`cargo outdated -R` shows zero outdated).
 - Clippy is clean on both backend and frontend.
 - `cargo fmt --check` is clean on both crates.
-- RBAC enforcement is correct across all handlers per the policy table, **except** for the critical privilege escalation in #186.
+- RBAC enforcement is correct across all handlers per the policy table.
 - OpenAPI spec is synchronized with routes (41 operations).
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 2 critical (#132 blocked, #186 new), 7 important (all new), 18 minor (9 previously tracked + 9 new), 39 informational (29 previously tracked + 10 new). Total: 66 open items.
-- 113 resolved items in `.claude/resolved-findings.md`.
+- Open items summary: 1 critical (#132 blocked), 0 important, 18 minor, 39 informational. Total: 58 open items.
+- 121 resolved items in `.claude/resolved-findings.md`.

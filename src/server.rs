@@ -347,7 +347,6 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     // Application state
     let state = Data::new(State {
         pool,
-        secret: settings.server.secret.clone(),
         jwtsecret: settings.server.jwtsecret.clone(),
         s3_key_id: settings.server.s3_key_id.clone(),
         s3_key_secret: settings.server.s3_key_secret.clone(),

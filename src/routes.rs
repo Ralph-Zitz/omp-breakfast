@@ -198,7 +198,6 @@ mod tests {
             .expect("pool creation should succeed");
         Data::new(State {
             pool,
-            secret: "test".into(),
             jwtsecret: "test".into(),
             s3_key_id: String::new(),
             s3_key_secret: String::new(),

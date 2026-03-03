@@ -56,7 +56,6 @@ pub struct CachedUser {
 #[allow(dead_code)]
 pub struct State {
     pub pool: Pool,
-    pub secret: String,
     pub jwtsecret: String,
     pub s3_key_id: String,
     pub s3_key_secret: String,
@@ -347,10 +346,12 @@ pub struct OrderEntry {
 #[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct CreateOrderEntry {
     pub orders_item_id: Uuid,
+    #[validate(range(min = 1, message = "quantity must be at least 1"))]
     pub amt: i32,
 }
 
 #[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct UpdateOrderEntry {
+    #[validate(range(min = 1, message = "quantity must be at least 1"))]
     pub amt: i32,
 }

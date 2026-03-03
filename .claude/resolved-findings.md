@@ -2,9 +2,17 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-02
+Last updated: 2026-03-03
 
 ## Critical Items
+
+### RBAC — Privilege Escalation via Team Admin Role Assignment
+
+- [x] **#186 — Team Admin can assign the "Admin" role, escalating any user to global superuser**
+  - Files: `src/handlers/teams.rs` (`add_team_member`, `update_member_role`)
+  - Problem: Both handlers accepted an arbitrary `role_id` guarded only by `require_team_admin`. A Team Admin could self-promote to global Admin.
+  - Fix: Added `is_admin` check + `get_role` validation — non-admin requesters are now rejected with `Error::Forbidden` when assigning the "Admin" role.
+  - Source commands: `rbac-rules`
 
 ### Transaction Safety — TOCTOU Race on Closed-Order Checks
 
@@ -49,6 +57,55 @@ Last updated: 2026-03-02
   - Source commands: `db-review`
 
 ## Important Items
+
+### Database — `get_team_order` returns 500 instead of 404
+
+- [x] **#187 — `get_team_order` uses `query_one` instead of `query_opt` — missing orders return 500 Internal Server Error**
+  - File: `src/db/orders.rs`
+  - Fix: Replaced `query_one` with `query_opt` + `ok_or_else(|| Error::NotFound(...))`.
+  - Source commands: `db-review`, `review`
+
+### Database — `update_user` returns 500 instead of 404
+
+- [x] **#188 — Both branches of `update_user` use `query_one` — missing users return 500**
+  - File: `src/db/users.rs`
+  - Fix: Switched both branches to `query_opt` + `ok_or_else(|| Error::NotFound(...))`.
+  - Source commands: `db-review`, `review`
+
+### Dead Code — `State.secret` field stored but never read
+
+- [x] **#189 — `State.secret` is loaded from config and stored but never accessed after construction**
+  - Files: `src/models.rs`, `src/server.rs`, all test State constructions
+  - Fix: Removed `secret` field from `State` struct and all constructions. `ServerConfig.secret` retained for startup validation.
+  - Source commands: `practices-audit`
+
+### Documentation — CLAUDE.md Project Structure tree missing V4 migration
+
+- [x] **#190 — `V4__schema_hardening.sql` exists on disk but is missing from the Project Structure tree**
+  - File: `CLAUDE.md`
+  - Fix: Added `V4__schema_hardening.sql – Schema hardening migration` to the migrations section.
+  - Source commands: `cross-ref-check`, `practices-audit`
+
+### Documentation — `api-completeness.md` migration enumeration excludes V4
+
+- [x] **#191 — `api-completeness.md` line 7 enumerates V1–V3 as exhaustive, implying V4 doesn't exist**
+  - File: `.claude/commands/api-completeness.md`
+  - Fix: Changed to generic wording: "all migration files in `migrations/` — the authoritative schema".
+  - Source commands: `cross-ref-check`
+
+### Code Quality — Argon2 hasher duplicated in two places
+
+- [x] **#192 — Identical `Argon2::new(Algorithm::Argon2id, Version::V0x13, Params::default())` appears in two files**
+  - Files: `src/db/users.rs`, `src/middleware/auth.rs`, `src/lib.rs`
+  - Fix: Extracted `argon2_hasher()` to `src/lib.rs` as a public function; both `db/users.rs` and `middleware/auth.rs` now call `crate::argon2_hasher()`.
+  - Source commands: `review`
+
+### Validation — No range validation on order item quantities
+
+- [x] **#193 — `CreateOrderEntry.amt` and `UpdateOrderEntry.amt` accept zero/negative quantities**
+  - File: `src/models.rs`
+  - Fix: Added `#[validate(range(min = 1, message = "quantity must be at least 1"))]` to `amt` in both structs.
+  - Source commands: `db-review`, `review`, `security-audit`
 
 ### Frontend — Token Revocation on Logout
 

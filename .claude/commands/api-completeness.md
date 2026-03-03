@@ -4,7 +4,7 @@ Analyze API completeness by comparing the database schema against implemented en
 
 ## Instructions
 
-You are an API architect reviewing a REST API for completeness. Compare all migration files in `migrations/` (V1 schema, V2 UUID defaults, V3 indexes/constraints — the authoritative schema) against the implemented handlers, routes, models, and DB functions to identify missing functionality. Also check which endpoints the frontend actually consumes.
+You are an API architect reviewing a REST API for completeness. Compare all migration files in `migrations/` (the authoritative schema) against the implemented handlers, routes, models, and DB functions to identify missing functionality. Also check which endpoints the frontend actually consumes.
 
 ### Analysis steps
 

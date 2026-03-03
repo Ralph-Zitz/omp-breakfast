@@ -2,6 +2,7 @@ use crate::{
     db,
     errors::{Error, ErrorResponse},
     handlers::*,
+    middleware::auth::ROLE_ADMIN,
     models::*,
     validate::validate,
 };
@@ -354,6 +355,20 @@ pub async fn add_team_member(
     let member = json.into_inner();
     let mut client: Client = get_client(&state.pool).await?;
     require_team_admin(&client, &req, tid).await?;
+
+    // Prevent Team Admins from assigning the global Admin role.
+    // Only global Admins may grant Admin privileges.
+    let requester_id = requesting_user_id(&req)
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
+    if !db::is_admin(&client, requester_id).await? {
+        let role = db::get_role(&client, member.role_id).await?;
+        if role.title == ROLE_ADMIN {
+            return Err(Error::Forbidden(
+                "Only global Admins can assign the Admin role".to_string(),
+            ));
+        }
+    }
+
     let result = db::add_team_member(&mut client, tid, member.user_id, member.role_id).await?;
     Ok(HttpResponse::Created().json(result))
 }
@@ -415,9 +430,24 @@ pub async fn update_member_role(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let (team_id, user_id) = path.into_inner();
+    let role_id = json.into_inner().role_id;
     let mut client: Client = get_client(&state.pool).await?;
     require_team_admin(&client, &req, team_id).await?;
+
+    // Prevent Team Admins from assigning the global Admin role.
+    // Only global Admins may grant Admin privileges.
+    let requester_id = requesting_user_id(&req)
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
+    if !db::is_admin(&client, requester_id).await? {
+        let role = db::get_role(&client, role_id).await?;
+        if role.title == ROLE_ADMIN {
+            return Err(Error::Forbidden(
+                "Only global Admins can assign the Admin role".to_string(),
+            ));
+        }
+    }
+
     let result =
-        db::update_member_role(&mut client, team_id, user_id, json.into_inner().role_id).await?;
+        db::update_member_role(&mut client, team_id, user_id, role_id).await?;
     Ok(HttpResponse::Ok().json(result))
 }
