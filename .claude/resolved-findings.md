@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-06
+Last updated: 2025-07-18
 
 ## Critical Items
 
@@ -1000,6 +1000,13 @@ Last updated: 2026-03-06
   - Source commands: `api-completeness`, `security-audit`
 
 ## Informational Items
+
+### Performance — `get_team_users` Query Has Unnecessary `teams` JOIN
+
+- [x] **#230 — Query joins `teams` table but no columns from `teams` are selected**
+  - File: `src/db/teams.rs`
+  - Resolution: Removed the unnecessary `JOIN teams` from the `get_team_users` query. The query now only joins `users`, `memberof`, and `roles`.
+  - Source commands: `review`
 
 ### Architecture — Defence-in-Depth Notes
 

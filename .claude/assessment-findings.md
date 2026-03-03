@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2025-07-17
+Last assessed: 2025-07-20
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -304,6 +304,21 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Insert claims into `req.extensions_mut()` like `jwt_validator` does.
   - Source commands: `review`
 
+### Code Quality — `cargo fmt` Drift in `db_tests.rs`
+
+- [ ] **#297 — `cargo fmt --check` reports formatting diff in `db_tests.rs`**
+  - File: `tests/db_tests.rs` (line ~2433)
+  - Problem: A multi-line `assert!()` should be single-line per rustfmt rules. One-liner fix: `cargo fmt`.
+  - Source commands: `practices-audit`
+
+### Security — `revoke_user_token` Returns HTTP 500 for Expired/Malformed Tokens
+
+- [ ] **#298 — `verify_jwt` in `revoke_user_token` propagates `Error::Jwt` → 500 for expired tokens submitted for revocation**
+  - File: `src/handlers/users.rs` (line ~138)
+  - Problem: When a legitimately-expired (but validly-signed) token is submitted for revocation, `verify_jwt` returns `Error::Jwt` which maps to HTTP 500 "Internal server error". The user gets no actionable information.
+  - Fix: Either catch `Error::Jwt` in the handler and return `HttpResponse::BadRequest().json(ErrorResponse { error: "Token is invalid or expired" })`, or use a `Validation` with `validate_exp = false` for the revocation-specific verify call (revoking an expired token is harmless, and signature verification is still performed).
+  - Source commands: `security-audit`
+
 ## Informational Items
 
 ### Documentation — Test Count Maintenance Burden
@@ -393,12 +408,6 @@ This file is **generated and maintained by the project assessment process** defi
 
 - [ ] **#211 — `<form>` has both native HTML5 validation and custom JavaScript validation**
   - File: `frontend/src/app.rs`
-  - Source commands: `review`
-
-### Performance — `get_team_users` Query Has Unnecessary `teams` JOIN
-
-- [x] **#230 — Query joins `teams` table but no columns from `teams` are selected**
-  - File: `src/db/teams.rs`
   - Source commands: `review`
 
 ### Frontend — Loading Page Spinner Not Announced to Screen Readers
@@ -606,6 +615,28 @@ This file is **generated and maintained by the project assessment process** defi
   - File: `tests/api_tests.rs`
   - Source commands: `test-gaps`
 
+### Testing — No API Test for Revoking an Expired Token
+
+- [ ] **#299 — No test submits a legitimately-expired (but validly-signed) token for revocation**
+  - File: `tests/api_tests.rs`
+  - Problem: Would currently return 500 (see #298). After #298 is fixed, should assert 400.
+  - Source commands: `test-gaps`
+
+### Testing — No API-Level Test for UPDATE with Nonexistent ID → 404
+
+- [ ] **#300 — DB-level tests exist but no API integration test verifies HTTP 404 for PUT with nonexistent UUID across 6 update endpoints**
+  - File: `tests/api_tests.rs`
+  - Problem: Missing tests for: `PUT /users/{nonexistent}`, `PUT /teams/{nonexistent}`, `PUT /roles/{nonexistent}`, `PUT /items/{nonexistent}`, `PUT /teams/{tid}/orders/{nonexistent}`, `PUT /teams/{tid}/orders/{oid}/items/{nonexistent}`.
+  - Source commands: `test-gaps`
+
+### API Design — `get_user_teams` Query Does Not Return `team_id`
+
+- [ ] **#301 — `UserInTeams` model and query lack `team_id`, preventing frontend navigation from team list to team detail**
+  - Files: `src/db/teams.rs` (line ~15–25), `src/models.rs` (`UserInTeams` struct)
+  - Problem: The query SELECTs `tname, title, firstname, lastname, joined, role_changed` but not `teams.team_id`. A frontend consumer cannot navigate from a user's team list to a team detail page.
+  - Fix: Add `teams.team_id` to the SELECT clause and `team_id: Uuid` to the `UserInTeams` struct.
+  - Source commands: `db-review`, `api-completeness`
+
 ## Completed Items
 
 Resolved items are maintained in [`.claude/resolved-findings.md`](.claude/resolved-findings.md), organized by original severity.
@@ -618,10 +649,13 @@ See that file for the full history of resolved findings.
 - `cargo audit --ignore RUSTSEC-2023-0071` reports 0 vulnerabilities. RUSTSEC-2023-0071 (`rsa` 0.9.10 via `jsonwebtoken`) is intentionally ignored — **blocked on upstream**, see #132. Re-evaluate periodically.
 - All dependencies are up to date (`cargo outdated -R` shows zero outdated).
 - Clippy is clean on both backend and frontend.
-- `cargo fmt --check` is clean on both crates.
+- `cargo fmt --check` has one minor diff in `tests/db_tests.rs` (see #297).
+- CONNECT Design System: `git pull` reports "Already up to date" — no migration needed.
 - RBAC enforcement is correct across all handlers per the policy table.
 - OpenAPI spec is synchronized with routes (41 operations), with annotation inaccuracies tracked (#244, #245, #271, #276, #277, #287).
+- All SQL queries use parameterized prepared statements — zero injection risk.
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 blocked), 4 important (#266–#269), 34 minor, 46 informational. **Total: 85 open items**.
-- 170 resolved items in `.claude/resolved-findings.md`.
-- Highest finding number: #296.
+- No regressions detected against 176 resolved findings.
+- Open items summary: 1 critical (#132 blocked), 4 important (#266–#269), 36 minor, 48 informational. **Total: 89 open items**.
+- 176 resolved items in `.claude/resolved-findings.md`.
+- Highest finding number: #301.
