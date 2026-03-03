@@ -161,6 +161,35 @@ pub async fn guard_admin_role_assignment(
     Ok(())
 }
 
+/// Require the requesting user to be the owner of the specified team order,
+/// a Team Admin for the team, or a global Admin. Regular members / guests
+/// may only mutate their own orders.
+pub async fn require_order_owner_or_team_admin(
+    client: &Client,
+    req: &HttpRequest,
+    team_id: Uuid,
+    order_owner_id: Uuid,
+) -> Result<(), Error> {
+    let user_id = requesting_user_id(req)
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
+    // Owner can always mutate their own order
+    if user_id == order_owner_id {
+        return Ok(());
+    }
+    // Admin / Team Admin bypass
+    let (is_admin, team_role) = db::check_team_access(client, team_id, user_id).await?;
+    if is_admin {
+        return Ok(());
+    }
+    match team_role {
+        Some(role) if role == ROLE_TEAM_ADMIN => Ok(()),
+        Some(_) => Err(Error::Forbidden(
+            "Only the order owner, team admin, or global admin can modify this order".to_string(),
+        )),
+        None => Err(Error::Forbidden("Team membership required".to_string())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,6 +207,8 @@ mod tests {
             iat: 1000000000,
             jti: Uuid::now_v7(),
             token_type: TokenType::Access,
+            iss: "omp-breakfast".to_string(),
+            aud: "omp-breakfast".to_string(),
         });
         req
     }
@@ -253,6 +284,19 @@ mod tests {
     fn require_team_admin_error_message() {
         let err = Error::Forbidden("Team admin role required".to_string());
         assert_eq!(err.to_string(), "Team admin role required");
+        let resp = err.error_response();
+        assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn require_order_owner_or_team_admin_error_message() {
+        let err = Error::Forbidden(
+            "Only the order owner, team admin, or global admin can modify this order".to_string(),
+        );
+        assert_eq!(
+            err.to_string(),
+            "Only the order owner, team admin, or global admin can modify this order"
+        );
         let resp = err.error_response();
         assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
     }

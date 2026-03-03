@@ -673,7 +673,7 @@ async fn create_and_list_team_orders() {
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"teamorders_user_id": user_id, "duedate": "2026-03-15"}))
+        .set_json(json!({"duedate": "2026-03-15"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -749,7 +749,7 @@ async fn non_member_cannot_create_team_order() {
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"teamorders_user_id": user_id, "duedate": "2026-03-15"}))
+        .set_json(json!({"duedate": "2026-03-15"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -1479,7 +1479,7 @@ async fn admin_can_manage_any_team_orders() {
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"teamorders_user_id": admin_user_id, "duedate": "2026-06-01"}))
+        .set_json(json!({"duedate": "2026-06-01"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -2088,7 +2088,7 @@ async fn create_get_update_delete_order_item() {
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"teamorders_user_id": user_id, "duedate": "2026-07-01"}))
+        .set_json(json!({"duedate": "2026-07-01"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2240,7 +2240,7 @@ async fn duplicate_order_item_returns_409() {
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"teamorders_user_id": user_id, "duedate": "2026-08-01"}))
+        .set_json(json!({"duedate": "2026-08-01"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2334,7 +2334,7 @@ async fn non_member_cannot_create_order_item() {
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token_u4)))
-        .set_json(json!({"teamorders_user_id": u4_user_id, "duedate": "2026-09-01"}))
+        .set_json(json!({"duedate": "2026-09-01"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2476,7 +2476,7 @@ async fn admin_can_manage_order_items_on_any_team() {
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"teamorders_user_id": admin_user_id, "duedate": "2026-10-01"}))
+        .set_json(json!({"duedate": "2026-10-01"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2583,7 +2583,7 @@ async fn closed_order_rejects_add_item() {
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"teamorders_user_id": admin_user_id, "duedate": "2026-12-25"}))
+        .set_json(json!({"duedate": "2026-12-25"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2675,7 +2675,7 @@ async fn closed_order_rejects_update_item() {
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"teamorders_user_id": admin_user_id, "duedate": "2026-12-26"}))
+        .set_json(json!({"duedate": "2026-12-26"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2783,7 +2783,7 @@ async fn closed_order_rejects_delete_item() {
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"teamorders_user_id": admin_user_id, "duedate": "2026-12-27"}))
+        .set_json(json!({"duedate": "2026-12-27"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -2890,7 +2890,7 @@ async fn reopened_order_allows_item_mutations() {
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"teamorders_user_id": admin_user_id, "duedate": "2026-12-28"}))
+        .set_json(json!({"duedate": "2026-12-28"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -3970,7 +3970,7 @@ async fn admin_can_bulk_delete_team_orders() {
         let req = test::TestRequest::post()
             .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
             .insert_header(("Authorization", format!("Bearer {}", token)))
-            .set_json(json!({"teamorders_user_id": admin_id}))
+            .set_json(json!({}))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 201);

@@ -22,6 +22,8 @@ pub struct Claims {
     pub iat: i64,
     pub jti: Uuid,
     pub token_type: TokenType,
+    pub iss: String,
+    pub aud: String,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -320,13 +322,11 @@ pub struct TeamOrderEntry {
 
 #[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct CreateTeamOrderEntry {
-    pub teamorders_user_id: Uuid,
     pub duedate: Option<chrono::NaiveDate>,
 }
 
 #[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct UpdateTeamOrderEntry {
-    pub teamorders_user_id: Option<Uuid>,
     pub duedate: Option<chrono::NaiveDate>,
     pub closed: Option<bool>,
 }
@@ -469,17 +469,13 @@ mod tests {
 
     #[test]
     fn create_team_order_entry_validates_with_no_rules() {
-        let entry = CreateTeamOrderEntry {
-            teamorders_user_id: Uuid::nil(),
-            duedate: None,
-        };
+        let entry = CreateTeamOrderEntry { duedate: None };
         assert!(entry.validate().is_ok());
     }
 
     #[test]
     fn update_team_order_entry_validates_with_no_rules() {
         let entry = UpdateTeamOrderEntry {
-            teamorders_user_id: None,
             duedate: None,
             closed: None,
         };

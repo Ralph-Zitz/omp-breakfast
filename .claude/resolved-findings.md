@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2025-07-18
+Last updated: 2026-03-03
 
 ## Critical Items
 
@@ -422,6 +422,34 @@ Last updated: 2025-07-18
 - [x] **#215 — Password change via PUT is never tested with subsequent authentication**
   - Resolution: Added `update_user_password_then_reauthenticate` API integration test in `tests/api_tests.rs`.
   - Source commands: `test-gaps`
+
+### Security — `create_team_order` Attribution Spoofing
+
+- [x] **#266 — `create_team_order` does not validate that `teamorders_user_id` matches the requesting user**
+  - Files: `src/handlers/teams.rs`, `src/models.rs`, `src/db/orders.rs`
+  - Fix: Removed `teamorders_user_id` from `CreateTeamOrderEntry` request body. The handler now extracts user_id from JWT claims via `requesting_user_id()` and passes it as a separate parameter to `db::create_team_order`. Also removed `teamorders_user_id` from `UpdateTeamOrderEntry` to prevent ownership reassignment. Updated all API and DB tests.
+  - Source commands: `api-completeness`, `security-audit`
+
+### Security — JWT Tokens Lack `iss` and `aud` Claims
+
+- [x] **#267 — No audience or issuer validation on JWT tokens**
+  - Files: `src/models.rs`, `src/middleware/auth.rs`
+  - Fix: Added `iss` and `aud` fields to `Claims` struct. Set `iss = "omp-breakfast"`, `aud = "omp-breakfast"` during token generation. Configured `Validation` in `verify_jwt` to require matching issuer and audience. Updated all test helpers that construct Claims.
+  - Source commands: `security-audit`
+
+### Security — RBAC Inconsistency on Team Order Mutations
+
+- [x] **#268 — Any team member (including Guest) can update/delete any team order in their team**
+  - File: `src/handlers/teams.rs`, `src/handlers/mod.rs`
+  - Fix: Added `require_order_owner_or_team_admin` helper to `handlers/mod.rs`. Updated `delete_team_order` and `update_team_order` handlers to fetch the order first, then check ownership via the new helper. Only the order creator, Team Admin for the team, or global Admin can now modify/delete a single order. Updated utoipa annotations.
+  - Source commands: `security-audit`, `rbac-rules`
+
+### Documentation — `guard_admin_role_assignment` Undocumented in RBAC Policy
+
+- [x] **#269 — `guard_admin_role_assignment` helper is missing from CLAUDE.md RBAC conventions and rbac-rules.md policy table**
+  - Files: `CLAUDE.md`, `.claude/commands/rbac-rules.md`
+  - Fix: Added `guard_admin_role_assignment` and `require_order_owner_or_team_admin` to CLAUDE.md handlers/mod.rs function list and RBAC convention paragraphs. Added separate rows in rbac-rules.md policy table for order owner checks and admin role assignment guard.
+  - Source commands: `cross-ref-check`, `practices-audit`
 
 ## Minor Items
 

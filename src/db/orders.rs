@@ -70,10 +70,13 @@ pub async fn get_team_order(
         .map_err(Error::DbMapper)
 }
 
-/// Creates a new team order with a due date and the creating user's ID.
+/// Creates a new team order with a due date. The creating user's ID is passed
+/// separately (extracted from JWT claims by the handler) to prevent attribution
+/// spoofing.
 pub async fn create_team_order(
     client: &Client,
     team_id: Uuid,
+    user_id: Uuid,
     order: CreateTeamOrderEntry,
 ) -> Result<TeamOrderEntry, Error> {
     let statement = client
@@ -89,10 +92,7 @@ pub async fn create_team_order(
         .map_err(Error::Db)?;
 
     client
-        .query_one(
-            &statement,
-            &[&team_id, &order.teamorders_user_id, &order.duedate],
-        )
+        .query_one(&statement, &[&team_id, &user_id, &order.duedate])
         .await
         .map(TeamOrderEntry::from_row)?
         .map_err(Error::DbMapper)
@@ -100,6 +100,9 @@ pub async fn create_team_order(
 
 /// Updates a team order. `COALESCE` is used so `None` fields preserve the
 /// existing value rather than writing NULL.
+///
+/// `teamorders_user_id` is intentionally excluded — order ownership cannot be
+/// reassigned after creation.
 ///
 /// Uses `query_opt` + 404 to avoid returning 500 for missing orders.
 pub async fn update_team_order(
@@ -112,10 +115,9 @@ pub async fn update_team_order(
         .prepare(
             r#"
                update teamorders
-               set teamorders_user_id = COALESCE($1, teamorders_user_id),
-                   duedate = COALESCE($2, duedate),
-                   closed = COALESCE($3, closed)
-               where teamorders_id = $4 and teamorders_team_id = $5
+               set duedate = COALESCE($1, duedate),
+                   closed = COALESCE($2, closed)
+               where teamorders_id = $3 and teamorders_team_id = $4
                returning teamorders_id, teamorders_team_id, teamorders_user_id,
                          duedate, closed, created, changed
             "#,
@@ -126,13 +128,7 @@ pub async fn update_team_order(
     client
         .query_opt(
             &statement,
-            &[
-                &order.teamorders_user_id,
-                &order.duedate,
-                &order.closed,
-                &order_id,
-                &team_id,
-            ],
+            &[&order.duedate, &order.closed, &order_id, &team_id],
         )
         .await
         .map_err(Error::Db)?

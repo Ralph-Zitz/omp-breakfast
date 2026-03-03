@@ -230,7 +230,9 @@ pub async fn create_team_order(
     let tid = team_id.into_inner();
     let client: Client = get_client(&state.pool).await?;
     require_team_member(&client, &req, tid).await?;
-    let order = db::create_team_order(&client, tid, json.into_inner()).await?;
+    let user_id = requesting_user_id(&req)
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
+    let order = db::create_team_order(&client, tid, user_id, json.into_inner()).await?;
     let mut response = HttpResponse::Created();
     if let Ok(url) = req.url_for(
         "/teams/team_id/order_id",
@@ -247,7 +249,7 @@ pub async fn create_team_order(
     responses(
         (status = 200, description = "Order deleted", body = DeletedResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
+        (status = 403, description = "Forbidden - must be order owner, team admin, or global admin", body = ErrorResponse),
         (status = 404, description = "Order not found", body = DeletedResponse),
     ),
     params(
@@ -264,7 +266,9 @@ pub async fn delete_team_order(
 ) -> Result<impl Responder, Error> {
     let (team_id, order_id) = path.into_inner();
     let client: Client = get_client(&state.pool).await?;
-    require_team_member(&client, &req, team_id).await?;
+    // Fetch the order to check ownership
+    let order = db::get_team_order(&client, team_id, order_id).await?;
+    require_order_owner_or_team_admin(&client, &req, team_id, order.teamorders_user_id).await?;
     let deleted = db::delete_team_order(&client, team_id, order_id).await?;
     if deleted {
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
@@ -306,7 +310,7 @@ pub async fn delete_team_orders(
     responses(
         (status = 200, description = "Order updated", body = TeamOrderEntry),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
+        (status = 403, description = "Forbidden - must be order owner, team admin, or global admin", body = ErrorResponse),
         (status = 404, description = "Order not found", body = ErrorResponse),
     ),
     params(
@@ -324,7 +328,9 @@ pub async fn update_team_order(
 ) -> Result<impl Responder, Error> {
     let (team_id, order_id) = path.into_inner();
     let client: Client = get_client(&state.pool).await?;
-    require_team_member(&client, &req, team_id).await?;
+    // Fetch the order to check ownership
+    let order = db::get_team_order(&client, team_id, order_id).await?;
+    require_order_owner_or_team_admin(&client, &req, team_id, order.teamorders_user_id).await?;
     let order = db::update_team_order(&client, team_id, order_id, json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(order))
 }

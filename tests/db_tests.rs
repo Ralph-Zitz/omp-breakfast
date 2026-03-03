@@ -869,8 +869,8 @@ async fn create_team_order_returns_entry() {
     let order = db::create_team_order(
         &client,
         team_id,
+        user_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
             duedate: Some(NaiveDate::from_ymd_opt(2026, 6, 15).unwrap()),
         },
     )
@@ -900,10 +900,8 @@ async fn create_team_order_with_user_id() {
     let order = db::create_team_order(
         &client,
         team_id,
-        CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
-            duedate: None,
-        },
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
     )
     .await
     .expect("create_team_order with user should succeed");
@@ -941,10 +939,8 @@ async fn get_team_order_by_id() {
     let order = db::create_team_order(
         &client,
         team_id,
-        CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
-            duedate: None,
-        },
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
     )
     .await
     .unwrap();
@@ -971,10 +967,8 @@ async fn update_team_order_changes_fields() {
     let order = db::create_team_order(
         &client,
         team_id,
-        CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
-            duedate: None,
-        },
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
     )
     .await
     .unwrap();
@@ -984,7 +978,6 @@ async fn update_team_order_changes_fields() {
         team_id,
         order.teamorders_id,
         UpdateTeamOrderEntry {
-            teamorders_user_id: None,
             duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 25).unwrap()),
             closed: Some(true),
         },
@@ -1014,10 +1007,8 @@ async fn delete_team_order_returns_true_then_false() {
     let order = db::create_team_order(
         &client,
         team_id,
-        CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
-            duedate: None,
-        },
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
     )
     .await
     .unwrap();
@@ -1049,10 +1040,8 @@ async fn delete_team_orders_bulk() {
     db::create_team_order(
         &client,
         team.team_id,
-        CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
-            duedate: None,
-        },
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
     )
     .await
     .unwrap();
@@ -1060,10 +1049,8 @@ async fn delete_team_orders_bulk() {
     db::create_team_order(
         &client,
         team.team_id,
-        CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
-            duedate: None,
-        },
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
     )
     .await
     .unwrap();
@@ -1109,10 +1096,8 @@ async fn create_order_item_returns_entry() {
     let order = db::create_team_order(
         &client,
         team_id,
-        CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
-            duedate: None,
-        },
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
     )
     .await
     .unwrap();
@@ -1189,10 +1174,8 @@ async fn get_order_item_by_id() {
     let order = db::create_team_order(
         &client,
         team_id,
-        CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
-            duedate: None,
-        },
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
     )
     .await
     .unwrap();
@@ -1245,10 +1228,8 @@ async fn update_order_item_changes_amt() {
     let order = db::create_team_order(
         &client,
         team_id,
-        CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
-            duedate: None,
-        },
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
     )
     .await
     .unwrap();
@@ -1307,10 +1288,8 @@ async fn delete_order_item_returns_true_then_false() {
     let order = db::create_team_order(
         &client,
         team_id,
-        CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
-            duedate: None,
-        },
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
     )
     .await
     .unwrap();
@@ -1368,10 +1347,8 @@ async fn duplicate_order_item_returns_error() {
     let order = db::create_team_order(
         &client,
         team_id,
-        CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
-            duedate: None,
-        },
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
     )
     .await
     .unwrap();
@@ -2133,7 +2110,6 @@ async fn update_team_order_nonexistent_returns_error() {
         Uuid::now_v7(),
         Uuid::now_v7(),
         UpdateTeamOrderEntry {
-            teamorders_user_id: None,
             duedate: None,
             closed: None,
         },
@@ -2290,8 +2266,8 @@ async fn is_team_order_closed_returns_false_for_open_order() {
     let order = db::create_team_order(
         &client,
         team_id,
+        user_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
             duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 25).unwrap()),
         },
     )
@@ -2320,8 +2296,8 @@ async fn is_team_order_closed_returns_true_for_closed_order() {
     let order = db::create_team_order(
         &client,
         team_id,
+        user_id,
         CreateTeamOrderEntry {
-            teamorders_user_id: user_id,
             duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 26).unwrap()),
         },
     )
@@ -2334,7 +2310,6 @@ async fn is_team_order_closed_returns_true_for_closed_order() {
         team_id,
         order.teamorders_id,
         UpdateTeamOrderEntry {
-            teamorders_user_id: None,
             duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 26).unwrap()),
             closed: Some(true),
         },
@@ -2433,10 +2408,7 @@ async fn check_team_access_admin_in_unrelated_team() {
     let (is_admin, team_role) = db::check_team_access(&client, team_id, admin_id)
         .await
         .expect("check_team_access should succeed");
-    assert!(
-        is_admin,
-        "admin should still be recognized as global admin"
-    );
+    assert!(is_admin, "admin should still be recognized as global admin");
     assert!(
         team_role.is_none(),
         "admin should have no role in Pixel Bakers (not a member)"

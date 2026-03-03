@@ -26,37 +26,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
-### Security — `create_team_order` Accepts Arbitrary User ID (Attribution Spoofing)
-
-- [ ] **#266 — `create_team_order` does not validate that `teamorders_user_id` matches the requesting user**
-  - Files: `src/handlers/teams.rs` (`create_team_order` handler), `src/models.rs` (`CreateTeamOrderEntry`)
-  - Problem: The handler calls `require_team_member` to verify the requester is in the team, then passes `json.into_inner()` directly to `db::create_team_order`. Any team member can create orders attributed to a different user by sending a different `teamorders_user_id`.
-  - Fix: Either validate `json.teamorders_user_id == requesting_user_id()` (reject mismatches with 403), or remove `teamorders_user_id` from the request body and set it server-side from the JWT claims. Admin bypass could be allowed for creating orders on behalf of others.
-  - Source commands: `api-completeness`, `security-audit`
-
-### Security — JWT Tokens Lack `iss` and `aud` Claims
-
-- [ ] **#267 — No audience or issuer validation on JWT tokens**
-  - Files: `src/models.rs` (`Claims` struct), `src/middleware/auth.rs` (`generate_token_pair`, `verify_jwt`)
-  - Problem: The `Claims` struct has `sub`, `exp`, `iat`, `jti`, `token_type` but no `iss` (issuer) or `aud` (audience). `verify_jwt` creates `Validation::new(Algorithm::HS256)` without enforcing issuer or audience. If the same `jwtsecret` is reused across services or leaked, tokens minted elsewhere would be accepted.
-  - Fix: Add `iss: String` and `aud: String` to `Claims`. Set them during token generation (e.g., `iss = "omp-breakfast"`, `aud = "omp-breakfast"`). Configure `Validation` to require matching values.
-  - Source commands: `security-audit`
-
-### Security — RBAC Inconsistency on Team Order Mutations
-
-- [ ] **#268 — Any team member (including Guest) can update/delete any team order in their team**
-  - File: `src/handlers/teams.rs` (`update_team_order`, `delete_team_order`)
-  - Problem: `delete_team_order` (single) and `update_team_order` call `require_team_member` — any team member including a Guest can delete or close/reopen any individual order. But `delete_team_orders` (bulk) calls `require_team_admin`. A Guest member can set `closed = true/false` on any order or delete orders they don't own.
-  - Fix: Either elevate single-order mutations to `require_team_admin`, or add an owner-check (`order.teamorders_user_id == requesting_user_id()`) with admin/team-admin bypass.
-  - Source commands: `security-audit`, `rbac-rules`
-
-### Documentation — `guard_admin_role_assignment` Undocumented in RBAC Policy
-
-- [ ] **#269 — `guard_admin_role_assignment` helper is missing from CLAUDE.md RBAC conventions and rbac-rules.md policy table**
-  - Files: `CLAUDE.md` (Key Conventions — RBAC sections), `.claude/commands/rbac-rules.md`
-  - Problem: The helper was extracted in resolved finding #216 but never added to the RBAC documentation. The policy table in rbac-rules.md does not have a row for "assigns Admin role → Admin only" guard.
-  - Fix: Add a row to the RBAC policy table: "Team Members | Add/Update Role (assigns Admin role) | Admin only | guard_admin_role_assignment". Add the function to CLAUDE.md's Team RBAC and Global Admin RBAC paragraphs.
-  - Source commands: `cross-ref-check`, `practices-audit`
+All important items have been resolved. See `.claude/resolved-findings.md` for details.
 
 ## Minor Items
 
@@ -656,6 +626,6 @@ See that file for the full history of resolved findings.
 - All SQL queries use parameterized prepared statements — zero injection risk.
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
 - No regressions detected against 176 resolved findings.
-- Open items summary: 1 critical (#132 blocked), 4 important (#266–#269), 36 minor, 48 informational. **Total: 89 open items**.
+- Open items summary: 1 critical (#132 blocked), 0 important, 36 minor, 48 informational. **Total: 85 open items**.
 - 176 resolved items in `.claude/resolved-findings.md`.
 - Highest finding number: #301.

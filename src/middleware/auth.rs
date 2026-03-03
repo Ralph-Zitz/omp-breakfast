@@ -47,6 +47,10 @@ pub const TOKEN_TYPE_BEARER: &str = "Bearer";
 pub const ROLE_ADMIN: &str = "Admin";
 pub const ROLE_TEAM_ADMIN: &str = "Team Admin";
 
+// ── JWT issuer / audience ───────────────────────────────────────────────────
+pub const JWT_ISSUER: &str = "omp-breakfast";
+pub const JWT_AUDIENCE: &str = "omp-breakfast";
+
 #[instrument(skip(jwt_secret), level = "debug")]
 fn generate_token(
     user_id: Uuid,
@@ -64,6 +68,8 @@ fn generate_token(
         iat: now.timestamp(),
         jti: Uuid::now_v7(),
         token_type,
+        iss: JWT_ISSUER.to_string(),
+        aud: JWT_AUDIENCE.to_string(),
     };
     encode(&headers, &claims, &encoding_key)
 }
@@ -97,7 +103,9 @@ pub fn generate_token_pair(user_id: Uuid, jwt_secret: &str) -> Result<Auth, Erro
 #[instrument(skip(jwt_secret), level = "debug")]
 pub fn verify_jwt(token: &str, jwt_secret: &str) -> Result<TokenData<Claims>, Error> {
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
-    let validation = Validation::new(Algorithm::HS256);
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.set_issuer(&[JWT_ISSUER]);
+    validation.set_audience(&[JWT_AUDIENCE]);
     let result = decode::<Claims>(token, &decoding_key, &validation)?;
     Ok(result)
 }
@@ -446,7 +454,7 @@ pub async fn basic_validator(
 mod tests {
     use super::*;
     use actix_web::web::Data;
-    use jsonwebtoken::{DecodingKey, Validation, decode};
+    use jsonwebtoken::EncodingKey;
 
     const TEST_SECRET: &str = "test-jwt-secret";
 
@@ -498,15 +506,12 @@ mod tests {
         let user_id = Uuid::now_v7();
         let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
 
-        let token_data = decode::<Claims>(
-            &auth.access_token,
-            &DecodingKey::from_secret(TEST_SECRET.as_ref()),
-            &Validation::default(),
-        )
-        .unwrap();
+        let token_data = verify_jwt(&auth.access_token, TEST_SECRET).unwrap();
 
         assert_eq!(token_data.claims.sub, user_id);
         assert_eq!(token_data.claims.token_type, TokenType::Access);
+        assert_eq!(token_data.claims.iss, JWT_ISSUER);
+        assert_eq!(token_data.claims.aud, JWT_AUDIENCE);
         let expected_exp = Utc::now().timestamp() + ACCESS_TOKEN_DURATION_MINUTES * 60;
         assert!(
             (token_data.claims.exp - expected_exp).abs() < 60,
@@ -519,12 +524,7 @@ mod tests {
         let user_id = Uuid::now_v7();
         let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
 
-        let token_data = decode::<Claims>(
-            &auth.refresh_token,
-            &DecodingKey::from_secret(TEST_SECRET.as_ref()),
-            &Validation::default(),
-        )
-        .unwrap();
+        let token_data = verify_jwt(&auth.refresh_token, TEST_SECRET).unwrap();
 
         assert_eq!(token_data.claims.sub, user_id);
         assert_eq!(token_data.claims.token_type, TokenType::Refresh);
@@ -565,6 +565,8 @@ mod tests {
                 iat: (Utc::now() - Duration::try_hours(2).unwrap()).timestamp(),
                 jti: Uuid::now_v7(),
                 token_type: TokenType::Access,
+                iss: JWT_ISSUER.to_string(),
+                aud: JWT_AUDIENCE.to_string(),
             };
             encode(&Header::default(), &claims, &encoding_key).unwrap()
         };
@@ -590,8 +592,6 @@ mod tests {
     #[actix_web::test]
     async fn each_token_has_unique_jti() {
         let user_id = Uuid::now_v7();
-        let key = &DecodingKey::from_secret(TEST_SECRET.as_ref());
-        let val = &Validation::default();
 
         let auth1 = generate_token_pair(user_id, TEST_SECRET).unwrap();
         let auth2 = generate_token_pair(user_id, TEST_SECRET).unwrap();
@@ -603,7 +603,7 @@ mod tests {
             &auth2.refresh_token,
         ]
         .iter()
-        .map(|t| decode::<Claims>(t, key, val).unwrap().claims.jti)
+        .map(|t| verify_jwt(t, TEST_SECRET).unwrap().claims.jti)
         .collect();
 
         for i in 0..jtis.len() {

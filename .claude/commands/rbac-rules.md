@@ -13,8 +13,10 @@ Audit the codebase against the RBAC (Role-Based Access Control) policy defined b
 | ------------- | ----------------------------- | ------------------------------------------ | --------------------------------------- |
 | Team          | Create, Update, Delete        | Admin (global)                             | `require_admin`                         |
 | Team Orders   | Delete All                    | Team Admin or Admin (global)               | `require_team_admin`                    |
-| Team Orders   | Create, Update, Delete Single | Team Member or above                       | `require_team_member`                   |
+| Team Orders   | Create                        | Team Member or above                       | `require_team_member`                   |
+| Team Orders   | Update, Delete Single         | Order owner, Team Admin, or Admin (global) | `require_order_owner_or_team_admin`     |
 | Team Members  | Add, Remove, Update Role      | Team Admin or Admin (global)               | `require_team_admin`                    |
+| Team Members  | Assign Admin role             | Admin (global) only                        | `guard_admin_role_assignment`           |
 | User          | Create                        | Admin or Team Admin (any team)             | `require_admin_or_team_admin`           |
 | User          | Update, Delete (by ID/email)  | Self, Admin, or Team Admin (shared team)   | `require_self_or_admin_or_team_admin`   |
 | Items         | Create, Update, Delete        | Admin (global)                             | `require_admin`                         |
