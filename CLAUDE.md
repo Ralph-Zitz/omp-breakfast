@@ -245,20 +245,25 @@ When asked to **assess the project** (or "project assessment"), perform the foll
    - `security-audit` — JWT/auth, input validation, secrets, TLS, Docker, frontend security
    - `test-gaps` — identify missing test coverage and suggest specific new tests
 2. Collect all findings that indicate actionable changes (bugs, missing implementations, convention violations, security issues, stale dependencies, etc.)
-3. Present a single consolidated plan grouped by category, listing each proposed change with:
+3. **Cross-check against resolved findings** — before finalising the findings list, read `.claude/resolved-findings.md` and verify that no new finding re-introduces a previously resolved issue. For every candidate finding:
+   - Search resolved-findings.md for the same file/function/pattern.
+   - If a resolved item already covers the same concern **and the current code still reflects the resolution**, discard the candidate (it is a false positive).
+   - If a resolved item covers the concern but **the code has regressed** (the fix was reverted or broken by a later change), flag it explicitly as a **regression** with a reference to the original resolved finding number.
+   - If a candidate finding **contradicts** a resolved item's fix (e.g., recommending the opposite change), discard the candidate and note the conflict in the assessment notes.
+4. Present a single consolidated plan grouped by category, listing each proposed change with:
    - Which command surfaced it
    - What needs to change and where
    - Severity (critical / important / minor / informational)
-4. **Do not apply any changes** — only present the plan for approval
-5. If no actionable findings are discovered, state that the project is in good shape
-6. **Persist findings** — after presenting the plan, write **all** findings (critical, important, minor, and informational) to `.claude/assessment-findings.md` using the format described below. This file is the bridge between the assessment and the `/resume-assessment` command, which loads it in future sessions to continue work.
-7. **Archive resolved items** — after updating the findings file, move all items marked `[x]` in `.claude/assessment-findings.md` to `.claude/resolved-findings.md`, organized under their original severity section (Critical, Important, Minor, Informational). Remove the moved items from `assessment-findings.md`. Update the "Last updated" date in `resolved-findings.md`.
+5. **Do not apply any changes** — only present the plan for approval
+6. If no actionable findings are discovered, state that the project is in good shape
+7. **Persist findings** — after presenting the plan, write **all** findings (critical, important, minor, and informational) to `.claude/assessment-findings.md` using the format described below. This file is the bridge between the assessment and the `/resume-assessment` command, which loads it in future sessions to continue work.
+8. **Archive resolved items** — after updating the findings file, move all items marked `[x]` in `.claude/assessment-findings.md` to `.claude/resolved-findings.md`, organized under their original severity section (Critical, Important, Minor, Informational). Remove the moved items from `assessment-findings.md`. Update the "Last updated" date in `resolved-findings.md`.
 
 ### Assessment findings file format (`.claude/assessment-findings.md`)
 
 When writing to the findings file, follow these rules:
 
-- **Mark resolved items.** When an item is fixed, mark it `[x]` in its current severity section. Do not move it yet — archival happens in step 7. **Before marking any item as resolved, all project tests must pass.** Run `cargo test` (unit tests) and `make test-integration` (integration tests) — if either suite has failures, fix the regressions before marking items `[x]`. If only frontend code changed, `make test-frontend` may substitute for integration tests.
+- **Mark resolved items.** When an item is fixed, mark it `[x]` in its current severity section. Do not move it yet — archival happens in step 8. **Before marking any item as resolved, all project tests must pass.** Run `cargo test` (unit tests) and `make test-integration` (integration tests) — if either suite has failures, fix the regressions before marking items `[x]`. If only frontend code changed, `make test-frontend` may substitute for integration tests.
 - **Update open items.** If a previously tracked `[ ]` item is still found by the current assessment, update its description, file references, and line numbers to reflect the current state of the code (lines may have shifted).
 - **Remove stale items.** If a previously tracked `[ ]` item is no longer surfaced by any command (i.e., it was fixed but not checked off), mark it `[x]` with a note: "Resolved — no longer surfaced by assessment."
 - **Append new items.** If the assessment surfaces new findings not already in the file, append them under the appropriate severity section and category heading (or create a new heading).
