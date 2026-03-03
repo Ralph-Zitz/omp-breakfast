@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-04
+Last assessed: 2026-03-05
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -23,6 +23,30 @@ This file is **generated and maintained by the project assessment process** defi
   - Status: **Blocked on upstream.** Requires `jsonwebtoken` to either support granular features with auto-provider registration, or to split the `rust_crypto` feature so HS-only usage doesn't pull RSA/EC crates. Reverted to `features = ["rust_crypto"]`.
   - Mitigation: `cargo audit --ignore RUSTSEC-2023-0071` is used in the Makefile, CI, and assessment commands to acknowledge the advisory while keeping audit runs clean for other vulnerabilities. **This ignore must be re-evaluated periodically** — check whether a new `rsa` release resolves RUSTSEC-2023-0071 or whether `jsonwebtoken` adds HS-only feature support.
   - Source commands: `dependency-check`
+
+## Important Items
+
+### Model/Schema Mismatch — `teamorders_user_id` Type Disagrees with V5 NOT NULL
+
+- [ ] **#240 — `CreateTeamOrderEntry.teamorders_user_id` is `Option<Uuid>` but V5 migration made column NOT NULL — causes 500 on null**
+  - Files: `src/models.rs` line 337 (`CreateTeamOrderEntry`), `src/db/orders.rs` line 87 (INSERT query)
+  - Problem: V5 migration (`ALTER TABLE teamorders ALTER COLUMN teamorders_user_id SET NOT NULL`) made the column non-nullable. The model still allows `None`, which passes as SQL `NULL` and triggers a DB constraint violation → 500 error instead of a 422 validation error.
+  - Fix: Change `teamorders_user_id: Option<Uuid>` to `teamorders_user_id: Uuid` in `CreateTeamOrderEntry`. This makes the field required in the JSON request body, producing a 422 deserialization error when omitted.
+  - Source commands: `api-completeness`, `db-review`
+
+- [ ] **#241 — `TeamOrderEntry.teamorders_user_id` is `Option<Uuid>` but column is NOT NULL — misleads API consumers**
+  - Files: `src/models.rs` line 328 (`TeamOrderEntry`), `src/from_row.rs` line 142 (row mapping)
+  - Problem: The response model exposes this field as nullable in OpenAPI docs and JSON responses, but the value will never be null after V5.
+  - Fix: Change `teamorders_user_id: Option<Uuid>` to `teamorders_user_id: Uuid` in `TeamOrderEntry`. Update the `from_row_ref` implementation to use `try_get::<_, Uuid>` instead of `try_get::<_, Option<Uuid>>`.
+  - Source commands: `api-completeness`, `db-review`
+
+### Documentation — CLAUDE.md Missing V5 Migration
+
+- [ ] **#242 — CLAUDE.md Project Structure tree does not list V5 migration**
+  - File: `CLAUDE.md` line 107
+  - Problem: The `migrations/` section lists V1 through V4 but omits `V5__trigger_and_notnull_fixes.sql`, added in commit `4cef19a`.
+  - Fix: Add `V5__trigger_and_notnull_fixes.sql – Trigger fix on users, NOT NULL on teamorders_user_id and memberof.joined` to the migration list.
+  - Source commands: `cross-ref-check`
 
 ## Minor Items
 
@@ -459,14 +483,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Change to `row.get::<_, bool>("closed")`.
   - Source commands: `db-review`
 
-### Testing — Non-Member GET Rejection Untested for Order Endpoints
-
-- [ ] **#236 — All order-related GET handlers call `require_team_member` but no test verifies GET rejection for non-members**
-  - Files: `tests/api_tests.rs`, `src/handlers/orders.rs`, `src/handlers/teams.rs`
-  - Problem: The `non_member_cannot_create_order_item` test verifies POST/PUT/DELETE rejection (403). But GET endpoints (`get_team_orders`, `get_team_order`, `get_order_items`, `get_order_item`) that also call `require_team_member` have no non-member rejection test.
-  - Source commands: `test-gaps`
-  - Action: Add `non_member_cannot_get_team_orders` and `non_member_cannot_get_order_items`.
-
 ### Testing — No API Test for GET Single Team Order by ID
 
 - [ ] **#237 — `GET /api/v1.0/teams/{team_id}/orders/{order_id}` never called in tests**
@@ -491,6 +507,188 @@ This file is **generated and maintained by the project assessment process** defi
   - Source commands: `test-gaps`
   - Action: Add `test_login_with_500_response_shows_server_error`.
 
+### Auth — `revoke_user_token` Returns 403 for Missing Authentication
+
+- [ ] **#243 — `revoke_user_token` uses `Error::Forbidden("Authentication required")` — should be `Error::Unauthorized`**
+  - File: `src/handlers/users.rs` line 145
+  - Problem: When `requesting_user_id()` returns `None` (no JWT claims in request), the handler returns 403 Forbidden. Missing authentication should produce 401 Unauthorized per HTTP semantics.
+  - Fix: Change `Error::Forbidden("Authentication required".to_string())` to `Error::Unauthorized("Authentication required".to_string())`.
+  - Source commands: `practices-audit`
+
+### OpenAPI — `get_health` Missing 503 Response Annotation
+
+- [ ] **#244 — `get_health` utoipa annotation only documents 200; handler also returns 503**
+  - File: `src/handlers/mod.rs` lines 304–311
+  - Problem: The handler returns `HttpResponse::ServiceUnavailable()` when the DB is unreachable, but the OpenAPI spec shows only `(status = 200)`.
+  - Fix: Add `(status = 503, description = "Service unavailable — database unreachable", body = StatusResponse)`.
+  - Source commands: `openapi-sync`
+
+### OpenAPI — `create_user` Annotates Unreachable 404
+
+- [ ] **#245 — `create_user` utoipa includes `(status = 404, description = "User not created")` but handler never returns 404**
+  - File: `src/handlers/users.rs` line 178
+  - Problem: `db::create_user` uses INSERT + RETURNING which returns 500 or 409 (unique violation) on failure — never 404. The annotation misleads API consumers.
+  - Fix: Remove the `(status = 404, ...)` line from utoipa responses. Add `(status = 409, description = "Email already exists", body = ErrorResponse)` if not already present.
+  - Source commands: `openapi-sync`
+
+### Documentation — CLAUDE.md Test Count Stale
+
+- [ ] **#246 — CLAUDE.md says "149 unit tests" — actual count is 171 (149 lib + 22 healthcheck)**
+  - File: `CLAUDE.md` line 284
+  - Problem: Count doesn't include healthcheck binary tests. The assessment notes already track the correct 171 count.
+  - Fix: Update line to "171 unit tests" or separate "149 library + 22 healthcheck binary" to match the notes.
+  - Source commands: `cross-ref-check`
+
+### Security — Token Responses Lack `Cache-Control: no-store`
+
+- [ ] **#247 — `/auth` and `/auth/refresh` responses contain JWT tokens but no `Cache-Control` header**
+  - Files: `src/server.rs` lines 421–425 (DefaultHeaders), `src/handlers/users.rs` (auth_handler, refresh_handler)
+  - Problem: RFC 6749 §5.1 requires token responses to include `Cache-Control: no-store`. Tokens could theoretically be cached by intermediaries or browser disk cache.
+  - Fix: Add `Cache-Control: no-store` to `DefaultHeaders` globally (safe — API serves no cacheable public content) or per-response on auth endpoints.
+  - Source commands: `security-audit`
+
+### Security — Missing `Referrer-Policy` Header
+
+- [ ] **#248 — `DefaultHeaders` does not include `Referrer-Policy`**
+  - File: `src/server.rs` lines 421–425
+  - Problem: Without this header, the browser may send full URL (including path and query) in the `Referer` header on navigations, potentially leaking sensitive path segments.
+  - Fix: Add `.add(("Referrer-Policy", "strict-origin-when-cross-origin"))` to `DefaultHeaders`.
+  - Source commands: `security-audit`
+
+### Deployment — Docker Compose Exposes PostgreSQL on All Interfaces
+
+- [ ] **#249 — `docker-compose.yml` maps port 5432 to `0.0.0.0` by default**
+  - File: `docker-compose.yml`
+  - Problem: Default `ports: "5432:5432"` binds to all interfaces, exposing the database to the network.
+  - Fix: Change to `"127.0.0.1:5432:5432"`.
+  - Source commands: `security-audit`
+
+### Documentation — Command Files Reference Stale Migration Range (V1–V3)
+
+- [ ] **#250 — `api-completeness.md` scope only references V1–V3 migrations**
+  - File: `.claude/commands/api-completeness.md`
+  - Problem: Migration range is stale — V4 and V5 exist but are not mentioned in the scope section.
+  - Fix: Update scope to reference V1–V5.
+  - Source commands: `cross-ref-check`
+
+- [ ] **#251 — `db-review.md` scope only references V1–V3 migrations**
+  - File: `.claude/commands/db-review.md`
+  - Problem: Same stale-range issue as #250.
+  - Fix: Update scope to reference V1–V5.
+  - Source commands: `cross-ref-check`
+
+### Documentation — `database.sql` Stale vs V3–V5
+
+- [ ] **#252 — `database.sql` deprecated script doesn't reflect V3–V5 changes**
+  - File: `database.sql`
+  - Problem: CLAUDE.md says this file is "deprecated — kept for manual dev resets only", but it doesn't include indexes, constraints from V3, schema hardening from V4, or NOT NULL fixes from V5.
+  - Fix: Either regenerate from current schema or add a prominent comment noting it reflects only V1–V2.
+  - Source commands: `cross-ref-check`
+
+### Validation — `Validate` Derive Still on 4 No-Rule Structs
+
+- [ ] **#253 — #224 marked resolved but `Validate` derive is still present on `CreateTeamOrderEntry`, `UpdateTeamOrderEntry`, `AddMemberEntry`, `UpdateMemberRoleEntry`**
+  - File: `src/models.rs` lines 335–357
+  - Problem: The resolved-findings.md entry for #224 claims "Removed `Validate` derive from all 4 structs" but the code still has them. The `validate()` calls WERE removed from handlers, but the derive macro remains — generating dead code. Harmless but misleading vs the resolved record.
+  - Fix: Remove `Validate` from the derive macros, or re-open #224 in resolved-findings.md. Either way, the derive is unused.
+  - Source commands: `practices-audit`, `review`
+
+### Code Quality — `from_row_ref` Boilerplate Reducible by Macro
+
+- [ ] **#254 — 9 `FromRow` implementations total ~200 lines of repetitive `try_get`/`map_err` per column**
+  - File: `src/from_row.rs` lines 52–230
+  - Problem: Every `from_row_ref` body repeats the same `row.try_get("col").map_err(|e| map_err("col", e))?` pattern per column.
+  - Source commands: `review`
+  - Action: Introduce a `macro_rules! impl_from_row` to generate the bodies when the mapping code is next modified.
+
+### Code Quality — Duplicated Row-Mapping Pattern Across 6 DB List Functions
+
+- [ ] **#255 — Identical `filter_map` + `warn` block in `get_users`, `get_teams`, `get_roles`, `get_items`, `get_team_orders`, `get_order_items`**
+  - Files: `src/db/users.rs`, `src/db/teams.rs`, `src/db/roles.rs`, `src/db/items.rs`, `src/db/orders.rs`, `src/db/order_items.rs`
+  - Problem: All 6 list functions duplicate `rows.iter().filter_map(|row| match T::from_row_ref(row) { Ok(v) => Some(v), Err(e) => { warn!(...); None } }).collect()`.
+  - Source commands: `review`
+  - Action: Extract to a generic `fn map_rows<T: FromRow>(rows: &[Row]) -> Vec<T>` helper in `src/db/mod.rs`.
+
+### Deployment — `HTTP_REDIRECT_PORT` Hardcoded to 80
+
+- [ ] **#256 — HTTP→HTTPS redirect listener binds to port 80 unconditionally (related to #185)**
+  - File: `src/server.rs` line 27
+  - Problem: In containers or dev environments, port 80 may be unavailable. Similar to #185 (healthcheck port hardcoded to 8080).
+  - Source commands: `review`
+  - Action: Add `server.redirect_port` to config YAML or read from env var, falling back to 80.
+
+### Dependencies — `password-hash` Direct Dependency for Feature Activation Only
+
+- [ ] **#257 — `password-hash` is a direct dependency only to activate the `getrandom` feature**
+  - File: `Cargo.toml`
+  - Problem: The crate is transitively pulled by `argon2`. The direct dependency exists solely to enable `features = ["getrandom"]`.
+  - Source commands: `dependency-check`
+  - Action: Informational. No action needed unless `argon2` adds the feature gate.
+
+### Security — Missing `Permissions-Policy` Header
+
+- [ ] **#258 — `DefaultHeaders` does not include `Permissions-Policy`**
+  - File: `src/server.rs` lines 421–425
+  - Problem: Nice-to-have header that disables unused browser features (camera, microphone, geolocation, etc.).
+  - Source commands: `security-audit`
+  - Action: Add `.add(("Permissions-Policy", "camera=(), microphone=(), geolocation=()"))` when security headers are next reviewed.
+
+### Deployment — Docker Compose `breakfast` Service Lacks Resource Limits
+
+- [ ] **#259 — No `deploy.resources.limits` for CPU or memory**
+  - File: `docker-compose.yml`
+  - Problem: In production, an unbounded container could consume all host resources.
+  - Source commands: `security-audit`
+  - Action: Add resource limits when deploying to production.
+
+### Documentation — `database_seed.sql` Header Only Mentions V1
+
+- [ ] **#260 — Seed data file header references only V1 schema**
+  - File: `database_seed.sql`
+  - Problem: Minor doc staleness — schema has evolved through V5.
+  - Source commands: `cross-ref-check`
+  - Action: Update header comment to reference current schema version.
+
+### Testing — No Test for Partial `update_team_order` (COALESCE Preservation)
+
+- [ ] **#261 — No test passes `None` for some update fields and verifies existing values are preserved**
+  - File: `tests/db_tests.rs` (`update_team_order_changes_fields`)
+  - Problem: Existing test sets all 3 fields simultaneously. A regression that breaks COALESCE partial updates would go undetected.
+  - Source commands: `test-gaps`
+  - Action: Add `update_team_order_partial_preserves_existing`.
+
+### Testing — No Test for `create_team_order` with FK-Violating `team_id`
+
+- [ ] **#262 — No test creates a team order with non-existent `team_id` to verify FK error handling**
+  - Files: `tests/db_tests.rs`, `tests/api_tests.rs`
+  - Problem: Related to #238 (FK violation for `add_team_member`) but for a different entity.
+  - Source commands: `test-gaps`
+  - Action: Add `create_team_order_nonexistent_team_returns_conflict`.
+
+### Testing — No Explicit Refresh Token Revocation → Refresh Rejection Test
+
+- [ ] **#263 — No test explicitly revokes a refresh token via `/auth/revoke` then verifies `/auth/refresh` returns 401**
+  - File: `tests/api_tests.rs`
+  - Problem: Rotation-based implicit revocation is tested, but explicit revoke→refresh is not.
+  - Source commands: `test-gaps`
+  - Action: Add `revoke_refresh_token_prevents_refresh`.
+
+### Testing — No Test for Empty Order Items List Response
+
+- [ ] **#264 — No test verifies `GET .../items` returns `200 []` for an order with zero items**
+  - File: `tests/api_tests.rs`
+  - Problem: Empty-collection 200 behavior is tested for users and teams but not order items.
+  - Source commands: `test-gaps`
+  - Action: Add `get_order_items_empty_returns_200`.
+
+### Testing — `guard_admin_role_assignment` Non-Existent `role_id` Path Untested
+
+- [ ] **#265 — No test calls `add_team_member` or `update_member_role` with a non-existent `role_id`**
+  - File: `src/handlers/mod.rs` lines 146–162
+  - Problem: For non-admin callers, the guard calls `db::get_role(client, role_id)` which returns 404 if the role doesn't exist. This error propagation path is never exercised.
+  - Source commands: `test-gaps`
+  - Action: Add API test with non-existent `role_id` to verify error response.
+
 ## Completed Items
 
 Resolved items are maintained in [`.claude/resolved-findings.md`](.claude/resolved-findings.md), organized by original severity.
@@ -505,7 +703,7 @@ See that file for the full history of resolved findings.
 - Clippy is clean on both backend and frontend.
 - `cargo fmt --check` is clean on both crates.
 - RBAC enforcement is correct across all handlers per the policy table.
-- OpenAPI spec is synchronized with routes (41 operations), with 2 minor annotation inaccuracies (#220, #221).
+- OpenAPI spec is synchronized with routes (41 operations), with 3 annotation inaccuracies (#244, #245, and existing #220/#221).
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 blocked), 0 important, 11 minor, 39 informational. Total: 51 open items.
-- 146 resolved items in `.claude/resolved-findings.md`.
+- Open items summary: 1 critical (#132 blocked), 3 important (#240–#242), 21 minor, 51 informational. Total: 76 open items.
+- 147 resolved items in `.claude/resolved-findings.md` (146 prior + #236 removed as incorrect premise).

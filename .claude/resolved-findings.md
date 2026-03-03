@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 ## Critical Items
 
@@ -1025,8 +1025,14 @@ Last updated: 2026-03-04
   - Resolution: Added `Validate` derive to both structs in `src/models.rs` for consistency with other request models.
   - Source commands: `test-gaps`
 
+### Testing — Non-Member GET Rejection Untested for Order Endpoints
+
+- [x] **#236 — All order-related GET handlers call `require_team_member` but no test verifies GET rejection for non-members**
+  - Resolution: Incorrect premise — verified that order GET handlers (`get_order_items`, `get_order_item`, `get_team_orders`, `get_team_order`) do NOT call `require_team_member`. Only mutation handlers enforce team membership. Consistent with deliberate open-read design (#117). Finding removed.
+  - Source commands: `test-gaps`
+
 ## Notes
 
-- Total resolved items: 125 (6 critical, 43 important, 63 minor, 5 informational, plus 8 items previously counted under different categories)
+- Total resolved items: 148 (6 critical, 43 important, 63 minor, 6 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file
