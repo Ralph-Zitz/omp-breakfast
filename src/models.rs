@@ -215,10 +215,7 @@ pub struct CreateTeamEntry {
         message = "tname is required and must be between 1 and 255 characters"
     ))]
     pub tname: String,
-    #[validate(length(
-        max = 1000,
-        message = "descr must not exceed 1000 characters"
-    ))]
+    #[validate(length(max = 1000, message = "descr must not exceed 1000 characters"))]
     pub descr: Option<String>,
 }
 
@@ -230,10 +227,7 @@ pub struct UpdateTeamEntry {
         message = "tname is required and must be between 1 and 255 characters"
     ))]
     pub tname: String,
-    #[validate(length(
-        max = 1000,
-        message = "descr must not exceed 1000 characters"
-    ))]
+    #[validate(length(max = 1000, message = "descr must not exceed 1000 characters"))]
     pub descr: Option<String>,
 }
 

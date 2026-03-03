@@ -47,7 +47,7 @@ webpki-roots = "1.0.6"
 rustls = { version = "0.23.37", default-features = false, features = ["ring", "logging", "std", "tls12"] }
 rustls-pki-types = "1.14.0"
 actix-files = "0.6"
-rust_decimal = { version = "1.40.0", features = ["db-tokio-postgres", "serde-with-str", "tokio-postgres"] }
+rust_decimal = { version = "1.40.0", features = ["db-tokio-postgres", "serde-with-str"] }
 actix-cors = "0.7"
 refinery = { version = "0.9", features = ["tokio-postgres"] }
 siphasher = "1.0"

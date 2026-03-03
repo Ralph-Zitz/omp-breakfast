@@ -102,29 +102,9 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Match on `response.status()` and provide differentiated messages: 401 → credentials, 429 → rate-limited, 5xx → server error.
   - Source commands: `api-completeness`, `review`
 
-### Dependencies — `rust_decimal` Redundant `tokio-postgres` Feature
-
-- [ ] **#226 — `features = ["db-tokio-postgres", "serde-with-str", "tokio-postgres"]` — the third feature is unnecessary**
-  - File: `Cargo.toml` (rust_decimal dependency)
-  - Problem: `db-tokio-postgres` already provides `FromSql`/`ToSql` implementations. The separate `tokio-postgres` feature only adds `tokio-postgres` as a dependency of `rust_decimal`, which is redundant since the project already depends on `tokio-postgres` directly.
-  - Fix: Remove `"tokio-postgres"` from the feature list → `features = ["db-tokio-postgres", "serde-with-str"]`.
-  - Source commands: `dependency-check`
-
-### Dependencies — Frontend `gloo-net` Compiles Unused WebSocket/EventSource Support
-
-- [ ] **#227 — `gloo-net` default features not disabled — pulls unused `websocket` and `eventsource`**
-  - File: `frontend/Cargo.toml` (gloo-net dependency)
-  - Problem: `gloo-net = { version = "0.6", features = ["http"] }` without `default-features = false` compiles `websocket`, `eventsource`, `futures-channel`, `futures-core`, `futures-sink`, `pin-project`, and extra `web-sys` bindings — increasing WASM binary size.
-  - Fix: Change to `gloo-net = { version = "0.6", default-features = false, features = ["http", "json"] }`.
-  - Source commands: `dependency-check`
-
 ### Dependencies — Frontend `js-sys` Duplicated in Dependencies and Dev-Dependencies
 
-- [ ] **#228 — `js-sys = "0.3"` appears in both `[dependencies]` and `[dev-dependencies]`**
-  - File: `frontend/Cargo.toml`
-  - Problem: Since it's already a runtime dependency (used in `app.rs` for `js_sys::Date::now()`), the `[dev-dependencies]` entry is redundant.
-  - Fix: Remove `js-sys = "0.3"` from `[dev-dependencies]`.
-  - Source commands: `dependency-check`
+*All dependency findings in this category have been resolved. See `.claude/resolved-findings.md` for details.*
 
 ## Informational Items
 

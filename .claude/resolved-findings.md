@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-05
+Last updated: 2026-03-03
 
 ## Critical Items
 
@@ -965,6 +965,27 @@ Last updated: 2026-03-05
   - Files: `migrations/V1__initial_schema.sql` line 64, `migrations/V4__schema_hardening.sql`
   - Resolution: Added NOT NULL constraint via V5 migration (`migrations/V5__trigger_and_notnull_fixes.sql`).
   - Source commands: `db-review`
+
+### Dependencies — `rust_decimal` Redundant `tokio-postgres` Feature
+
+- [x] **#226 — `features = ["db-tokio-postgres", "serde-with-str", "tokio-postgres"]` — the third feature is unnecessary**
+  - File: `Cargo.toml` (rust_decimal dependency)
+  - Resolution: Removed `"tokio-postgres"` from feature list → `features = ["db-tokio-postgres", "serde-with-str"]`.
+  - Source commands: `dependency-check`
+
+### Dependencies — Frontend `gloo-net` Compiles Unused WebSocket/EventSource Support
+
+- [x] **#227 — `gloo-net` default features not disabled — pulls unused `websocket` and `eventsource`**
+  - File: `frontend/Cargo.toml` (gloo-net dependency)
+  - Resolution: Changed to `gloo-net = { version = "0.6", default-features = false, features = ["http", "json"] }`.
+  - Source commands: `dependency-check`
+
+### Dependencies — Frontend `js-sys` Duplicated in Dependencies and Dev-Dependencies
+
+- [x] **#228 — `js-sys = "0.3"` appears in both `[dependencies]` and `[dev-dependencies]`**
+  - File: `frontend/Cargo.toml`
+  - Resolution: Removed `js-sys = "0.3"` from `[dev-dependencies]`.
+  - Source commands: `dependency-check`
 
 ## Informational Items
 
