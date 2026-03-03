@@ -55,6 +55,10 @@ RUN cargo install trunk
 WORKDIR /frontend
 # Copy only the frontend crate for better layer caching
 COPY frontend/ .
+# Copy design system CSS sources (needed by bundle-css.sh to inline @import chains)
+COPY connect-design-system/ /connect-design-system
+# Bundle CSS: resolves all @import statements into a single flat file
+RUN ./bundle-css.sh
 RUN trunk build --release
 
 # Stage 5 - Copy binary, frontend, and settings to final container

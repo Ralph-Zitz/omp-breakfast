@@ -10,10 +10,14 @@ build: frontend-build
 
 ## Frontend (Leptos WASM via Trunk)
 frontend-build:
+	@echo "Bundling CSS..."
+	cd frontend && ./bundle-css.sh
 	@echo "Building frontend..."
 	cd frontend && trunk build --release
 
 frontend-dev:
+	@echo "Bundling CSS..."
+	cd frontend && ./bundle-css.sh
 	@echo "Starting Trunk dev server (http://127.0.0.1:8081)..."
 	cd frontend && trunk serve --port 8081
 

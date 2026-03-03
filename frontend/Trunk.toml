@@ -4,7 +4,7 @@ dist = "dist"
 
 [watch]
 # Files to watch for changes during development
-watch = ["src", "index.html", "style"]
+watch = ["src", "index.html", "style"]  # Note: run ./bundle-css.sh after editing style/ files
 
 # Proxy API requests to the backend during development
 # Trunk dev server runs on http://127.0.0.1:8081

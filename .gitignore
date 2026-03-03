@@ -11,4 +11,5 @@ localhost_ca.pem
 *.session.sql
 frontend/dist/
 frontend/target/
+frontend/style/bundled.css
 connect-design-system/
