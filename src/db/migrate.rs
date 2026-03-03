@@ -120,20 +120,17 @@ async fn fix_migration_history(
 
             // Try to find the embedded migration with a matching version so
             // we can recompute the correct checksum.
-            let recomputed = embedded
-                .iter()
-                .find(|m| m.version() == version)
-                .map(|m| {
-                    let correct = compute_checksum(m.name(), version, m.sql().unwrap_or(""));
-                    info!(
-                        version,
-                        name = name.as_str(),
-                        from = checksum.as_str(),
-                        to = correct,
-                        "Rewriting refinery_schema_history.checksum to valid u64"
-                    );
-                    correct.to_string()
-                });
+            let recomputed = embedded.iter().find(|m| m.version() == version).map(|m| {
+                let correct = compute_checksum(m.name(), version, m.sql().unwrap_or(""));
+                info!(
+                    version,
+                    name = name.as_str(),
+                    from = checksum.as_str(),
+                    to = correct,
+                    "Rewriting refinery_schema_history.checksum to valid u64"
+                );
+                correct.to_string()
+            });
 
             match recomputed {
                 Some(c) => c,

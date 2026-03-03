@@ -306,7 +306,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### All Tests
 
 - Run everything: `make test-all` (backend unit + integration + frontend WASM + dependency audit)
-- Dependency audit: `make audit` runs `cargo audit`; `make test-all` includes it automatically via `audit-if-available`
+- Dependency audit: `make audit` runs `cargo audit --ignore RUSTSEC-2023-0071`; `make test-all` includes it automatically via `audit-if-available`. The ignore flag acknowledges the unfixable `rsa` timing side-channel pulled transitively by `jsonwebtoken` (see assessment finding #132). **Re-evaluate periodically** — remove the ignore flag once the `rsa` crate or `jsonwebtoken` ships a fix.
 
 ## Required Test Runs
 

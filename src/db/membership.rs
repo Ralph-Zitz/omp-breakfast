@@ -54,7 +54,10 @@ pub async fn is_team_admin_of_user(
         .map_err(Error::Db)?;
 
     let row = client
-        .query_one(&statement, &[&requesting_user_id, &target_user_id, &ROLE_TEAM_ADMIN])
+        .query_one(
+            &statement,
+            &[&requesting_user_id, &target_user_id, &ROLE_TEAM_ADMIN],
+        )
         .await
         .map_err(Error::Db)?;
 

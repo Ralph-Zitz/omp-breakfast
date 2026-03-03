@@ -400,9 +400,7 @@ pub async fn basic_validator(
                 ));
             }
         };
-        match crate::argon2_hasher()
-        .verify_password(pswd.as_bytes(), &parsed_hash)
-        {
+        match crate::argon2_hasher().verify_password(pswd.as_bytes(), &parsed_hash) {
             Ok(_) => Ok(req),
             Err(_) => {
                 warn!(user = %credentials.user_id(), "Invalid password for user");

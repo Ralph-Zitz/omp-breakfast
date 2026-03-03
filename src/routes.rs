@@ -45,13 +45,21 @@ pub fn routes(cfg: &mut ServiceConfig) {
                 .name("auth_revoke")
                 .wrap(Governor::new(&auth_rate_limit))
                 .wrap(Compat::new(jwt_auth_revoke))
-                .app_data(JsonConfig::default().limit(65_536).error_handler(json_error_handler))
+                .app_data(
+                    JsonConfig::default()
+                        .limit(65_536)
+                        .error_handler(json_error_handler),
+                )
                 .route(post().to(revoke_user_token)),
         )
         .service(
             scope("/api/v1.0")
                 .wrap(Compat::new(jwt_auth))
-                .app_data(JsonConfig::default().limit(65_536).error_handler(json_error_handler))
+                .app_data(
+                    JsonConfig::default()
+                        .limit(65_536)
+                        .error_handler(json_error_handler),
+                )
                 .app_data(PathConfig::default().error_handler(path_error_handler))
                 .service(
                     resource("/users")

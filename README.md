@@ -129,7 +129,7 @@ docker compose up -d     # reinitialize from scratch
 | `make frontend-clean` | Remove `frontend/dist/` |
 | `make db-up` | Start test DB on port 5433 |
 | `make db-down` | Stop and remove test DB |
-| `make audit` | Run `cargo audit` |
+| `make audit` | Run `cargo audit` (ignores RUSTSEC-2023-0071 — unfixable `rsa` transitive dep) |
 
 ## Configuration
 

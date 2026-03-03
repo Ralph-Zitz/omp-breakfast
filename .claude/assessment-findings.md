@@ -21,16 +21,49 @@ This file is **generated and maintained by the project assessment process** defi
   - Problem: `features = ["rust_crypto"]` pulls `rsa`, `ed25519-dalek`, `p256`, `p384`, `rand` — none of which are used (only HS256). The `rsa` crate has an unfixable timing side-channel advisory.
   - Attempted fix: Changed `features = ["rust_crypto"]` to `features = ["hmac", "sha2"]`. This compiled but all JWT tests failed at runtime: jsonwebtoken 10.x requires either `rust_crypto` or `aws_lc_rs` to auto-install a `CryptoProvider`. The granular `hmac`/`sha2` features do not register a provider, causing `"Could not automatically determine the process-level CryptoProvider"` errors. Manual `CryptoProvider::install_default()` calls would be needed, which is invasive.
   - Status: **Blocked on upstream.** Requires `jsonwebtoken` to either support granular features with auto-provider registration, or to split the `rust_crypto` feature so HS-only usage doesn't pull RSA/EC crates. Reverted to `features = ["rust_crypto"]`.
+  - Mitigation: `cargo audit --ignore RUSTSEC-2023-0071` is used in the Makefile, CI, and assessment commands to acknowledge the advisory while keeping audit runs clean for other vulnerabilities. **This ignore must be re-evaluated periodically** — check whether a new `rsa` release resolves RUSTSEC-2023-0071 or whether `jsonwebtoken` adds HS-only feature support.
   - Source commands: `dependency-check`
 
 ## Important Items
+
+### Bug — 5 Update DB Functions Return HTTP 500 Instead of 404 for Missing Resources
+
+- [ ] **#212 — `update_team`, `update_role`, `update_item`, `update_team_order`, `update_order_item` use `query_one` which maps not-found to 500**
+  - Files: `src/db/teams.rs` line 124 (`update_team`), `src/db/roles.rs` line 89 (`update_role`), `src/db/items.rs` line 83 (`update_item`), `src/db/orders.rs` line 113 (`update_team_order`), `src/db/order_items.rs` line 176 (`update_order_item`)
+  - Problem: These five update functions use `client.query_one(...)` which returns a `tokio_postgres::Error` ("query returned an unexpected number of rows") when the UPDATE affects zero rows (record doesn't exist). This maps to `Error::Db` → HTTP 500. By contrast, `update_user` in `src/db/users.rs` correctly uses `query_opt()` + `.ok_or_else(|| Error::NotFound(...))` to return 404. The OpenAPI specs for these endpoints document 404 responses that can never actually occur.
+  - Fix: Change all five functions to use `query_opt(...)` with `.ok_or_else(|| Error::NotFound("... not found"))`, matching the `update_user` pattern.
+  - Source commands: `review`, `db-review`
+
+### Security — User Enumeration via Authentication Timing Side-Channel
+
+- [ ] **#213 — Non-existent users return ~1ms vs ~100ms for wrong-password on existing users**
+  - File: `src/middleware/auth.rs` lines 378–387 (`basic_validator` cache-miss error branch)
+  - Problem: When a non-existent user attempts Basic Auth, the cache miss triggers a `get_user_by_email` DB lookup that fails, and the function returns immediately (~1–5ms). When an existing user provides a wrong password, the lookup succeeds and Argon2id verification runs (~100–300ms) before returning 401. This ~100x timing difference allows an attacker to enumerate valid email addresses by measuring response times.
+  - Fix: When `get_user_by_email` returns `Err` (user not found), perform a dummy `argon2_hasher().verify_password(b"dummy", &dummy_hash)` against a pre-computed static hash before returning 401. This equalizes response time regardless of whether the email exists.
+  - Source commands: `security-audit`
+
+### Testing — No Test for Admin Role Escalation Guard
+
+- [ ] **#214 — Both `add_team_member` and `update_member_role` have escalation guards but no test exercises them**
+  - Files: `tests/api_tests.rs`, `src/handlers/teams.rs` lines 361–371 (`add_team_member` guard), lines 439–449 (`update_member_role` guard)
+  - Problem: Both handlers contain identical logic preventing non-admin users from assigning the "Admin" role. This is a critical security guard — a Team Admin could escalate to global Admin if this logic regressed. **No API or DB test exercises this path.** The existing `team_admin_can_add_and_remove_member` test uses the "Member" role only.
+  - Fix: Add `team_admin_cannot_assign_admin_role_via_add_member` (POST with role_id of "Admin" → 403) and `team_admin_cannot_assign_admin_role_via_update_role` (PUT with role_id of "Admin" → 403).
+  - Source commands: `test-gaps`, `rbac-rules`
+
+### Testing — No Test for Password Update → Re-Login Round-Trip
+
+- [ ] **#215 — Password change via PUT is never tested with subsequent authentication**
+  - Files: `tests/api_tests.rs`, `src/handlers/users.rs` line 305 (`update_user`), `src/db/users.rs`
+  - Problem: `create_user_then_authenticate_round_trip` proves Argon2 hashing works for user creation, but no test updates a password via `PUT /api/v1.0/users/{id}` with `"password": "newpassword"` then authenticates with the new password. If the `update_user` DB function's password-hashing branch had a bug, users would be locked out after password changes.
+  - Fix: Add test: `update_user_password_then_reauthenticate` — update password, login with new password (200), login with old password (401).
+  - Source commands: `test-gaps`
 
 ## Minor Items
 
 ### Code Quality — Dead S3 Config Fields
 
 - [ ] **#59 — `s3_key_id` and `s3_key_secret` are loaded and stored but never used**
-  - Files: `src/models.rs` lines 46–47 (`State` struct), `src/config.rs` lines 13–14 (`ServerConfig` struct), `src/server.rs` lines 340–341 (state construction), `config/default.yml` lines 6–7, `config/development.yml` lines 5–6, `config/production.yml` lines 6–7
+  - Files: `src/models.rs` lines 60–61 (`State` struct), `src/config.rs` lines 13–14 (`ServerConfig` struct), `src/server.rs` lines 351–352 (state construction), `config/default.yml` lines 6–7, `config/development.yml` lines 5–6, `config/production.yml` lines 6–7
   - Problem: The `s3_key_id` and `s3_key_secret` fields are defined in `ServerConfig`, loaded from config files, stored in `State`, and propagated through all test helpers (`routes.rs`, `server.rs`, `middleware/auth.rs`), but no handler, middleware, or DB function ever reads them.
   - Fix: Either remove the fields entirely from `ServerConfig`, `State`, all config files, and all test helpers — or, if S3 integration is planned, document the intent in CLAUDE.md's Unfinished Work section.
   - Source commands: `review`, `practices-audit`
@@ -78,7 +111,7 @@ This file is **generated and maintained by the project assessment process** defi
 ### Security — Swagger UI Exposed in Production
 
 - [ ] **#112 — `/explorer` registered unconditionally regardless of environment**
-  - File: `src/routes.rs` line 29
+  - File: `src/routes.rs` line 28
   - Problem: In production, this exposes the complete API schema, aiding attacker reconnaissance.
   - Fix: Conditionally register the Swagger UI scope only when `ENV != production`, or gate behind admin auth.
   - Source commands: `security-audit`
@@ -86,7 +119,7 @@ This file is **generated and maintained by the project assessment process** defi
 ### Performance — Auth Cache Eviction Is O(n log n)
 
 - [ ] **#113 — Cache eviction sorts all entries on every miss at capacity**
-  - File: `src/middleware/auth.rs` lines 323–335
+  - File: `src/middleware/auth.rs` lines 352–365
   - Problem: When the cache is full (1000 entries), every miss collects all entries into a `Vec`, sorts by timestamp, and removes the oldest 10%. This is O(n log n) per miss.
   - Fix: Use a proper LRU data structure (e.g., `lru` crate) or a min-heap.
   - Source commands: `review`
@@ -118,7 +151,7 @@ This file is **generated and maintained by the project assessment process** defi
 ### Validation — No Positive-Value Validation on Item Prices
 
 - [ ] **#196 — `CreateItemEntry.price` and `UpdateItemEntry.price` accept negative prices at the API layer**
-  - File: `src/models.rs` lines 286–300
+  - File: `src/models.rs` lines 276–293
   - Problem: `price: rust_decimal::Decimal` has no validation. The DB has `CHECK (price >= 0)` but negative prices from the API would only be caught at the DB layer with an unfriendly error.
   - Fix: Add a custom validator ensuring `price >= 0`, or document the DB constraint as the sole enforcement point.
   - Source commands: `db-review`, `security-audit`
@@ -134,7 +167,7 @@ This file is **generated and maintained by the project assessment process** defi
 ### Code Quality — `check_db` Can Only Return `Ok(true)` — Dead Code Branch
 
 - [ ] **#198 — `get_health` handler's `Ok(false)` branch is unreachable**
-  - Files: `src/db/health.rs` lines 4–10, `src/handlers/mod.rs` lines 288–298
+  - Files: `src/db/health.rs` lines 4–12, `src/handlers/mod.rs` lines 289–303
   - Problem: `check_db` does `.map(|_| true)` on success and `.map_err(Error::Db)` on error, so it never returns `Ok(false)`. The handler's `else` branch (503) is dead code.
   - Fix: Change `check_db` to return `Result<(), Error>` or simplify the handler's match.
   - Source commands: `review`
@@ -142,7 +175,7 @@ This file is **generated and maintained by the project assessment process** defi
 ### Code Quality — Commented-Out Code in `get_health`
 
 - [ ] **#199 — Dead commented-out `let client: Client = ...` line in health handler**
-  - File: `src/handlers/mod.rs` line 287
+  - File: `src/handlers/mod.rs` line 290
   - Problem: Dead code.
   - Fix: Remove the line.
   - Source commands: `review`
@@ -169,6 +202,119 @@ This file is **generated and maintained by the project assessment process** defi
   - File: `migrations/V1__initial_schema.sql` line 73
   - Problem: `teamorders_user_id` is nullable. No handler creates orders without setting this field. If a NULL-user order is somehow created, it would be orphaned.
   - Fix: Add `NOT NULL` constraint via a new migration, or document why NULL is valid.
+  - Source commands: `db-review`
+
+### Code Quality — Admin Role Escalation Guard Duplicated Verbatim
+
+- [ ] **#216 — Identical 11-line guard block in `add_team_member` and `update_member_role`**
+  - File: `src/handlers/teams.rs` lines 361–371 and lines 439–449
+  - Problem: Both handlers contain identical code that prevents Team Admins from assigning the global Admin role (checks `is_admin`, then `get_role`, then rejects if `role.title == ROLE_ADMIN`).
+  - Fix: Extract into a helper `guard_admin_role_assignment(client, req, role_id)` in `handlers/mod.rs`.
+  - Source commands: `review`
+
+### Database — `update_team_order` Has Inconsistent Partial-Update Semantics
+
+- [ ] **#217 — COALESCE used only on `closed` but not on `teamorders_user_id` or `duedate`**
+  - File: `src/db/orders.rs` lines 103–104
+  - Problem: The UPDATE query sets `teamorders_user_id = $1, duedate = $2, closed = COALESCE($3, closed)`. The `closed` field preserves current value when NULL, but `teamorders_user_id` and `duedate` are overwritten unconditionally. If a client sends `{"closed": true}` without resending `teamorders_user_id` and `duedate`, those fields are silently set to NULL — data loss. All three fields are `Option` in `UpdateTeamOrderEntry`, suggesting partial-update intent.
+  - Fix: Apply COALESCE to all three: `SET teamorders_user_id = COALESCE($1, teamorders_user_id), duedate = COALESCE($2, duedate), closed = COALESCE($3, closed)`.
+  - Source commands: `db-review`
+
+### Practices — `add_team_member` and `update_member_role` Skip `validate(&json)?`
+
+- [ ] **#218 — Two handlers accept JSON body without calling validate(), violating project convention**
+  - File: `src/handlers/teams.rs` lines 355 (`add_team_member`), 432 (`update_member_role`)
+  - Problem: Both handlers call `json.into_inner()` without prior `validate(&json)?`. Both model structs (`AddMemberEntry`, `UpdateMemberRoleEntry`) derive `Validate`. Per CLAUDE.md: "Validation uses `validate(&json)?` before any DB call." 12 of 14 JSON-accepting handlers follow this convention. Additionally, `update_member_role`'s utoipa annotation documents `(status = 422, description = "Validation error")` which can never be produced.
+  - Fix: Add `validate(&json)?;` before `json.into_inner()` in both handlers. Add 422 response to `add_team_member`'s utoipa annotation.
+  - Source commands: `practices-audit`, `openapi-sync`
+
+### API — Three Create Handlers Missing `Location` Header
+
+- [ ] **#219 — `create_team_order`, `create_order_item`, `add_team_member` return 201 without `Location` header**
+  - Files: `src/handlers/teams.rs` line 246 (`create_team_order`), `src/handlers/orders.rs` line 91 (`create_order_item`), `src/handlers/teams.rs` line 376 (`add_team_member`)
+  - Problem: These three handlers return `HttpResponse::Created().json(...)` without a `Location` header. The other four create handlers (`create_user`, `create_team`, `create_item`, `create_role`) all build a `Location` header via `req.url_for()`. This inconsistency violates RFC 7231 §6.3.2.
+  - Fix: Add `url_for`-based `Location` headers matching the pattern in existing create handlers.
+  - Note: Corrects characterization in #178 which stated "All create handlers build `Location` header" — only 4 of 7 do.
+  - Source commands: `api-completeness`, `review`
+
+### OpenAPI — `revoke_user_token` Documents 400 but Returns 500 on Invalid Token
+
+- [ ] **#220 — utoipa annotation for `POST /auth/revoke` documents unreachable 400 response**
+  - File: `src/handlers/users.rs` line 130 (utoipa annotation)
+  - Problem: The annotation documents `(status = 400, description = "Invalid token")`. However, when `verify_jwt()` fails on the submitted token, it returns `Error::Jwt` which maps to HTTP 500. The documented 400 can never occur.
+  - Fix: Either remove the 400 response from the utoipa annotation, or catch the JWT validation error and return 400.
+  - Source commands: `openapi-sync`
+
+### OpenAPI — `team_users` Documents Unreachable 404
+
+- [ ] **#221 — utoipa annotation for `GET /api/v1.0/teams/{team_id}/users` documents 404 that never occurs**
+  - File: `src/handlers/teams.rs` line 163 (utoipa annotation)
+  - Problem: The handler always returns `HttpResponse::Ok().json(users)`, even for an empty array. CLAUDE.md states `get_team_users` returns an empty `[]` (200 OK). The 404 annotation is misleading.
+  - Fix: Remove the `(status = 404, ...)` line from the utoipa annotation.
+  - Source commands: `openapi-sync`
+
+### Code Quality — Missing `#[must_use]` on `requesting_user_id`
+
+- [ ] **#222 — `requesting_user_id` returns `Option<Uuid>` but lacks `#[must_use]`**
+  - File: `src/handlers/mod.rs` line 23
+  - Problem: If a caller writes `requesting_user_id(&req);` without binding the result, the JWT subject is silently discarded. All current call sites are correct, but there's no compiler guard.
+  - Fix: Add `#[must_use = "caller must handle the case where no JWT claims are present"]`.
+  - Source commands: `review`
+
+### Performance — Auth Validator Redundant DashMap Lookup for TTL Eviction
+
+- [ ] **#223 — Double DashMap lookup in `basic_validator` TTL-eviction path**
+  - File: `src/middleware/auth.rs` lines 341–347
+  - Problem: After the initial `cache.get().filter(TTL check)` returns `None`, the code does a second `cache.get()` to check TTL-expired, drops the guard, then calls `cache.remove()` — two extra lookups and a TOCTOU gap.
+  - Fix: Use `cache.remove_if(key, |_, cached| expired(cached))` or restructure to capture the TTL decision in the initial lookup.
+  - Source commands: `review`
+
+### Validation — 4 Models Derive `Validate` with Zero Validation Rules
+
+- [ ] **#224 — `CreateTeamOrderEntry`, `UpdateTeamOrderEntry`, `AddMemberEntry`, `UpdateMemberRoleEntry` have no `#[validate]` attributes**
+  - File: `src/models.rs` lines 311–338
+  - Problem: Handlers call `validate(&json)?` (or should — see #218) on these structs, but validation always succeeds because no rules are defined. This gives a false sense of input validation.
+  - Fix: Either add meaningful validation rules or remove the `Validate` derive and corresponding `validate()` calls.
+  - Source commands: `review`, `practices-audit`
+
+### Frontend — Login Shows "Invalid Credentials" for All Non-2xx Errors
+
+- [ ] **#225 — HTTP 500, 429, and 503 responses all display "Invalid username or password"**
+  - File: `frontend/src/app.rs` lines 370–373
+  - Problem: The login flow's `Ok(_)` catch-all always shows a credentials error. 500 (server error), 429 (rate limited), or 503 (unavailable) should show appropriate messages instead of misleading the user about their credentials.
+  - Fix: Match on `response.status()` and provide differentiated messages: 401 → credentials, 429 → rate-limited, 5xx → server error.
+  - Source commands: `api-completeness`, `review`
+
+### Dependencies — `rust_decimal` Redundant `tokio-postgres` Feature
+
+- [ ] **#226 — `features = ["db-tokio-postgres", "serde-with-str", "tokio-postgres"]` — the third feature is unnecessary**
+  - File: `Cargo.toml` (rust_decimal dependency)
+  - Problem: `db-tokio-postgres` already provides `FromSql`/`ToSql` implementations. The separate `tokio-postgres` feature only adds `tokio-postgres` as a dependency of `rust_decimal`, which is redundant since the project already depends on `tokio-postgres` directly.
+  - Fix: Remove `"tokio-postgres"` from the feature list → `features = ["db-tokio-postgres", "serde-with-str"]`.
+  - Source commands: `dependency-check`
+
+### Dependencies — Frontend `gloo-net` Compiles Unused WebSocket/EventSource Support
+
+- [ ] **#227 — `gloo-net` default features not disabled — pulls unused `websocket` and `eventsource`**
+  - File: `frontend/Cargo.toml` (gloo-net dependency)
+  - Problem: `gloo-net = { version = "0.6", features = ["http"] }` without `default-features = false` compiles `websocket`, `eventsource`, `futures-channel`, `futures-core`, `futures-sink`, `pin-project`, and extra `web-sys` bindings — increasing WASM binary size.
+  - Fix: Change to `gloo-net = { version = "0.6", default-features = false, features = ["http", "json"] }`.
+  - Source commands: `dependency-check`
+
+### Dependencies — Frontend `js-sys` Duplicated in Dependencies and Dev-Dependencies
+
+- [ ] **#228 — `js-sys = "0.3"` appears in both `[dependencies]` and `[dev-dependencies]`**
+  - File: `frontend/Cargo.toml`
+  - Problem: Since it's already a runtime dependency (used in `app.rs` for `js_sys::Date::now()`), the `[dev-dependencies]` entry is redundant.
+  - Fix: Remove `js-sys = "0.3"` from `[dev-dependencies]`.
+  - Source commands: `dependency-check`
+
+### Database — `memberof.joined` Column Lacks NOT NULL Constraint
+
+- [ ] **#229 — V4 hardening added NOT NULL to `created`/`changed` but missed `joined`**
+  - Files: `migrations/V1__initial_schema.sql` line 64, `migrations/V4__schema_hardening.sql`
+  - Problem: `joined` has `DEFAULT CURRENT_TIMESTAMP` like other timestamp columns but was not hardened with NOT NULL in V4. A direct INSERT with explicit NULL would succeed.
+  - Fix: Add a V5 migration: `UPDATE memberof SET joined = CURRENT_TIMESTAMP WHERE joined IS NULL; ALTER TABLE memberof ALTER COLUMN joined SET NOT NULL;`.
   - Source commands: `db-review`
 
 ## Informational Items
@@ -239,7 +385,7 @@ This file is **generated and maintained by the project assessment process** defi
 ### Security — Auth Cache Staleness Window
 
 - [ ] **#120 — 5-minute cache TTL allows stale credentials after password change**
-  - File: `src/middleware/auth.rs` lines 328–336
+  - File: `src/middleware/auth.rs` lines 335–340
   - Problem: After a password change, the old password continues to work for up to 5 minutes via cache.
   - Source commands: `security-audit`
   - Action: Reduce TTL to 60s or implement cross-instance cache invalidation.
@@ -345,9 +491,9 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Testing — No Tests for `Location` Header in Create Responses
 
-- [ ] **#178 — All create handlers build `Location` header via `url_for` but no test verifies it**
-  - Files: `tests/api_tests.rs`, `src/handlers/` (all create handlers)
-  - Problem: If the named route string drifts, `url_for` silently fails (wrapped in `if let Ok`).
+- [ ] **#178 — Only 4 of 7 create handlers build `Location` header via `url_for` but no test verifies it**
+  - Files: `tests/api_tests.rs`, `src/handlers/` (create handlers)
+  - Problem: If the named route string drifts, `url_for` silently fails (wrapped in `if let Ok`). Additionally, 3 create handlers lack the `Location` header entirely (see #219).
   - Source commands: `test-gaps`
   - Action: Add `create_user_sets_location_header`.
 
@@ -399,7 +545,7 @@ This file is **generated and maintained by the project assessment process** defi
 ### OpenAPI — `UpdateUserEntry` Has Dead `ToSchema` Derive
 
 - [ ] **#203 — `UpdateUserEntry` derives `ToSchema` but is not registered in OpenAPI schemas and is not used by any handler**
-  - File: `src/models.rs` lines 90–131
+  - File: `src/models.rs` lines 93–131
   - Problem: Superseded by `UpdateUserRequest` but still compiled with `ToSchema` derive.
   - Source commands: `openapi-sync`
   - Action: Remove `ToSchema` derive, or remove `UpdateUserEntry` entirely if not needed for internal use.
@@ -447,7 +593,7 @@ This file is **generated and maintained by the project assessment process** defi
 ### Code Quality — Redundant `Client` Import in Handler Files
 
 - [ ] **#209 — `use deadpool_postgres::Client;` redundant in `handlers/users.rs` and `handlers/roles.rs`**
-  - Files: `src/handlers/users.rs`, `src/handlers/roles.rs`
+  - Files: `src/handlers/users.rs` line 17, `src/handlers/roles.rs` line 11
   - Problem: `Client` is already re-exported via `use crate::handlers::*` from `handlers/mod.rs`.
   - Source commands: `review`
   - Action: Remove the duplicate import.
@@ -468,6 +614,86 @@ This file is **generated and maintained by the project assessment process** defi
   - Source commands: `review`
   - Action: Add `novalidate` attribute and rely on custom validation, or remove the custom empty-field checks.
 
+### Performance — `get_team_users` Query Has Unnecessary `teams` JOIN
+
+- [ ] **#230 — Query joins `teams` table but no columns from `teams` are selected**
+  - File: `src/db/teams.rs` lines 138–139
+  - Problem: The query `join teams on teams.team_id = memberof.memberof_team_id` and `where teams.team_id = $1` could be simplified to `where memberof.memberof_team_id = $1` without the join. The `teams` join adds no value since no `teams` columns are in the SELECT.
+  - Fix: Remove the `teams` join and filter directly on `memberof.memberof_team_id = $1`.
+  - Source commands: `review`
+
+### Frontend — Loading Page Spinner Not Announced to Screen Readers
+
+- [ ] **#231 — Loading spinner container lacks `role="status"` and `aria-live`**
+  - File: `frontend/src/app.rs` (LoadingPage component)
+  - Problem: The loading page has `<div class="loading-spinner">` and `<p class="loading-text">"Loading…"</p>` but the container has no `role="status"` or `aria-live="polite"`. Screen readers won't announce the loading state.
+  - Fix: Add `role="status"` and `aria-live="polite"` to the loading card container div.
+  - Source commands: `review`
+
+### Code Quality — `ErrorResponse::Display` Fallback Doesn't Escape JSON
+
+- [ ] **#232 — If `serde_json::to_string` fails, the fallback `format!` produces invalid JSON for strings with quotes**
+  - File: `src/errors.rs` lines 55–62
+  - Problem: The `Display` impl fallback uses `format!(r#"{{"error":"{}"}}"#, self.error)` — if `self.error` contains `"` or `\`, the resulting JSON is syntactically invalid. The primary path (serde_json) correctly escapes, but the fallback doesn't.
+  - Fix: Remove the fallback since `ErrorResponse` serialization should never fail, or properly escape the string.
+  - Source commands: `review`
+
+### Frontend — Redundant `session_storage()` Calls in Logout Handler
+
+- [ ] **#233 — `session_storage()` called 3 times in the `on_logout` closure**
+  - File: `frontend/src/app.rs` (on_logout closure)
+  - Problem: Each call goes through `web_sys::window() → .session_storage()`. Should bind once and reuse.
+  - Fix: Bind `let storage = session_storage();` once and reuse the result.
+  - Source commands: `review`
+
+### Code Quality — `from_row.rs` Error Classification Uses Fragile String Matching
+
+- [ ] **#234 — `map_err` helper checks for `"column"` or `"not found"` in error messages**
+  - File: `src/from_row.rs` lines 37–43
+  - Problem: The `map_err` function classifies `tokio_postgres::Error` as `ColumnNotFound` vs `Conversion` by checking whether the error message contains `"column"` or `"not found"`. If `tokio_postgres` changes error wording, classification could silently flip.
+  - Fix: No immediate action. Document the fragility with a comment. Revisit if `tokio_postgres` adds structured error accessors.
+  - Source commands: `review`
+
+### Database — `closed` Column Read as `Option<bool>` Despite `NOT NULL` Constraint
+
+- [ ] **#235 — `is_team_order_closed` and `guard_open_order` use `Option<bool>` for a NOT NULL column**
+  - File: `src/db/order_items.rs` lines 31 and 55
+  - Problem: Both functions read the `closed` column with `row.get::<_, Option<bool>>("closed").unwrap_or(false)`. The column is `boolean NOT NULL DEFAULT FALSE`, so the value can never be NULL. The `Option<bool>` and `.unwrap_or(false)` are unnecessary.
+  - Fix: Change to `row.get::<_, bool>("closed")`.
+  - Source commands: `db-review`
+
+### Testing — Non-Member GET Rejection Untested for Order Endpoints
+
+- [ ] **#236 — All order-related GET handlers call `require_team_member` but no test verifies GET rejection for non-members**
+  - Files: `tests/api_tests.rs`, `src/handlers/orders.rs`, `src/handlers/teams.rs`
+  - Problem: The `non_member_cannot_create_order_item` test verifies POST/PUT/DELETE rejection (403). But GET endpoints (`get_team_orders`, `get_team_order`, `get_order_items`, `get_order_item`) that also call `require_team_member` have no non-member rejection test.
+  - Source commands: `test-gaps`
+  - Action: Add `non_member_cannot_get_team_orders` and `non_member_cannot_get_order_items`.
+
+### Testing — No API Test for GET Single Team Order by ID
+
+- [ ] **#237 — `GET /api/v1.0/teams/{team_id}/orders/{order_id}` never called in tests**
+  - Files: `tests/api_tests.rs`, `src/handlers/teams.rs` (`get_team_order`)
+  - Problem: `create_and_list_team_orders` creates an order and lists all, but never calls the single-order GET. This endpoint has a two-column `WHERE` clause — if parameterization were swapped, no test would catch it.
+  - Source commands: `test-gaps`
+  - Action: Add GET-by-ID assertion to existing test or create `get_single_team_order_returns_200`.
+
+### Testing — `add_team_member` with FK-Violating IDs Untested
+
+- [ ] **#238 — Adding a member with non-existent `user_id` or `role_id` → error quality untested**
+  - Files: `tests/api_tests.rs`, `tests/db_tests.rs`
+  - Problem: No test verifies the HTTP status or error message quality when FK constraints are violated. The error might bubble as raw SQL.
+  - Source commands: `test-gaps`
+  - Action: Add `add_member_with_nonexistent_user_returns_error`, `add_member_with_nonexistent_role_returns_error`.
+
+### Testing — No Frontend Test for Non-401/Non-Network HTTP Errors
+
+- [ ] **#239 — No WASM test mocks 500 or 429 responses for the login flow**
+  - File: `frontend/tests/ui_tests.rs`
+  - Problem: Only 200 (success) and 401 (credentials) responses are mocked. HTTP 500 or 429 currently show "Invalid username or password" (see #225). Once fixed, tests should verify corrected behavior.
+  - Source commands: `test-gaps`
+  - Action: Add `test_login_with_500_response_shows_server_error`.
+
 ## Completed Items
 
 Resolved items are maintained in [`.claude/resolved-findings.md`](.claude/resolved-findings.md), organized by original severity.
@@ -477,12 +703,12 @@ See that file for the full history of resolved findings.
 
 - All 170 backend unit tests pass (148 lib + 22 healthcheck); 67 API integration tests pass; 86 DB integration tests pass; 23 WASM tests pass. Total: 346 tests, 0 failures.
 - Backend unit test breakdown: config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, db/migrate: 34, healthcheck: 22 = **170 total**.
-- `cargo audit` reports 1 vulnerability: `rsa` 0.9.10 via `jsonwebtoken` (RUSTSEC-2023-0071). **Blocked on upstream** — see #132 (granular features don't work with jsonwebtoken 10.x's CryptoProvider model).
+- `cargo audit --ignore RUSTSEC-2023-0071` reports 0 vulnerabilities. RUSTSEC-2023-0071 (`rsa` 0.9.10 via `jsonwebtoken`) is intentionally ignored — **blocked on upstream**, see #132. Re-evaluate periodically whether the `rsa` crate or `jsonwebtoken` has shipped a fix.
 - All dependencies are up to date (`cargo outdated -R` shows zero outdated).
 - Clippy is clean on both backend and frontend.
 - `cargo fmt --check` is clean on both crates.
 - RBAC enforcement is correct across all handlers per the policy table.
-- OpenAPI spec is synchronized with routes (41 operations).
+- OpenAPI spec is synchronized with routes (41 operations), with 2 minor annotation inaccuracies (#220, #221).
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 blocked), 0 important, 18 minor, 39 informational. Total: 58 open items.
+- Open items summary: 1 critical (#132 blocked), 4 important (#212, #213, #214, #215), 32 minor, 39 informational. Total: 76 open items.
 - 121 resolved items in `.claude/resolved-findings.md`.

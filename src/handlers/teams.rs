@@ -447,7 +447,6 @@ pub async fn update_member_role(
         }
     }
 
-    let result =
-        db::update_member_role(&mut client, team_id, user_id, role_id).await?;
+    let result = db::update_member_role(&mut client, team_id, user_id, role_id).await?;
     Ok(HttpResponse::Ok().json(result))
 }

@@ -4,8 +4,8 @@ pub mod roles;
 pub mod teams;
 pub mod users;
 
-use crate::{db, errors::Error, models::*};
 use crate::middleware::auth::ROLE_TEAM_ADMIN;
+use crate::{db, errors::Error, models::*};
 use actix_web::{HttpMessage, HttpRequest, HttpResponse, Responder, web::Data};
 use deadpool_postgres::{Client, Pool};
 use tracing::{error, instrument};

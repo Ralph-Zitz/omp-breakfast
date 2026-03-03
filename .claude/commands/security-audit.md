@@ -31,7 +31,7 @@ You are a security engineer reviewing a Rust web API with a Leptos WebAssembly f
    - Certificate validation: is it strict or does it allow self-signed?
 
 5. **Dependencies**
-   - Run `cargo audit` if available, or review `Cargo.toml` for known-vulnerable crate versions
+   - Run `cargo audit --ignore RUSTSEC-2023-0071` if available, or review `Cargo.toml` for known-vulnerable crate versions (the ignore flag acknowledges the unfixable `rsa` timing side-channel via `jsonwebtoken` — see finding #132; re-check periodically whether an upstream fix is available)
    - Are there unnecessary dependencies that increase attack surface?
 
 6. **Information disclosure**
