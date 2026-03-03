@@ -2,7 +2,8 @@ use crate::errors::Error;
 use actix_web::web::Json;
 use validator::{Validate, ValidationErrors};
 
-// Validate a struct and collect and return the errors
+/// Validate a struct using its `Validate` derive rules and return all errors.
+#[must_use = "validation result must be checked"]
 pub fn validate<T>(params: &Json<T>) -> Result<(), Error>
 where
     T: Validate,
@@ -17,13 +18,14 @@ fn collect_errors(error: ValidationErrors) -> Vec<String> {
     error
         .field_errors()
         .into_iter()
-        .map(|error| {
-            let default_error = format!("{} is required", error.0);
-            error.1[0]
-                .message
-                .as_ref()
-                .unwrap_or(&std::borrow::Cow::Owned(default_error))
-                .to_string()
+        .flat_map(|(field, errors)| {
+            let default_error = format!("{} is required", field);
+            errors.iter().map(move |e| {
+                e.message
+                    .as_ref()
+                    .unwrap_or(&std::borrow::Cow::Owned(default_error.clone()))
+                    .to_string()
+            })
         })
         .collect()
 }

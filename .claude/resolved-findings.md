@@ -800,6 +800,153 @@ Last updated: 2026-03-04
   - Fix: Add `changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP` with an update trigger.
   - Source commands: `db-review`
 
+### Performance — Auth Cache Eviction Is O(n log n)
+
+- [x] **#113 — Cache eviction sorts all entries on every miss at capacity**
+  - File: `src/middleware/auth.rs` lines 352–365
+  - Resolution: Replaced `sort_by_key` with `select_nth_unstable_by_key` for O(n) partial sort.
+  - Source commands: `review`
+
+### Documentation — 4 Stale `localStorage` References in Command Files
+
+- [x] **#194 — Command files reference `localStorage` but the project uses `sessionStorage`**
+  - Files: `.claude/commands/review.md`, `.claude/commands/test-gaps.md`, `.claude/commands/security-audit.md`
+  - Resolution: Replaced all 4 occurrences of `localStorage` with `sessionStorage`.
+  - Source commands: `cross-ref-check`
+
+### Database — `INSERT` Trigger on Users Table Should Be `UPDATE` Only
+
+- [x] **#195 — `update_users_changed_at` fires on `BEFORE INSERT OR UPDATE` — the INSERT trigger is unnecessary**
+  - File: `migrations/V1__initial_schema.sql` lines 149–152
+  - Resolution: Added V5 migration (`migrations/V5__trigger_and_notnull_fixes.sql`) to change trigger to `BEFORE UPDATE ON users` only.
+  - Source commands: `db-review`
+
+### Validation — No Positive-Value Validation on Item Prices
+
+- [x] **#196 — `CreateItemEntry.price` and `UpdateItemEntry.price` accept negative prices at the API layer**
+  - File: `src/models.rs` lines 276–293
+  - Resolution: Added `validate_non_negative_price` custom validator to both price fields.
+  - Source commands: `db-review`, `security-audit`
+
+### Validation — No Max Length on Text Fields
+
+- [x] **#197 — `tname`, `descr`, `title` fields have `min = 1` validation but no `max` length**
+  - File: `src/models.rs` (all Create/Update entry structs for teams, roles, items)
+  - Resolution: Added `max = 255` to `tname`, `title` fields and `max = 1000` to `descr` fields.
+  - Source commands: `security-audit`
+
+### Code Quality — `check_db` Can Only Return `Ok(true)` — Dead Code Branch
+
+- [x] **#198 — `get_health` handler's `Ok(false)` branch is unreachable**
+  - Files: `src/db/health.rs`, `src/handlers/mod.rs`
+  - Resolution: Changed `check_db` to return `Result<(), Error>` and simplified handler match.
+  - Source commands: `review`
+
+### Code Quality — Commented-Out Code in `get_health`
+
+- [x] **#199 — Dead commented-out `let client: Client = ...` line in health handler**
+  - File: `src/handlers/mod.rs`
+  - Resolution: Removed the commented-out line.
+  - Source commands: `review`
+
+### Code Quality — `validate.rs` Only Reports First Error Per Field
+
+- [x] **#200 — Multiple validation failures per field are silently dropped**
+  - File: `src/validate.rs` line 22
+  - Resolution: Changed `collect_errors` to use `flat_map` to report ALL errors per field.
+  - Source commands: `review`
+
+### Code Quality — Missing `#[must_use]` on `validate()` Function
+
+- [x] **#201 — If a caller omits `?`, validation would be silently skipped**
+  - File: `src/validate.rs` line 6
+  - Resolution: Added `#[must_use = "validation result must be checked"]`.
+  - Source commands: `review`
+
+### Database — `teamorders.teamorders_user_id` Is Nullable but Never NULL
+
+- [x] **#202 — No code path creates orders without a user, but the DB allows it**
+  - File: `migrations/V1__initial_schema.sql` line 73
+  - Resolution: Added `NOT NULL` constraint via V5 migration (`migrations/V5__trigger_and_notnull_fixes.sql`).
+  - Source commands: `db-review`
+
+### OpenAPI — `UpdateUserEntry` Has Dead `ToSchema` Derive
+
+- [x] **#203 — `UpdateUserEntry` derives `ToSchema` but is not registered in OpenAPI schemas**
+  - File: `src/models.rs`
+  - Resolution: Removed `ToSchema` derive from `UpdateUserEntry`.
+  - Source commands: `openapi-sync`
+
+### Code Quality — Admin Role Escalation Guard Duplicated Verbatim
+
+- [x] **#216 — Identical 11-line guard block in `add_team_member` and `update_member_role`**
+  - File: `src/handlers/teams.rs`
+  - Resolution: Extracted into `guard_admin_role_assignment(client, req, role_id)` helper in `handlers/mod.rs`. Both handlers now call the shared helper.
+  - Source commands: `review`
+
+### Database — `update_team_order` Has Inconsistent Partial-Update Semantics
+
+- [x] **#217 — COALESCE used only on `closed` but not on `teamorders_user_id` or `duedate`**
+  - File: `src/db/orders.rs` lines 103–104
+  - Resolution: Applied COALESCE to all three fields in the UPDATE query.
+  - Source commands: `db-review`
+
+### Practices — `add_team_member` and `update_member_role` Skip `validate(&json)?`
+
+- [x] **#218 — Two handlers accept JSON body without calling validate()**
+  - File: `src/handlers/teams.rs`
+  - Resolution: Resolved via #224 — removed `Validate` derive from models with zero validation rules. Removed `validate()` calls and unreachable 422 utoipa annotations.
+  - Source commands: `practices-audit`, `openapi-sync`
+
+### API — Three Create Handlers Missing `Location` Header
+
+- [x] **#219 — `create_team_order`, `create_order_item`, `add_team_member` return 201 without `Location` header**
+  - Files: `src/handlers/teams.rs`, `src/handlers/orders.rs`
+  - Resolution: Added `url_for`-based `Location` headers to all three handlers. Fixed `create_team_order` route name mismatch.
+  - Source commands: `api-completeness`, `review`
+
+### OpenAPI — `revoke_user_token` Documents 400 but Returns 500 on Invalid Token
+
+- [x] **#220 — utoipa annotation for `POST /auth/revoke` documents unreachable 400 response**
+  - File: `src/handlers/users.rs`
+  - Resolution: Removed the 400 response from the utoipa annotation.
+  - Source commands: `openapi-sync`
+
+### OpenAPI — `team_users` Documents Unreachable 404
+
+- [x] **#221 — utoipa annotation for `GET /api/v1.0/teams/{team_id}/users` documents 404 that never occurs**
+  - File: `src/handlers/teams.rs`
+  - Resolution: Removed the `(status = 404, ...)` line from the utoipa annotation.
+  - Source commands: `openapi-sync`
+
+### Code Quality — Missing `#[must_use]` on `requesting_user_id`
+
+- [x] **#222 — `requesting_user_id` returns `Option<Uuid>` but lacks `#[must_use]`**
+  - File: `src/handlers/mod.rs` line 23
+  - Resolution: Added `#[must_use = "caller must handle the case where no JWT claims are present"]`.
+  - Source commands: `review`
+
+### Performance — Auth Validator Redundant DashMap Lookup for TTL Eviction
+
+- [x] **#223 — Double DashMap lookup in `basic_validator` TTL-eviction path**
+  - File: `src/middleware/auth.rs` lines 341–347
+  - Resolution: Replaced with `cache.remove_if(key, |_, cached| expired(cached))` for atomic single-lookup eviction.
+  - Source commands: `review`
+
+### Validation — 4 Models Derive `Validate` with Zero Validation Rules
+
+- [x] **#224 — `CreateTeamOrderEntry`, `UpdateTeamOrderEntry`, `AddMemberEntry`, `UpdateMemberRoleEntry` have no `#[validate]` attributes**
+  - File: `src/models.rs` lines 311–338
+  - Resolution: Removed `Validate` derive from all 4 structs and corresponding `validate()` calls. Removed now-unreachable 422 utoipa annotations.
+  - Source commands: `review`, `practices-audit`
+
+### Database — `memberof.joined` Column Lacks NOT NULL Constraint
+
+- [x] **#229 — V4 hardening added NOT NULL to `created`/`changed` but missed `joined`**
+  - Files: `migrations/V1__initial_schema.sql` line 64, `migrations/V4__schema_hardening.sql`
+  - Resolution: Added NOT NULL constraint via V5 migration (`migrations/V5__trigger_and_notnull_fixes.sql`).
+  - Source commands: `db-review`
+
 ## Informational Items
 
 ### Architecture — Defence-in-Depth Notes

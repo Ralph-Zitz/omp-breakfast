@@ -22,7 +22,7 @@ You are a senior Rust developer performing a code review. Analyze the entire `sr
 2. **Reactive patterns** — Are `ReadSignal`/`WriteSignal` pairs used correctly? Are there derived signals that should use `Memo` or `derived` instead? Are signals scoped appropriately (not leaked)?
 3. **Component structure** — Is the component hierarchy well-organized? Are components too large and should be split? Are props used where signals are passed around manually?
 4. **Error handling** — Are fetch errors handled gracefully? Are `.unwrap()` calls in WASM code guarded (panics crash the WASM module)?
-5. **Client-side security** — Is localStorage access safe? Is user input sanitized before display? Are tokens handled securely?
+5. **Client-side security** — Is sessionStorage access safe? Is user input sanitized before display? Are tokens handled securely?
 6. **API integration** — Do HTTP calls match the backend's expected request/response shapes? Are API URLs consistent with backend routes?
 7. **Dead code** — Unused components, signals, or imports?
 8. **Accessibility** — Are form inputs properly labeled? Are interactive elements keyboard-accessible?

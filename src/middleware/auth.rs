@@ -348,29 +348,29 @@ pub async fn basic_validator(
             })
             .map(|cached| cached.user.clone())
     };
-    // Evict expired entry if TTL expired
-    if auth_entry.is_none()
-        && let Some(cached) = cache.get(&credentials.user_id().to_string())
-        && (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS
-    {
-        drop(cached);
-        cache.remove(&credentials.user_id().to_string());
+    // Evict expired entry in a single atomic operation (no TOCTOU gap)
+    if auth_entry.is_none() {
+        cache.remove_if(&credentials.user_id().to_string(), |_, cached| {
+            (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS
+        });
     }
     let auth_entry = match auth_entry {
         Some(entry) => entry,
         None => {
-            // Enforce max cache size before inserting
+            // Enforce max cache size before inserting — evict oldest 10%.
+            // Uses a partial sort (select_nth_unstable) for O(n) instead of O(n log n).
             if cache.len() >= CACHE_MAX_SIZE {
-                // Evict oldest entries
+                let to_remove = (CACHE_MAX_SIZE / 10).max(1);
                 let mut entries: Vec<(String, i64)> = cache
                     .iter()
                     .map(|entry| (entry.key().clone(), entry.value().cached_at.timestamp()))
                     .collect();
-                entries.sort_by_key(|(_, ts)| *ts);
-                // Remove oldest 10% to avoid evicting on every request
-                let to_remove = (CACHE_MAX_SIZE / 10).max(1);
-                for (key, _) in entries.into_iter().take(to_remove) {
-                    cache.remove(&key);
+                if entries.len() > to_remove {
+                    entries.select_nth_unstable_by_key(to_remove - 1, |(_, ts)| *ts);
+                    entries.truncate(to_remove);
+                }
+                for (key, _) in &entries {
+                    cache.remove(key);
                 }
             }
             match get_user_by_email(&client, credentials.user_id()).await {

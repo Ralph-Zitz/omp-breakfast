@@ -86,12 +86,11 @@ async fn seed_role_id(client: &deadpool_postgres::Client, title: &str) -> Uuid {
 
 #[actix_web::test]
 #[ignore]
-async fn check_db_returns_true() {
+async fn check_db_succeeds() {
     let client = test_client().await;
-    let result = db::check_db(&client)
+    db::check_db(&client)
         .await
-        .expect("check_db should succeed");
-    assert!(result, "check_db should return true on a healthy DB");
+        .expect("check_db should succeed on a healthy DB");
 }
 
 // ===========================================================================

@@ -2,13 +2,13 @@ use crate::{
     db,
     errors::{Error, ErrorResponse},
     handlers::*,
-    middleware::auth::ROLE_ADMIN,
     models::*,
     validate::validate,
 };
 use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
 };
+use deadpool_postgres::Client;
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -146,7 +146,6 @@ pub async fn update_team(
     responses(
         (status = 200, description = "List of Users in the Team", body = [UsersInTeam]),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
-        (status = 404, description = "No users found", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team")
@@ -215,7 +214,6 @@ pub async fn get_team_order(
         (status = 201, description = "Order created", body = TeamOrderEntry),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
-        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team")
@@ -229,12 +227,18 @@ pub async fn create_team_order(
     json: Json<CreateTeamOrderEntry>,
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
-    validate(&json)?;
     let tid = team_id.into_inner();
     let client: Client = get_client(&state.pool).await?;
     require_team_member(&client, &req, tid).await?;
     let order = db::create_team_order(&client, tid, json.into_inner()).await?;
-    Ok(HttpResponse::Created().json(order))
+    let mut response = HttpResponse::Created();
+    if let Ok(url) = req.url_for(
+        "/teams/team_id/order_id",
+        [tid.to_string(), order.teamorders_id.to_string()],
+    ) {
+        response.append_header((header::LOCATION, url.as_str().to_owned()));
+    }
+    Ok(response.json(order))
 }
 
 #[utoipa::path(
@@ -304,7 +308,6 @@ pub async fn delete_team_orders(
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
         (status = 404, description = "Order not found", body = ErrorResponse),
-        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team"),
@@ -319,7 +322,6 @@ pub async fn update_team_order(
     json: Json<UpdateTeamOrderEntry>,
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
-    validate(&json)?;
     let (team_id, order_id) = path.into_inner();
     let client: Client = get_client(&state.pool).await?;
     require_team_member(&client, &req, team_id).await?;
@@ -355,22 +357,17 @@ pub async fn add_team_member(
     let member = json.into_inner();
     let mut client: Client = get_client(&state.pool).await?;
     require_team_admin(&client, &req, tid).await?;
-
-    // Prevent Team Admins from assigning the global Admin role.
-    // Only global Admins may grant Admin privileges.
-    let requester_id = requesting_user_id(&req)
-        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
-    if !db::is_admin(&client, requester_id).await? {
-        let role = db::get_role(&client, member.role_id).await?;
-        if role.title == ROLE_ADMIN {
-            return Err(Error::Forbidden(
-                "Only global Admins can assign the Admin role".to_string(),
-            ));
-        }
-    }
+    guard_admin_role_assignment(&client, &req, member.role_id).await?;
 
     let result = db::add_team_member(&mut client, tid, member.user_id, member.role_id).await?;
-    Ok(HttpResponse::Created().json(result))
+    let mut response = HttpResponse::Created();
+    if let Ok(url) = req.url_for(
+        "/teams/team_id/users/user_id",
+        [tid.to_string(), member.user_id.to_string()],
+    ) {
+        response.append_header((header::LOCATION, url.as_str().to_owned()));
+    }
+    Ok(response.json(result))
 }
 
 #[utoipa::path(
@@ -414,7 +411,6 @@ pub async fn remove_team_member(
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden - team admin role required", body = ErrorResponse),
         (status = 404, description = "Member not found in team", body = ErrorResponse),
-        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team"),
@@ -433,19 +429,7 @@ pub async fn update_member_role(
     let role_id = json.into_inner().role_id;
     let mut client: Client = get_client(&state.pool).await?;
     require_team_admin(&client, &req, team_id).await?;
-
-    // Prevent Team Admins from assigning the global Admin role.
-    // Only global Admins may grant Admin privileges.
-    let requester_id = requesting_user_id(&req)
-        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
-    if !db::is_admin(&client, requester_id).await? {
-        let role = db::get_role(&client, role_id).await?;
-        if role.title == ROLE_ADMIN {
-            return Err(Error::Forbidden(
-                "Only global Admins can assign the Admin role".to_string(),
-            ));
-        }
-    }
+    guard_admin_role_assignment(&client, &req, role_id).await?;
 
     let result = db::update_member_role(&mut client, team_id, user_id, role_id).await?;
     Ok(HttpResponse::Ok().json(result))

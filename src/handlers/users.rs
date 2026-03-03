@@ -126,7 +126,6 @@ pub async fn refresh_token(
     request_body = TokenRequest,
     responses(
         (status = 200, description = "Token revoked successfully", body = RevokedResponse),
-        (status = 400, description = "Invalid token", body = ErrorResponse),
         (status = 403, description = "Forbidden - cannot revoke another user's token", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),

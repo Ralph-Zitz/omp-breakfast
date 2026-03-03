@@ -45,9 +45,9 @@ You are a security engineer reviewing a Rust web API with a Leptos WebAssembly f
 ### Areas to audit — Frontend (`frontend/src/`)
 
 1. **Token storage**
-   - Is `localStorage` the right choice for JWT storage? (vs. `sessionStorage`, HttpOnly cookies, or in-memory only)
+   - Is `sessionStorage` the right choice for JWT storage? (vs. HttpOnly cookies or in-memory only)
    - Is the token cleared on logout? On tab close? On session expiry?
-   - Could an XSS attack read the token from `localStorage`?
+   - Could an XSS attack read the token from `sessionStorage`?
 
 2. **Cross-Site Scripting (XSS)**
    - Are user-supplied values (usernames, team names) rendered safely or is raw HTML insertion used?

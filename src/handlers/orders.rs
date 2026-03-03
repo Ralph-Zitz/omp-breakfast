@@ -5,7 +5,9 @@ use crate::{
     models::*,
     validate::validate,
 };
-use actix_web::{HttpRequest, HttpResponse, Responder, web::Data, web::Json, web::Path};
+use actix_web::{
+    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
+};
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -88,7 +90,18 @@ pub async fn create_order_item(
     let mut client: Client = get_client(&state.pool).await?;
     require_team_member(&client, &req, team_id).await?;
     let order = db::create_order_item(&mut client, order_id, team_id, json.into_inner()).await?;
-    Ok(HttpResponse::Created().json(order))
+    let mut response = HttpResponse::Created();
+    if let Ok(url) = req.url_for(
+        "/teams/team_id/orders/order_id/items/item_id",
+        [
+            team_id.to_string(),
+            order_id.to_string(),
+            order.orders_item_id.to_string(),
+        ],
+    ) {
+        response.append_header((header::LOCATION, url.as_str().to_owned()));
+    }
+    Ok(response.json(order))
 }
 
 #[utoipa::path(

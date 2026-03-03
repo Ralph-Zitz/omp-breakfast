@@ -27,7 +27,7 @@ You are a QA engineer specializing in Rust. Examine the entire codebase — back
    - **Component rendering** — Are all components tested for correct HTML output?
    - **Signal reactivity** — Are state transitions tested (e.g., page switching, error state changes)?
    - **Edge cases** — Empty responses, malformed JSON, network timeouts, expired tokens
-   - **Auth flow** — Is token refresh tested? Is localStorage full/unavailable tested?
+   - **Auth flow** — Is token refresh tested? Is sessionStorage full/unavailable tested?
    - **Validation** — Are all client-side validation rules tested (whitespace-only input, very long input)?
    - **Accessibility** — Are ARIA attributes and form labels verified in tests?
 4. **Suggest WASM tests** — For each gap, write out a `#[wasm_bindgen_test]` function skeleton following the existing mock pattern (override `window.fetch` via `js_sys::eval`)

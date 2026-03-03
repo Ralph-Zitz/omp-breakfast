@@ -4,7 +4,7 @@ pub mod roles;
 pub mod teams;
 pub mod users;
 
-use crate::middleware::auth::ROLE_TEAM_ADMIN;
+use crate::middleware::auth::{ROLE_ADMIN, ROLE_TEAM_ADMIN};
 use crate::{db, errors::Error, models::*};
 use actix_web::{HttpMessage, HttpRequest, HttpResponse, Responder, web::Data};
 use deadpool_postgres::{Client, Pool};
@@ -20,6 +20,7 @@ pub async fn get_client(pool: &Pool) -> Result<Client, Error> {
 }
 
 /// Extract the requesting user's ID from JWT claims in request extensions.
+#[must_use = "caller must handle the case where no JWT claims are present"]
 pub fn requesting_user_id(req: &HttpRequest) -> Option<Uuid> {
     req.extensions().get::<Claims>().map(|c| c.sub)
 }
@@ -135,6 +136,29 @@ pub async fn require_self_or_admin_or_team_admin(
     Err(Error::Forbidden(
         "You can only modify your own account, or must be an admin of a shared team".to_string(),
     ))
+}
+
+/// Guard against non-admin users assigning the global Admin role.
+///
+/// Team Admins may assign any role *except* Admin. Only global Admins may
+/// grant Admin privileges. Call this after `require_team_admin` in handlers
+/// that accept a role assignment.
+pub async fn guard_admin_role_assignment(
+    client: &Client,
+    req: &HttpRequest,
+    role_id: Uuid,
+) -> Result<(), Error> {
+    let requester_id = requesting_user_id(req)
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
+    if !db::is_admin(client, requester_id).await? {
+        let role = db::get_role(client, role_id).await?;
+        if role.title == ROLE_ADMIN {
+            return Err(Error::Forbidden(
+                "Only global Admins can assign the Admin role".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -286,17 +310,11 @@ mod tests {
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn get_health(state: Data<State>) -> Result<impl Responder, Error> {
-    //    let client: Client = get_client(state.pool.clone()).await?;
     let Ok(client) = get_client(&state.pool).await else {
         return Ok(HttpResponse::ServiceUnavailable().json(StatusResponse { up: false }));
     };
-    let result = db::check_db(&client).await;
-
-    result.map(|ok| {
-        if ok {
-            HttpResponse::Ok().json(StatusResponse { up: true })
-        } else {
-            HttpResponse::ServiceUnavailable().json(StatusResponse { up: false })
-        }
-    })
+    match db::check_db(&client).await {
+        Ok(()) => Ok(HttpResponse::Ok().json(StatusResponse { up: true })),
+        Err(_) => Ok(HttpResponse::ServiceUnavailable().json(StatusResponse { up: false })),
+    }
 }

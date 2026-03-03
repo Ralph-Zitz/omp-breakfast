@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-03
+Last assessed: 2026-03-04
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -82,14 +82,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Conditionally register the Swagger UI scope only when `ENV != production`, or gate behind admin auth.
   - Source commands: `security-audit`
 
-### Performance — Auth Cache Eviction Is O(n log n)
-
-- [ ] **#113 — Cache eviction sorts all entries on every miss at capacity**
-  - File: `src/middleware/auth.rs` lines 352–365
-  - Problem: When the cache is full (1000 entries), every miss collects all entries into a `Vec`, sorts by timestamp, and removes the oldest 10%. This is O(n log n) per miss.
-  - Fix: Use a proper LRU data structure (e.g., `lru` crate) or a min-heap.
-  - Source commands: `review`
-
 ### Documentation — Frontend Test Category Breakdown Sums to 21, Not 23
 
 - [ ] **#163 — CLAUDE.md test category breakdown omits 2 token refresh tests**
@@ -97,151 +89,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Problem: 8 categories total 4+3+3+3+2+1+2+3 = 21, but 23 WASM tests exist. Missing: `test_authed_get_retries_after_401_with_token_refresh` and `test_authed_get_double_failure_falls_back_to_login`.
   - Fix: Add "Token refresh (2 tests)" category to the breakdown.
   - Source commands: `cross-ref-check`
-
-### Documentation — 4 Stale `localStorage` References in Command Files
-
-- [ ] **#194 — Command files reference `localStorage` but the project uses `sessionStorage`**
-  - Files: `.claude/commands/review.md` line 25, `.claude/commands/test-gaps.md` line 30, `.claude/commands/security-audit.md` lines 48 and 50
-  - Problem: Four references to `localStorage` in command instructions are stale — the project uses `sessionStorage` for token storage.
-  - Fix: Replace all 4 occurrences of `localStorage` with `sessionStorage`.
-  - Source commands: `cross-ref-check`
-
-### Database — `INSERT` Trigger on Users Table Should Be `UPDATE` Only
-
-- [ ] **#195 — `update_users_changed_at` fires on `BEFORE INSERT OR UPDATE` — the INSERT trigger is unnecessary**
-  - File: `migrations/V1__initial_schema.sql` lines 149–152
-  - Problem: The trigger fires on INSERT where `OLD` is NULL, but `ROW(NEW.*) IS DISTINCT FROM ROW(OLD.*)` works "by accident" since NULL comparisons. The INSERT path is redundant because `DEFAULT CURRENT_TIMESTAMP` already sets `changed` on insert. All other tables' triggers are `BEFORE UPDATE` only.
-  - Fix: Add a new migration to change the trigger to `BEFORE UPDATE ON users` only.
-  - Source commands: `db-review`
-
-### Validation — No Positive-Value Validation on Item Prices
-
-- [ ] **#196 — `CreateItemEntry.price` and `UpdateItemEntry.price` accept negative prices at the API layer**
-  - File: `src/models.rs` lines 276–293
-  - Problem: `price: rust_decimal::Decimal` has no validation. The DB has `CHECK (price >= 0)` but negative prices from the API would only be caught at the DB layer with an unfriendly error.
-  - Fix: Add a custom validator ensuring `price >= 0`, or document the DB constraint as the sole enforcement point.
-  - Source commands: `db-review`, `security-audit`
-
-### Validation — No Max Length on Text Fields
-
-- [ ] **#197 — `tname`, `descr`, `title` fields have `min = 1` validation but no `max` length**
-  - File: `src/models.rs` (all Create/Update entry structs for teams, roles, items)
-  - Problem: Text fields backed by PostgreSQL `text` type have no upper bound. A client could submit arbitrarily long strings.
-  - Fix: Add `max = 255` (or another reasonable limit) to the `#[validate(length(...))]` attributes.
-  - Source commands: `security-audit`
-
-### Code Quality — `check_db` Can Only Return `Ok(true)` — Dead Code Branch
-
-- [ ] **#198 — `get_health` handler's `Ok(false)` branch is unreachable**
-  - Files: `src/db/health.rs` lines 4–12, `src/handlers/mod.rs` lines 289–303
-  - Problem: `check_db` does `.map(|_| true)` on success and `.map_err(Error::Db)` on error, so it never returns `Ok(false)`. The handler's `else` branch (503) is dead code.
-  - Fix: Change `check_db` to return `Result<(), Error>` or simplify the handler's match.
-  - Source commands: `review`
-
-### Code Quality — Commented-Out Code in `get_health`
-
-- [ ] **#199 — Dead commented-out `let client: Client = ...` line in health handler**
-  - File: `src/handlers/mod.rs` line 290
-  - Problem: Dead code.
-  - Fix: Remove the line.
-  - Source commands: `review`
-
-### Code Quality — `validate.rs` Only Reports First Error Per Field
-
-- [ ] **#200 — Multiple validation failures per field are silently dropped**
-  - File: `src/validate.rs` line 22
-  - Problem: `error.1[0]` takes only the first validation error for each field. If a field has both "too short" and "invalid format" errors, only one is returned.
-  - Fix: Iterate over all errors in `error.1` or document the behavior.
-  - Source commands: `review`
-
-### Code Quality — Missing `#[must_use]` on `validate()` Function
-
-- [ ] **#201 — If a caller omits `?`, validation would be silently skipped**
-  - File: `src/validate.rs` line 6
-  - Problem: Returns `Result<(), Error>` but isn't marked `#[must_use]`.
-  - Fix: Add `#[must_use = "validation result must be checked"]`.
-  - Source commands: `review`
-
-### Database — `teamorders.teamorders_user_id` Is Nullable but Never NULL
-
-- [ ] **#202 — No code path creates orders without a user, but the DB allows it**
-  - File: `migrations/V1__initial_schema.sql` line 73
-  - Problem: `teamorders_user_id` is nullable. No handler creates orders without setting this field. If a NULL-user order is somehow created, it would be orphaned.
-  - Fix: Add `NOT NULL` constraint via a new migration, or document why NULL is valid.
-  - Source commands: `db-review`
-
-### Code Quality — Admin Role Escalation Guard Duplicated Verbatim
-
-- [ ] **#216 — Identical 11-line guard block in `add_team_member` and `update_member_role`**
-  - File: `src/handlers/teams.rs` lines 361–371 and lines 439–449
-  - Problem: Both handlers contain identical code that prevents Team Admins from assigning the global Admin role (checks `is_admin`, then `get_role`, then rejects if `role.title == ROLE_ADMIN`).
-  - Fix: Extract into a helper `guard_admin_role_assignment(client, req, role_id)` in `handlers/mod.rs`.
-  - Source commands: `review`
-
-### Database — `update_team_order` Has Inconsistent Partial-Update Semantics
-
-- [ ] **#217 — COALESCE used only on `closed` but not on `teamorders_user_id` or `duedate`**
-  - File: `src/db/orders.rs` lines 103–104
-  - Problem: The UPDATE query sets `teamorders_user_id = $1, duedate = $2, closed = COALESCE($3, closed)`. The `closed` field preserves current value when NULL, but `teamorders_user_id` and `duedate` are overwritten unconditionally. If a client sends `{"closed": true}` without resending `teamorders_user_id` and `duedate`, those fields are silently set to NULL — data loss. All three fields are `Option` in `UpdateTeamOrderEntry`, suggesting partial-update intent.
-  - Fix: Apply COALESCE to all three: `SET teamorders_user_id = COALESCE($1, teamorders_user_id), duedate = COALESCE($2, duedate), closed = COALESCE($3, closed)`.
-  - Source commands: `db-review`
-
-### Practices — `add_team_member` and `update_member_role` Skip `validate(&json)?`
-
-- [ ] **#218 — Two handlers accept JSON body without calling validate(), violating project convention**
-  - File: `src/handlers/teams.rs` lines 355 (`add_team_member`), 432 (`update_member_role`)
-  - Problem: Both handlers call `json.into_inner()` without prior `validate(&json)?`. Both model structs (`AddMemberEntry`, `UpdateMemberRoleEntry`) derive `Validate`. Per CLAUDE.md: "Validation uses `validate(&json)?` before any DB call." 12 of 14 JSON-accepting handlers follow this convention. Additionally, `update_member_role`'s utoipa annotation documents `(status = 422, description = "Validation error")` which can never be produced.
-  - Fix: Add `validate(&json)?;` before `json.into_inner()` in both handlers. Add 422 response to `add_team_member`'s utoipa annotation.
-  - Source commands: `practices-audit`, `openapi-sync`
-
-### API — Three Create Handlers Missing `Location` Header
-
-- [ ] **#219 — `create_team_order`, `create_order_item`, `add_team_member` return 201 without `Location` header**
-  - Files: `src/handlers/teams.rs` line 246 (`create_team_order`), `src/handlers/orders.rs` line 91 (`create_order_item`), `src/handlers/teams.rs` line 376 (`add_team_member`)
-  - Problem: These three handlers return `HttpResponse::Created().json(...)` without a `Location` header. The other four create handlers (`create_user`, `create_team`, `create_item`, `create_role`) all build a `Location` header via `req.url_for()`. This inconsistency violates RFC 7231 §6.3.2.
-  - Fix: Add `url_for`-based `Location` headers matching the pattern in existing create handlers.
-  - Note: Corrects characterization in #178 which stated "All create handlers build `Location` header" — only 4 of 7 do.
-  - Source commands: `api-completeness`, `review`
-
-### OpenAPI — `revoke_user_token` Documents 400 but Returns 500 on Invalid Token
-
-- [ ] **#220 — utoipa annotation for `POST /auth/revoke` documents unreachable 400 response**
-  - File: `src/handlers/users.rs` line 130 (utoipa annotation)
-  - Problem: The annotation documents `(status = 400, description = "Invalid token")`. However, when `verify_jwt()` fails on the submitted token, it returns `Error::Jwt` which maps to HTTP 500. The documented 400 can never occur.
-  - Fix: Either remove the 400 response from the utoipa annotation, or catch the JWT validation error and return 400.
-  - Source commands: `openapi-sync`
-
-### OpenAPI — `team_users` Documents Unreachable 404
-
-- [ ] **#221 — utoipa annotation for `GET /api/v1.0/teams/{team_id}/users` documents 404 that never occurs**
-  - File: `src/handlers/teams.rs` line 163 (utoipa annotation)
-  - Problem: The handler always returns `HttpResponse::Ok().json(users)`, even for an empty array. CLAUDE.md states `get_team_users` returns an empty `[]` (200 OK). The 404 annotation is misleading.
-  - Fix: Remove the `(status = 404, ...)` line from the utoipa annotation.
-  - Source commands: `openapi-sync`
-
-### Code Quality — Missing `#[must_use]` on `requesting_user_id`
-
-- [ ] **#222 — `requesting_user_id` returns `Option<Uuid>` but lacks `#[must_use]`**
-  - File: `src/handlers/mod.rs` line 23
-  - Problem: If a caller writes `requesting_user_id(&req);` without binding the result, the JWT subject is silently discarded. All current call sites are correct, but there's no compiler guard.
-  - Fix: Add `#[must_use = "caller must handle the case where no JWT claims are present"]`.
-  - Source commands: `review`
-
-### Performance — Auth Validator Redundant DashMap Lookup for TTL Eviction
-
-- [ ] **#223 — Double DashMap lookup in `basic_validator` TTL-eviction path**
-  - File: `src/middleware/auth.rs` lines 341–347
-  - Problem: After the initial `cache.get().filter(TTL check)` returns `None`, the code does a second `cache.get()` to check TTL-expired, drops the guard, then calls `cache.remove()` — two extra lookups and a TOCTOU gap.
-  - Fix: Use `cache.remove_if(key, |_, cached| expired(cached))` or restructure to capture the TTL decision in the initial lookup.
-  - Source commands: `review`
-
-### Validation — 4 Models Derive `Validate` with Zero Validation Rules
-
-- [ ] **#224 — `CreateTeamOrderEntry`, `UpdateTeamOrderEntry`, `AddMemberEntry`, `UpdateMemberRoleEntry` have no `#[validate]` attributes**
-  - File: `src/models.rs` lines 311–338
-  - Problem: Handlers call `validate(&json)?` (or should — see #218) on these structs, but validation always succeeds because no rules are defined. This gives a false sense of input validation.
-  - Fix: Either add meaningful validation rules or remove the `Validate` derive and corresponding `validate()` calls.
-  - Source commands: `review`, `practices-audit`
 
 ### Frontend — Login Shows "Invalid Credentials" for All Non-2xx Errors
 
@@ -274,14 +121,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Problem: Since it's already a runtime dependency (used in `app.rs` for `js_sys::Date::now()`), the `[dev-dependencies]` entry is redundant.
   - Fix: Remove `js-sys = "0.3"` from `[dev-dependencies]`.
   - Source commands: `dependency-check`
-
-### Database — `memberof.joined` Column Lacks NOT NULL Constraint
-
-- [ ] **#229 — V4 hardening added NOT NULL to `created`/`changed` but missed `joined`**
-  - Files: `migrations/V1__initial_schema.sql` line 64, `migrations/V4__schema_hardening.sql`
-  - Problem: `joined` has `DEFAULT CURRENT_TIMESTAMP` like other timestamp columns but was not hardened with NOT NULL in V4. A direct INSERT with explicit NULL would succeed.
-  - Fix: Add a V5 migration: `UPDATE memberof SET joined = CURRENT_TIMESTAMP WHERE joined IS NULL; ALTER TABLE memberof ALTER COLUMN joined SET NOT NULL;`.
-  - Source commands: `db-review`
 
 ## Informational Items
 
@@ -508,14 +347,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Source commands: `review`
   - Action: Read port from environment or config.
 
-### OpenAPI — `UpdateUserEntry` Has Dead `ToSchema` Derive
-
-- [ ] **#203 — `UpdateUserEntry` derives `ToSchema` but is not registered in OpenAPI schemas and is not used by any handler**
-  - File: `src/models.rs` lines 93–131
-  - Problem: Superseded by `UpdateUserRequest` but still compiled with `ToSchema` derive.
-  - Source commands: `openapi-sync`
-  - Action: Remove `ToSchema` derive, or remove `UpdateUserEntry` entirely if not needed for internal use.
-
 ### Testing — Bulk Delete Team Orders Has No API Test
 
 - [ ] **#204 — `DELETE /api/v1.0/teams/{id}/orders` RBAC and response untested at API level**
@@ -676,5 +507,5 @@ See that file for the full history of resolved findings.
 - RBAC enforcement is correct across all handlers per the policy table.
 - OpenAPI spec is synchronized with routes (41 operations), with 2 minor annotation inaccuracies (#220, #221).
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 blocked), 0 important, 32 minor, 39 informational. Total: 72 open items.
-- 125 resolved items in `.claude/resolved-findings.md`.
+- Open items summary: 1 critical (#132 blocked), 0 important, 11 minor, 39 informational. Total: 51 open items.
+- 146 resolved items in `.claude/resolved-findings.md`.

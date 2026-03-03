@@ -90,7 +90,7 @@ pub struct UserEntry {
     pub changed: DateTime<Utc>,
 }
 
-#[derive(Deserialize, Serialize, Clone, Validate, ToSchema)]
+#[derive(Deserialize, Serialize, Clone, Validate)]
 pub struct UpdateUserEntry {
     pub user_id: Uuid,
     #[validate(length(
@@ -207,13 +207,18 @@ pub struct TeamEntry {
     pub changed: DateTime<Utc>,
 }
 
-#[derive(Deserialize, Serialize, Clone, Validate, Debug, ToSchema)]
+#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct CreateTeamEntry {
     #[validate(length(
         min = 1,
-        message = "tname is required and must be at least 1 character"
+        max = 255,
+        message = "tname is required and must be between 1 and 255 characters"
     ))]
     pub tname: String,
+    #[validate(length(
+        max = 1000,
+        message = "descr must not exceed 1000 characters"
+    ))]
     pub descr: Option<String>,
 }
 
@@ -221,9 +226,14 @@ pub struct CreateTeamEntry {
 pub struct UpdateTeamEntry {
     #[validate(length(
         min = 1,
-        message = "tname is required and must be at least 1 character"
+        max = 255,
+        message = "tname is required and must be between 1 and 255 characters"
     ))]
     pub tname: String,
+    #[validate(length(
+        max = 1000,
+        message = "descr must not exceed 1000 characters"
+    ))]
     pub descr: Option<String>,
 }
 
@@ -247,7 +257,8 @@ pub struct RoleEntry {
 pub struct CreateRoleEntry {
     #[validate(length(
         min = 1,
-        message = "title is required and must be at least 1 character"
+        max = 255,
+        message = "title is required and must be between 1 and 255 characters"
     ))]
     pub title: String,
 }
@@ -256,7 +267,8 @@ pub struct CreateRoleEntry {
 pub struct UpdateRoleEntry {
     #[validate(length(
         min = 1,
-        message = "title is required and must be at least 1 character"
+        max = 255,
+        message = "title is required and must be between 1 and 255 characters"
     ))]
     pub title: String,
 }
@@ -276,9 +288,11 @@ pub struct ItemEntry {
 pub struct CreateItemEntry {
     #[validate(length(
         min = 1,
-        message = "descr is required and must be at least 1 character"
+        max = 255,
+        message = "descr is required and must be between 1 and 255 characters"
     ))]
     pub descr: String,
+    #[validate(custom(function = "validate_non_negative_price"))]
     pub price: rust_decimal::Decimal,
 }
 
@@ -286,10 +300,23 @@ pub struct CreateItemEntry {
 pub struct UpdateItemEntry {
     #[validate(length(
         min = 1,
-        message = "descr is required and must be at least 1 character"
+        max = 255,
+        message = "descr is required and must be between 1 and 255 characters"
     ))]
     pub descr: String,
+    #[validate(custom(function = "validate_non_negative_price"))]
     pub price: rust_decimal::Decimal,
+}
+
+fn validate_non_negative_price(
+    price: &rust_decimal::Decimal,
+) -> Result<(), validator::ValidationError> {
+    if *price < rust_decimal::Decimal::ZERO {
+        let mut err = validator::ValidationError::new("price");
+        err.message = Some("price must be zero or positive".into());
+        return Err(err);
+    }
+    Ok(())
 }
 
 // ── Team order models ───────────────────────────────────────────────────────
