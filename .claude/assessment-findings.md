@@ -30,30 +30,6 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
 
 ## Minor Items
 
-### Code Quality — Dead S3 Config Fields
-
-- [x] **#59 — `s3_key_id` and `s3_key_secret` are loaded and stored but never used**
-  - Files: `src/models.rs` (`State` struct), `src/config.rs` (`ServerConfig` struct), `src/server.rs` (state construction), `config/default.yml`, `config/development.yml`, `config/production.yml`
-  - Problem: The `s3_key_id` and `s3_key_secret` fields are defined in `ServerConfig`, loaded from config files, stored in `State`, and propagated through all test helpers, but no handler, middleware, or DB function ever reads them.
-  - Fix: Either remove the fields entirely or document the intent in CLAUDE.md's Unfinished Work section.
-  - Source commands: `review`, `practices-audit`
-
-### Code Quality — Dead `database.url` Config Field
-
-- [x] **#68 — `database.url` field in `Settings` is configured but unused**
-  - Files: `src/config.rs` (`Database` struct with `#[allow(dead_code)]`), `config/default.yml`, `config/development.yml`
-  - Problem: The `Database` struct contains a single `url` field marked `#[allow(dead_code)]`. The DB pool is created from the `pg.*` config fields.
-  - Fix: Remove the `Database` struct and its `database` field from `Settings`. Remove `database:` sections from config files.
-  - Source commands: `review`, `practices-audit`
-
-### Security — Seed Data Uses Hardcoded Argon2 Salt
-
-- [x] **#70 — All seed users share the same Argon2 hash with a hardcoded salt**
-  - File: `database_seed.sql`
-  - Problem: All 5 seed users have identical Argon2id password hashes. While dev-only, this creates risk if accidentally run against production.
-  - Fix: Add a prominent `-- WARNING: DO NOT RUN IN PRODUCTION` comment at the top.
-  - Source commands: `security-audit`, `db-review`
-
 ### Frontend — All Components in Single `app.rs` File
 
 - [ ] **#71 — Frontend `app.rs` is a 600+ line monolith**
@@ -61,22 +37,6 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
   - Problem: The entire frontend lives in a single file. As planned pages are built, this will become unmanageable.
   - Fix: Split into module structure when building the next frontend page.
   - Source commands: `review`, `practices-audit`
-
-### Security — No Account Lockout After Failed Auth Attempts
-
-- [x] **#73 — Failed authentication is rate-limited but no lockout policy exists**
-  - Files: `src/routes.rs`, `src/handlers/users.rs`
-  - Problem: The `/auth` endpoint has rate limiting but no account-level lockout after N consecutive failures.
-  - Fix: Track failed login attempts per email. Lock after threshold (e.g., 5 failures in 15 minutes).
-  - Source commands: `security-audit`
-
-### Deployment — Production Config Has Placeholder Hostname
-
-- [x] **#75 — `config/production.yml` uses `pick.a.proper.hostname` as the PG host**
-  - File: `config/production.yml`
-  - Problem: Placeholder string with no startup validation catch.
-  - Fix: Add a startup check similar to the secret-validation panic.
-  - Source commands: `practices-audit`, `review`
 
 ### Security — Swagger UI Exposed in Production
 
