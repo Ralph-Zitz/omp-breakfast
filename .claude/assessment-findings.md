@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-02
+Last assessed: 2026-03-03
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -22,6 +22,72 @@ This file is **generated and maintained by the project assessment process** defi
   - Attempted fix: Changed `features = ["rust_crypto"]` to `features = ["hmac", "sha2"]`. This compiled but all JWT tests failed at runtime: jsonwebtoken 10.x requires either `rust_crypto` or `aws_lc_rs` to auto-install a `CryptoProvider`. The granular `hmac`/`sha2` features do not register a provider, causing `"Could not automatically determine the process-level CryptoProvider"` errors. Manual `CryptoProvider::install_default()` calls would be needed, which is invasive.
   - Status: **Blocked on upstream.** Requires `jsonwebtoken` to either support granular features with auto-provider registration, or to split the `rust_crypto` feature so HS-only usage doesn't pull RSA/EC crates. Reverted to `features = ["rust_crypto"]`.
   - Source commands: `dependency-check`
+
+### RBAC — Privilege Escalation via Team Admin Role Assignment
+
+- [ ] **#186 — Team Admin can assign the "Admin" role, escalating any user to global superuser**
+  - Files: `src/handlers/teams.rs` (`add_team_member` ~L358, `update_member_role` ~L434)
+  - Problem: Both handlers accept an arbitrary `role_id` from the request body, guarded only by `require_team_admin`. There is no validation that a Team Admin cannot assign the "Admin" role. Attack path: (1) `GET /api/v1.0/roles` → obtain UUID of "Admin" role, (2) `PUT /api/v1.0/teams/{team_id}/users/{self}` with `{"role_id": "<admin-role-uuid>"}` → self-promote to global Admin. Since `is_admin` checks for "Admin" role in **any** team, this grants full superuser access.
+  - Fix: In both `add_team_member` and `update_member_role`, when the requester is a Team Admin (not a global Admin), fetch the role by `role_id` and reject with `Error::Forbidden` if `role.title == ROLE_ADMIN`. Only global Admins should be able to assign the Admin role.
+  - Source commands: `rbac-rules`
+
+## Important Items
+
+### Database — `get_team_order` returns 500 instead of 404
+
+- [ ] **#187 — `get_team_order` uses `query_one` instead of `query_opt` — missing orders return 500 Internal Server Error**
+  - File: `src/db/orders.rs` line 58
+  - Problem: All other single-record GET functions (`get_user`, `get_team`, `get_role`, `get_item`, `get_order_item`) use `query_opt` + `.ok_or_else(|| Error::NotFound(...))`. `get_team_order` uses `query_one`, which returns a raw `tokio_postgres::Error` on no rows, mapped to `Error::Db` → HTTP 500. The OpenAPI spec promises a 404 response.
+  - Fix: Replace `query_one` with `query_opt`, then `ok_or_else(|| Error::NotFound("Team order not found".into()))`, then `.map(TeamOrderEntry::from_row)?.map_err(Error::DbMapper)`.
+  - Source commands: `db-review`, `review`
+
+### Database — `update_user` returns 500 instead of 404
+
+- [ ] **#188 — Both branches of `update_user` use `query_one` — missing users return 500**
+  - File: `src/db/users.rs` lines 124–146
+  - Problem: `update_user` has two branches (with password update and without). Both use `query_one`. If the `user_id` doesn't match any row, it returns a raw DB error (500) instead of a clean 404.
+  - Fix: Switch both branches to `query_opt` + `ok_or_else(|| Error::NotFound("User not found".into()))`.
+  - Source commands: `db-review`, `review`
+
+### Dead Code — `State.secret` field stored but never read
+
+- [ ] **#189 — `State.secret` is loaded from config and stored but never accessed after construction**
+  - File: `src/models.rs` line 58, `src/server.rs` line 350
+  - Problem: The `secret` field is stored in `State` via `settings.server.secret.clone()`, but `state.secret` is never read by any handler, middleware, or DB function. Only `settings.server.secret` is used during startup validation. The `#[allow(dead_code)]` on `State` masks the warning.
+  - Fix: Remove the `secret` field from `State` and its construction in `server.rs`. If it's reserved for future use, add a `// TODO:` comment explaining the intent.
+  - Source commands: `practices-audit`
+
+### Documentation — CLAUDE.md Project Structure tree missing V4 migration
+
+- [ ] **#190 — `V4__schema_hardening.sql` exists on disk but is missing from the Project Structure tree**
+  - File: `CLAUDE.md` (Project Structure section, migrations block)
+  - Problem: The file tree only shows V1–V3 migrations. V4 was added but the tree was not updated.
+  - Fix: Add `V4__schema_hardening.sql – Schema hardening migration` to the migrations section of the tree.
+  - Source commands: `cross-ref-check`, `practices-audit`
+
+### Documentation — `api-completeness.md` migration enumeration excludes V4
+
+- [ ] **#191 — `api-completeness.md` line 7 enumerates V1–V3 as exhaustive, implying V4 doesn't exist**
+  - File: `.claude/commands/api-completeness.md` line 7
+  - Problem: The parenthetical "(V1 schema, V2 UUID defaults, V3 indexes/constraints — the authoritative schema)" reads as a complete list, but V4 is not mentioned.
+  - Fix: Update to include V4, or use generic wording: "all migration files in `migrations/` — the authoritative schema".
+  - Source commands: `cross-ref-check`
+
+### Code Quality — Argon2 hasher duplicated in two places
+
+- [ ] **#192 — Identical `Argon2::new(Algorithm::Argon2id, Version::V0x13, Params::default())` appears in two files**
+  - Files: `src/db/users.rs` lines 14–16 (`argon2_hasher()` private fn), `src/middleware/auth.rs` lines 404–408 (inline construction)
+  - Problem: If Argon2 parameters are changed in one place but not the other, password verification breaks silently.
+  - Fix: Extract `argon2_hasher()` to a shared location (e.g., `src/lib.rs` or a new `src/crypto.rs`) and use it in both `db/users.rs` and `middleware/auth.rs`.
+  - Source commands: `review`
+
+### Validation — No range validation on order item quantities
+
+- [ ] **#193 — `CreateOrderEntry.amt` and `UpdateOrderEntry.amt` accept zero/negative quantities**
+  - File: `src/models.rs` lines 346–352
+  - Problem: `amt: i32` has no `#[validate(range(...))]`. The DB has `CHECK (amt >= 0)` but allows `amt = 0` (semantically meaningless), and negative values would only be caught at the DB layer with an unfriendly error.
+  - Fix: Add `#[validate(range(min = 1, message = "quantity must be at least 1"))]` to `amt` in both `CreateOrderEntry` and `UpdateOrderEntry`.
+  - Source commands: `db-review`, `review`, `security-audit`
 
 ## Minor Items
 
@@ -97,13 +163,85 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Add "Token refresh (2 tests)" category to the breakdown.
   - Source commands: `cross-ref-check`
 
+### Documentation — 4 Stale `localStorage` References in Command Files
+
+- [ ] **#194 — Command files reference `localStorage` but the project uses `sessionStorage`**
+  - Files: `.claude/commands/review.md` line 25, `.claude/commands/test-gaps.md` line 30, `.claude/commands/security-audit.md` lines 48 and 50
+  - Problem: Four references to `localStorage` in command instructions are stale — the project uses `sessionStorage` for token storage.
+  - Fix: Replace all 4 occurrences of `localStorage` with `sessionStorage`.
+  - Source commands: `cross-ref-check`
+
+### Database — `INSERT` Trigger on Users Table Should Be `UPDATE` Only
+
+- [ ] **#195 — `update_users_changed_at` fires on `BEFORE INSERT OR UPDATE` — the INSERT trigger is unnecessary**
+  - File: `migrations/V1__initial_schema.sql` lines 149–152
+  - Problem: The trigger fires on INSERT where `OLD` is NULL, but `ROW(NEW.*) IS DISTINCT FROM ROW(OLD.*)` works "by accident" since NULL comparisons. The INSERT path is redundant because `DEFAULT CURRENT_TIMESTAMP` already sets `changed` on insert. All other tables' triggers are `BEFORE UPDATE` only.
+  - Fix: Add a new migration to change the trigger to `BEFORE UPDATE ON users` only.
+  - Source commands: `db-review`
+
+### Validation — No Positive-Value Validation on Item Prices
+
+- [ ] **#196 — `CreateItemEntry.price` and `UpdateItemEntry.price` accept negative prices at the API layer**
+  - File: `src/models.rs` lines 286–300
+  - Problem: `price: rust_decimal::Decimal` has no validation. The DB has `CHECK (price >= 0)` but negative prices from the API would only be caught at the DB layer with an unfriendly error.
+  - Fix: Add a custom validator ensuring `price >= 0`, or document the DB constraint as the sole enforcement point.
+  - Source commands: `db-review`, `security-audit`
+
+### Validation — No Max Length on Text Fields
+
+- [ ] **#197 — `tname`, `descr`, `title` fields have `min = 1` validation but no `max` length**
+  - File: `src/models.rs` (all Create/Update entry structs for teams, roles, items)
+  - Problem: Text fields backed by PostgreSQL `text` type have no upper bound. A client could submit arbitrarily long strings.
+  - Fix: Add `max = 255` (or another reasonable limit) to the `#[validate(length(...))]` attributes.
+  - Source commands: `security-audit`
+
+### Code Quality — `check_db` Can Only Return `Ok(true)` — Dead Code Branch
+
+- [ ] **#198 — `get_health` handler's `Ok(false)` branch is unreachable**
+  - Files: `src/db/health.rs` lines 4–10, `src/handlers/mod.rs` lines 288–298
+  - Problem: `check_db` does `.map(|_| true)` on success and `.map_err(Error::Db)` on error, so it never returns `Ok(false)`. The handler's `else` branch (503) is dead code.
+  - Fix: Change `check_db` to return `Result<(), Error>` or simplify the handler's match.
+  - Source commands: `review`
+
+### Code Quality — Commented-Out Code in `get_health`
+
+- [ ] **#199 — Dead commented-out `let client: Client = ...` line in health handler**
+  - File: `src/handlers/mod.rs` line 287
+  - Problem: Dead code.
+  - Fix: Remove the line.
+  - Source commands: `review`
+
+### Code Quality — `validate.rs` Only Reports First Error Per Field
+
+- [ ] **#200 — Multiple validation failures per field are silently dropped**
+  - File: `src/validate.rs` line 22
+  - Problem: `error.1[0]` takes only the first validation error for each field. If a field has both "too short" and "invalid format" errors, only one is returned.
+  - Fix: Iterate over all errors in `error.1` or document the behavior.
+  - Source commands: `review`
+
+### Code Quality — Missing `#[must_use]` on `validate()` Function
+
+- [ ] **#201 — If a caller omits `?`, validation would be silently skipped**
+  - File: `src/validate.rs` line 6
+  - Problem: Returns `Result<(), Error>` but isn't marked `#[must_use]`.
+  - Fix: Add `#[must_use = "validation result must be checked"]`.
+  - Source commands: `review`
+
+### Database — `teamorders.teamorders_user_id` Is Nullable but Never NULL
+
+- [ ] **#202 — No code path creates orders without a user, but the DB allows it**
+  - File: `migrations/V1__initial_schema.sql` line 73
+  - Problem: `teamorders_user_id` is nullable. No handler creates orders without setting this field. If a NULL-user order is somehow created, it would be orphaned.
+  - Fix: Add `NOT NULL` constraint via a new migration, or document why NULL is valid.
+  - Source commands: `db-review`
+
 ## Informational Items
 
 ### Documentation — Test Count Maintenance Burden
 
 - [ ] **#54 — Test counts in CLAUDE.md will drift as tests are added**
   - File: `CLAUDE.md`
-  - Problem: Hard-coded test counts go stale every time tests are added or removed. Proven again by findings #83 (prior assessment) and #91 (this assessment).
+  - Problem: Hard-coded test counts go stale every time tests are added or removed.
   - Source command: `practices-audit`
   - Action: Inherent maintenance cost. The assessment process updates counts each time it runs.
 
@@ -122,11 +260,11 @@ This file is **generated and maintained by the project assessment process** defi
   - Source commands: `practices-audit`
   - Action: Create `.env.example` listing available env vars.
 
-### API — `memberof.joined` Timestamp Not Exposed
+### API — `memberof.joined` and `memberof.changed` Timestamps Not Exposed
 
-- [ ] **#115 — `joined` column stored in DB but not returned by API**
+- [ ] **#115 — `joined` and `changed` columns stored in DB but not returned by API**
   - Files: `src/models.rs` (`UsersInTeam`, `UserInTeams`), `src/db/teams.rs`
-  - Problem: `memberof.joined` timestamp is stored but neither model struct includes it, and DB queries don't select it.
+  - Problem: `memberof.joined` and `memberof.changed` timestamps are stored but neither model struct includes them, and DB queries don't select them.
   - Source commands: `api-completeness`
   - Action: Add to models and queries if frontend needs it.
 
@@ -322,20 +460,93 @@ This file is **generated and maintained by the project assessment process** defi
   - Source commands: `review`
   - Action: Read port from environment or config.
 
+### OpenAPI — `UpdateUserEntry` Has Dead `ToSchema` Derive
+
+- [ ] **#203 — `UpdateUserEntry` derives `ToSchema` but is not registered in OpenAPI schemas and is not used by any handler**
+  - File: `src/models.rs` lines 90–131
+  - Problem: Superseded by `UpdateUserRequest` but still compiled with `ToSchema` derive.
+  - Source commands: `openapi-sync`
+  - Action: Remove `ToSchema` derive, or remove `UpdateUserEntry` entirely if not needed for internal use.
+
+### Testing — Bulk Delete Team Orders Has No API Test
+
+- [ ] **#204 — `DELETE /api/v1.0/teams/{id}/orders` RBAC and response untested at API level**
+  - Files: `tests/api_tests.rs`, `src/handlers/teams.rs` (`delete_team_orders`)
+  - Problem: DB test exists but no API test verifies RBAC enforcement (require_team_admin) or HTTP response.
+  - Source commands: `test-gaps`
+  - Action: Add `bulk_delete_team_orders_as_team_admin`, `bulk_delete_team_orders_as_member_returns_403`.
+
+### Testing — Update Member Role Has No API Test
+
+- [ ] **#205 — `PUT /api/v1.0/teams/{id}/users/{id}` untested at API level**
+  - Files: `tests/api_tests.rs`, `src/handlers/teams.rs` (`update_member_role`)
+  - Problem: DB test exists but no API test verifies endpoint, RBAC, or response shape.
+  - Source commands: `test-gaps`
+  - Action: Add `update_member_role_as_team_admin_returns_200`, `update_member_role_as_member_returns_403`.
+
+### Testing — Delete User by Email Success Path Untested
+
+- [ ] **#206 — `DELETE /api/v1.0/users/email/{email}` success path has no API test**
+  - Files: `tests/api_tests.rs`, `src/handlers/users.rs` (`delete_user_by_email`)
+  - Problem: Only edge cases tested. The successful delete round-trip is not tested.
+  - Source commands: `test-gaps`
+  - Action: Add `admin_delete_user_by_email_returns_200`.
+
+### Testing — Token Revocation Ownership Check Untested
+
+- [ ] **#207 — No test verifies that User A cannot revoke User B's token**
+  - Files: `tests/api_tests.rs`, `src/handlers/users.rs` (`revoke_user_token`)
+  - Problem: Only self-revocation happy path tested. Cross-user revocation rejection untested.
+  - Source commands: `test-gaps`
+  - Action: Add `revoke_other_users_token_returns_403`, `admin_can_revoke_other_users_token`.
+
+### Testing — Team Users Has No API Test
+
+- [ ] **#208 — `GET /api/v1.0/teams/{id}/users` has no API-level integration test**
+  - Files: `tests/api_tests.rs`, `src/handlers/teams.rs` (`team_users`)
+  - Problem: DB test exists but no API test verifies JWT requirement, JSON shape, or empty-team behavior.
+  - Source commands: `test-gaps`
+  - Action: Add `get_team_users_returns_members`, `get_team_users_requires_jwt`.
+
+### Code Quality — Redundant `Client` Import in Handler Files
+
+- [ ] **#209 — `use deadpool_postgres::Client;` redundant in `handlers/users.rs` and `handlers/roles.rs`**
+  - Files: `src/handlers/users.rs`, `src/handlers/roles.rs`
+  - Problem: `Client` is already re-exported via `use crate::handlers::*` from `handlers/mod.rs`.
+  - Source commands: `review`
+  - Action: Remove the duplicate import.
+
+### Frontend — Inconsistent `spawn_local` Import
+
+- [ ] **#210 — Session restore uses `wasm_bindgen_futures::spawn_local` while logout uses `leptos::task::spawn_local`**
+  - File: `frontend/src/app.rs`
+  - Problem: Both work but inconsistent API usage.
+  - Source commands: `review`
+  - Action: Standardize on `leptos::task::spawn_local` throughout.
+
+### Frontend — Form Has Redundant Double Validation
+
+- [ ] **#211 — `<form>` has both native HTML5 validation (`required`) and custom JavaScript validation**
+  - File: `frontend/src/app.rs`
+  - Problem: Users may see both native browser popups and custom error messages.
+  - Source commands: `review`
+  - Action: Add `novalidate` attribute and rely on custom validation, or remove the custom empty-field checks.
+
 ## Completed Items
 
 Resolved items are maintained in [`.claude/resolved-findings.md`](.claude/resolved-findings.md), organized by original severity.
-See that file for the full history of 103 resolved findings.
+See that file for the full history of resolved findings.
 
 ## Notes
 
 - All 170 backend unit tests pass (148 lib + 22 healthcheck); 67 API integration tests pass; 86 DB integration tests pass; 23 WASM tests pass. Total: 346 tests, 0 failures.
 - Backend unit test breakdown: config: 7, errors: 15, handlers/mod: 11, validate: 9, routes: 19, server: 17, middleware/auth: 12, middleware/openapi: 14, from_row: 10, db/migrate: 34, healthcheck: 22 = **170 total**.
 - `cargo audit` reports 1 vulnerability: `rsa` 0.9.10 via `jsonwebtoken` (RUSTSEC-2023-0071). **Blocked on upstream** — see #132 (granular features don't work with jsonwebtoken 10.x's CryptoProvider model).
+- All dependencies are up to date (`cargo outdated -R` shows zero outdated).
 - Clippy is clean on both backend and frontend.
 - `cargo fmt --check` is clean on both crates.
-- RBAC enforcement is correct across all handlers per the policy table.
+- RBAC enforcement is correct across all handlers per the policy table, **except** for the critical privilege escalation in #186.
 - OpenAPI spec is synchronized with routes (41 operations).
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 — blocked on upstream), 0 important, 9 minor, 29 informational. Total: 39 open items.
-- 113 resolved items moved to `.claude/resolved-findings.md` (6 critical, 39 important, 63 minor, 5 informational).
+- Open items summary: 2 critical (#132 blocked, #186 new), 7 important (all new), 18 minor (9 previously tracked + 9 new), 39 informational (29 previously tracked + 10 new). Total: 66 open items.
+- 113 resolved items in `.claude/resolved-findings.md`.
