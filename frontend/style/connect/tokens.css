@@ -1,0 +1,26 @@
+/*
+ * CONNECT Design System — Token Imports
+ *
+ * Pulls in core primitive tokens and the Enterprise theme's semantic tokens.
+ * These files are sourced from the local clone of connect-design-system/ and
+ * define all --ds-* CSS custom properties used by components.
+ *
+ * Source: git@github.com:LEGO/connect-design-system.git
+ */
+
+/* Core primitives: brand palette + typography constants */
+@import '../../../connect-design-system/packages/connect-core-tokens/css/color.css';
+@import '../../../connect-design-system/packages/connect-core-tokens/css/typography.css';
+
+/* Enterprise theme: semantic color, layout, font, misc, screen tokens */
+/* These provide light/dark mode via @media(prefers-color-scheme) and [data-mode] */
+@import '../../../connect-design-system/packages/connect-theme-enterprise/css/contextual/color.css';
+@import '../../../connect-design-system/packages/connect-theme-enterprise/css/contextual/font.css';
+@import '../../../connect-design-system/packages/connect-theme-enterprise/css/contextual/layout.css';
+@import '../../../connect-design-system/packages/connect-theme-enterprise/css/contextual/misc.css';
+@import '../../../connect-design-system/packages/connect-theme-enterprise/css/contextual/screen.css';
+
+/* Typography: LEGO Typewell @font-face declarations + Noto Sans fallback */
+@import '../../../connect-design-system/packages/connect-theme-enterprise/css/typography/fonts.css';
+@import '../../../connect-design-system/packages/connect-theme-enterprise/css/typography/noto-sans.css';
+@import '../../../connect-design-system/packages/connect-theme-enterprise/css/typography/fallback.css';

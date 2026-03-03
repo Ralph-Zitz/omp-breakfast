@@ -90,9 +90,13 @@ frontend/
     main.rs        – Binary entry point: mounts App to <body>
     app.rs         – All UI components, auth logic, API calls
   style/
-    main.css       – Modern CSS (custom properties, responsive, animations)
+    main.css       – App-level styles using CONNECT design system tokens (--ds-* custom properties)
+    connect/
+      tokens.css   – Imports CONNECT core tokens + enterprise theme from connect-design-system/
+      components.css – Imports all CONNECT component CSS modules from connect-design-system/
   tests/
     ui_tests.rs    – 23 WASM integration tests (headless Chrome)
+connect-design-system/ – Local clone of git@github.com:LEGO/connect-design-system.git (gitignored, read-only asset source)
 config/
   default.yml      – Base config
   development.yml  – Dev overrides (local DB)
@@ -138,7 +142,7 @@ tests/
 - Config is layered: default.yml → environment.yml → env vars (separator: `_`)
 - Health endpoint (`/health`) returns HTTP 503 with `{"up": false}` when the database is unreachable, and HTTP 200 with `{"up": true}` when healthy
 - Backend serves `frontend/dist/` as static files via `actix-files`, with `index_file("index.html")`
-- Static files are served with a `Content-Security-Policy` header: `default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'`. The `'unsafe-inline'` directive in `script-src` is required because Trunk generates an inline `<script type="module">` to initialize the WASM module; removing it causes a white-screen failure in Chrome.
+- Static files are served with a `Content-Security-Policy` header: `default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://assets.lego.com; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'`. The `'unsafe-inline'` directive in `script-src` is required because Trunk generates an inline `<script type="module">` to initialize the WASM module; removing it causes a white-screen failure in Chrome. The `font-src` directive includes `https://assets.lego.com` to allow loading the LEGO Typewell proprietary font from the LEGO CDN.
 - Security headers: `Strict-Transport-Security` (HSTS), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` are set globally via `DefaultHeaders`
 - Password hashing uses explicit Argon2id parameters (`Algorithm::Argon2id`, `Version::V0x13`, `Params::default()`) rather than `Argon2::default()` to prevent silent weakening via crate updates
 
@@ -201,6 +205,7 @@ The frontend will evolve from login + dashboard into a full-featured SPA. This s
 - **Confirmation modals:** Destructive actions (delete user, remove team member, delete order) require a confirmation dialog before executing
 - **Loading states:** Show skeleton loaders or spinners while fetching data from the API
 - **Form validation:** Client-side validation with inline error messages before submission; mirror backend `validator` rules where applicable
+- **Component reuse:** Always prefer existing CONNECT Design System components from `connect-design-system/` before creating custom ones. If a required component is missing from the design system, create it under `frontend/src/` following the same folder structure and naming conventions. Any newly created UI component must be documented in `NEW-UI-COMPONENTS.md` at the project root (component name, purpose, props, and rationale for why an existing CONNECT component was not suitable).
 
 ## Markdown Style Rules
 
@@ -231,6 +236,35 @@ When asked to bump the project version, **all** of the following steps **must** 
 
 If the bump type is not specified, ask before proceeding. Never skip the git tag or the push of tags.
 
+## CONNECT Design System
+
+The frontend UI is built on the LEGO CONNECT Design System. A local clone of the design system repository lives at `connect-design-system/` in the project root (gitignored — not committed to this repo). It serves as a **read-only asset source** for CSS tokens, component styles, and SVG icons.
+
+- **Source repo:** `git@github.com:LEGO/connect-design-system.git`
+- **Local path:** `connect-design-system/` (added to `.gitignore`)
+- **Token system:** All CSS custom properties use the `--ds-{category}-{subcategory}-{variant}-{state}` naming convention
+- **Component CSS:** Class names follow `.connect-{component}--{modifier}` (modified BEM), imported from `.module.css` files in `connect-components-styles`
+- **Theme:** Enterprise theme (`connect-theme-enterprise`) with light/dark mode via `data-mode` attribute and `@media (prefers-color-scheme)`
+- **Typography:** LEGO Typewell proprietary font loaded from `https://assets.lego.com/fonts/v6/typewell/` CDN via `@font-face` declarations; Noto Sans and system-ui as fallbacks
+- **Icons:** 1,048 SVG icons available in `connect-icons/svg/` (40×40 viewBox, `fill="currentColor"`)
+- **CSS imports:** `frontend/style/connect/tokens.css` imports core tokens + enterprise theme; `frontend/style/connect/components.css` imports all 48+ component style modules. Both use relative `@import` paths into `connect-design-system/`.
+
+### Keeping the design system up to date
+
+The design system clone is updated automatically during project assessments (see below). To update manually:
+
+```bash
+cd connect-design-system && git pull
+```
+
+After pulling, check for CSS token renames, new/removed component classes, or changed `@font-face` URLs that may require frontend CSS or component updates.
+
+If the `connect-design-system/` directory does not exist (fresh checkout), clone it:
+
+```bash
+git clone git@github.com:LEGO/connect-design-system.git connect-design-system
+```
+
 ## Project Assessment
 
 When asked to **assess the project** (or "project assessment"), perform the following:
@@ -246,20 +280,26 @@ When asked to **assess the project** (or "project assessment"), perform the foll
    - `review` — full code review (idioms, error handling, duplication, dead code)
    - `security-audit` — JWT/auth, input validation, secrets, TLS, Docker, frontend security
    - `test-gaps` — identify missing test coverage and suggest specific new tests
-2. Collect all findings that indicate actionable changes (bugs, missing implementations, convention violations, security issues, stale dependencies, etc.)
-3. **Cross-check against resolved findings** — before finalising the findings list, read `.claude/resolved-findings.md` and verify that no new finding re-introduces a previously resolved issue. For every candidate finding:
+2. **Update the CONNECT Design System** — run `cd connect-design-system && git pull` to fetch the latest upstream changes. If `git pull` reports new commits:
+   - Diff the incoming changes (`git log --oneline HEAD@{1}..HEAD` and `git diff HEAD@{1}..HEAD -- packages/`).
+   - Identify any CSS token renames/removals, component class changes, new components, `@font-face` URL updates, or icon additions/removals that affect the frontend.
+   - If breaking or noteworthy changes are found, include a **Design System Migration** section in the assessment output listing each change with its impact on the frontend and a concrete migration plan (same approach used for the initial migration: map old → new tokens/classes, update `frontend/style/` imports, update component markup in `frontend/src/app.rs`, update test selectors in `frontend/tests/ui_tests.rs`).
+   - If `git pull` reports "Already up to date", note this in the assessment and skip the migration section.
+   - If the `connect-design-system/` directory does not exist, clone it: `git clone git@github.com:LEGO/connect-design-system.git connect-design-system`.
+3. Collect all findings that indicate actionable changes (bugs, missing implementations, convention violations, security issues, stale dependencies, etc.)
+4. **Cross-check against resolved findings** — before finalising the findings list, read `.claude/resolved-findings.md` and verify that no new finding re-introduces a previously resolved issue. For every candidate finding:
    - Search resolved-findings.md for the same file/function/pattern.
    - If a resolved item already covers the same concern **and the current code still reflects the resolution**, discard the candidate (it is a false positive).
    - If a resolved item covers the concern but **the code has regressed** (the fix was reverted or broken by a later change), flag it explicitly as a **regression** with a reference to the original resolved finding number.
    - If a candidate finding **contradicts** a resolved item's fix (e.g., recommending the opposite change), discard the candidate and note the conflict in the assessment notes.
-4. Present a single consolidated plan grouped by category, listing each proposed change with:
+5. Present a single consolidated plan grouped by category, listing each proposed change with:
    - Which command surfaced it
    - What needs to change and where
    - Severity (critical / important / minor / informational)
-5. **Do not apply any changes** — only present the plan for approval
-6. If no actionable findings are discovered, state that the project is in good shape
-7. **Persist findings** — after presenting the plan, write **all** findings (critical, important, minor, and informational) to `.claude/assessment-findings.md` using the format described below. This file is the bridge between the assessment and the `/resume-assessment` command, which loads it in future sessions to continue work.
-8. **Archive resolved items** — after updating the findings file, move all items marked `[x]` in `.claude/assessment-findings.md` to `.claude/resolved-findings.md`, organized under their original severity section (Critical, Important, Minor, Informational). Remove the moved items from `assessment-findings.md`. Update the "Last updated" date in `resolved-findings.md`.
+6. **Do not apply any changes** — only present the plan for approval
+7. If no actionable findings are discovered, state that the project is in good shape
+8. **Persist findings** — after presenting the plan, write **all** findings (critical, important, minor, and informational) to `.claude/assessment-findings.md` using the format described below. This file is the bridge between the assessment and the `/resume-assessment` command, which loads it in future sessions to continue work.
+9. **Archive resolved items** — after updating the findings file, move all items marked `[x]` in `.claude/assessment-findings.md` to `.claude/resolved-findings.md`, organized under their original severity section (Critical, Important, Minor, Informational). Remove the moved items from `assessment-findings.md`. Update the "Last updated" date in `resolved-findings.md`.
 
 ### Assessment findings file format (`.claude/assessment-findings.md`)
 

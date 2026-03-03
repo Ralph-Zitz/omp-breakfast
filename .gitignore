@@ -11,3 +11,4 @@ localhost_ca.pem
 *.session.sql
 frontend/dist/
 frontend/target/
+connect-design-system/

@@ -254,7 +254,7 @@ async fn test_login_page_renders_brand_and_form() {
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
     flush(100).await;
 
-    assert!(contains_text(id, "OMP Breakfast"), "brand title");
+    assert!(contains_text(id, "Breakfast"), "brand title");
     assert!(contains_text(id, "Sign in to continue"), "subtitle");
     assert!(has_element(id, "input#username"), "username input");
     assert!(has_element(id, "input#password"), "password input");
@@ -435,7 +435,7 @@ async fn test_failed_login_shows_error_and_stays_on_login() {
         html.contains("Invalid username or password"),
         "auth error message"
     );
-    assert!(html.contains("OMP Breakfast"), "still on login page");
+    assert!(html.contains("Breakfast"), "still on login page");
     assert!(html.contains("Sign In"), "Sign In still visible");
     assert!(
         has_element(id, "input#username"),
@@ -494,7 +494,7 @@ async fn test_dashboard_user_card_structure() {
     flush(500).await;
 
     assert!(has_element(id, ".user-card"), "user card element");
-    assert!(has_element(id, ".avatar"), "avatar element");
+    assert!(has_element(id, ".connect-avatar"), "avatar element");
     assert!(has_element(id, ".user-name"), "user-name element");
     assert!(has_element(id, ".user-email"), "user-email element");
     assert!(has_element(id, ".success-badge"), "success badge");
@@ -522,11 +522,11 @@ async fn test_logout_returns_to_login_page() {
     assert!(contains_text(id, "Welcome!"), "on dashboard after login");
 
     // Log out
-    click_button(id, ".btn-outline");
+    click_button(id, ".connect-button--outline");
     flush(100).await;
 
     let html = inner_html(id);
-    assert!(html.contains("OMP Breakfast"), "brand restored");
+    assert!(html.contains("Breakfast"), "brand restored");
     assert!(html.contains("Sign In"), "Sign In restored");
     assert!(!html.contains("Welcome!"), "dashboard gone");
 
@@ -548,7 +548,7 @@ async fn test_full_login_validate_logout_cycle() {
     flush(100).await;
 
     // 1. Verify initial login page
-    assert!(contains_text(id, "OMP Breakfast"), "step 1: brand");
+    assert!(contains_text(id, "Breakfast"), "step 1: brand");
     assert!(contains_text(id, "Sign in to continue"), "step 1: subtitle");
 
     // 2. Empty submit → validation error
@@ -578,13 +578,10 @@ async fn test_full_login_validate_logout_cycle() {
     );
 
     // 4. Sign out → back to login
-    click_button(id, ".btn-outline");
+    click_button(id, ".connect-button--outline");
     flush(100).await;
 
-    assert!(
-        contains_text(id, "OMP Breakfast"),
-        "step 4: brand after logout"
-    );
+    assert!(contains_text(id, "Breakfast"), "step 4: brand after logout");
     assert!(contains_text(id, "Sign In"), "step 4: Sign In after logout");
     assert!(!contains_text(id, "Welcome!"), "step 4: dashboard gone");
 
@@ -690,7 +687,7 @@ async fn test_logout_clears_tokens_and_prevents_session_restore() {
     );
 
     // Phase 2: Log out
-    click_button(id, ".btn-outline");
+    click_button(id, ".connect-button--outline");
     flush(100).await;
 
     // Verify login page is shown
@@ -717,7 +714,7 @@ async fn test_logout_clears_tokens_and_prevents_session_restore() {
 
     // Should show login page, not dashboard
     let html = inner_html(id);
-    assert!(html.contains("OMP Breakfast"), "phase 3: brand shown");
+    assert!(html.contains("Breakfast"), "phase 3: brand shown");
     assert!(html.contains("Sign In"), "phase 3: login page shown");
     assert!(
         !html.contains("Welcome!"),

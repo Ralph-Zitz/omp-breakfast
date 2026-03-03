@@ -1,42 +1,9 @@
-/* ── OMP Breakfast — Modern Minimalist Theme (2026) ────────────────────────── */
+/* ── OMP Breakfast — LEGO CONNECT Design System Theme ──────────────────────── */
+/* Built on @lego/connect-theme-enterprise tokens + connect-components-styles   */
 
-:root {
-    /* Palette — warm breakfast tones */
-    --color-bg: #f8f6f3;
-    --color-surface: #ffffff;
-    --color-border: #e8e4df;
-    --color-text: #1a1816;
-    --color-text-muted: #78716c;
-    --color-primary: #e67e22;
-    --color-primary-hover: #d35400;
-    --color-success: #16a34a;
-    --color-success-bg: #dcfce7;
-    --color-error: #dc2626;
-    --color-error-bg: #fef2f2;
-    --color-error-border: #fecaca;
-    --color-avatar: #fef3c7;
-    --color-avatar-text: #92400e;
-
-    /* Typography */
-    --font-sans:
-        "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont,
-        "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
-    --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
-
-    /* Spacing & sizing */
-    --radius-sm: 8px;
-    --radius-md: 14px;
-    --radius-lg: 20px;
-    --radius-full: 9999px;
-
-    /* Shadows */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-    --shadow-md: 0 4px 24px rgba(0, 0, 0, 0.06);
-    --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.08);
-
-    /* Transitions */
-    --ease: cubic-bezier(0.4, 0, 0.2, 1);
-}
+/* ── Design System Foundation ─────────────────────────────────────────────── */
+@import './connect/tokens.css';
+@import './connect/components.css';
 
 /* ── Reset ────────────────────────────────────────────────────────────────── */
 
@@ -50,15 +17,16 @@
 
 html {
     font-size: 16px;
+    text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-    font-family: var(--font-sans);
-    color: var(--color-text);
-    background: var(--color-bg);
-    line-height: 1.6;
+    font-family: 'LEGO Typewell', var(--ds-font-font-family), 'Noto Sans', system-ui, sans-serif;
+    color: var(--ds-color-content-default);
+    background: var(--ds-color-surface-background-base-default);
+    line-height: 1.5;
     min-height: 100dvh;
 }
 
@@ -77,14 +45,14 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 24px;
-    animation: fadeIn 0.35s var(--ease);
+    padding: var(--ds-layout-spacing-300);
+    animation: fadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateY(8px);
+        transform: translateY(var(--ds-layout-spacing-100, 8px));
     }
     to {
         opacity: 1;
@@ -97,32 +65,50 @@ body {
 .card {
     width: 100%;
     max-width: 420px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    padding: 40px 36px;
-    box-shadow: var(--shadow-lg);
+    background: var(--ds-color-surface-background-level-1-default);
+    border: var(--ds-layout-stroke-width-10) solid var(--ds-color-stroke-subtle);
+    border-radius: var(--ds-layout-radius-200);
+    padding: var(--ds-layout-spacing-500) var(--ds-layout-spacing-400);
+    box-shadow:
+        0px 12px 24px 0px var(--ds-color-elevation-color-ambient, rgba(0, 0, 0, 0.1)),
+        0px 8px 16px 0px var(--ds-color-elevation-color-key, rgba(0, 0, 0, 0.16));
 }
 
 /* ── Login card ───────────────────────────────────────────────────────────── */
 
 .card-header {
     text-align: center;
-    margin-bottom: 32px;
+    margin-bottom: var(--ds-layout-spacing-400);
 }
 
 .brand {
-    font-size: 1.75rem;
-    font-weight: 700;
+    font-size: var(--ds-screen-text-heading-2xl-font-size, 1.5625rem);
+    font-weight: var(--ds-screen-text-font-weight-bold, 700);
+    line-height: var(--ds-screen-text-heading-2xl-line-height, 1.35);
     letter-spacing: -0.02em;
-    color: var(--color-text);
+    color: var(--ds-color-content-default);
+}
+
+.brand-accent {
+    color: var(--ds-color-content-brand);
 }
 
 .subtitle {
-    margin-top: 6px;
-    font-size: 0.938rem;
-    color: var(--color-text-muted);
-    font-weight: 400;
+    margin-top: var(--ds-layout-spacing-75);
+    font-size: var(--ds-screen-text-body-md-font-size, 1rem);
+    line-height: var(--ds-screen-text-body-md-line-height, 1.5);
+    color: var(--ds-color-content-muted);
+    font-weight: var(--ds-screen-text-font-weight-regular, 400);
+}
+
+/* ── LEGO brand bar (yellow accent stripe) ────────────────────────────────── */
+
+.brand-bar {
+    width: 48px;
+    height: 4px;
+    margin: var(--ds-layout-spacing-150) auto 0;
+    background: var(--ds-color-support-brand-default);
+    border-radius: var(--ds-layout-radius-pill);
 }
 
 /* ── Form ─────────────────────────────────────────────────────────────────── */
@@ -130,169 +116,47 @@ body {
 form {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: var(--ds-layout-spacing-250);
 }
 
-.form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+/* CONNECT TextField wrapper */
+.connect-text-field {
+    width: 100%;
 }
 
-.form-group label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--color-text);
+/* CONNECT Label adjustments for our form */
+.connect-label {
+    margin-bottom: var(--ds-layout-spacing-50);
 }
 
-.form-group input {
-    height: 46px;
-    padding: 0 14px;
-    font-size: 0.938rem;
-    font-family: var(--font-sans);
-    color: var(--color-text);
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    outline: none;
-    transition:
-        border-color 0.2s var(--ease),
-        box-shadow 0.2s var(--ease);
+/* Full-width button (not in CONNECT base — project extension) */
+.connect-button--full-width {
+    width: 100%;
 }
 
-.form-group input::placeholder {
-    color: var(--color-text-muted);
-    opacity: 0.6;
-}
-
-.form-group input:focus {
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgba(230, 126, 34, 0.15);
-}
-
-/* ── Buttons ──────────────────────────────────────────────────────────────── */
-
-.btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    height: 46px;
-    padding: 0 24px;
-    font-size: 0.938rem;
-    font-weight: 600;
-    font-family: var(--font-sans);
-    border-radius: var(--radius-sm);
-    border: none;
-    cursor: pointer;
-    transition:
-        background 0.2s var(--ease),
-        opacity 0.2s var(--ease),
-        box-shadow 0.2s var(--ease),
-        transform 0.1s var(--ease);
-}
-
-.btn:active {
-    transform: scale(0.98);
-}
-
-.btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-}
-
-.btn-primary {
-    background: var(--color-primary);
-    color: #fff;
-}
-
-.btn-primary:hover:not(:disabled) {
-    background: var(--color-primary-hover);
-    box-shadow: 0 2px 12px rgba(230, 126, 34, 0.3);
-}
-
-.btn-outline {
-    background: transparent;
-    color: var(--color-text-muted);
-    border: 1px solid var(--color-border);
-}
-
-.btn-outline:hover {
-    background: var(--color-bg);
-    color: var(--color-text);
-    border-color: var(--color-text-muted);
-}
-
-/* ── Spinner ──────────────────────────────────────────────────────────────── */
-
-.spinner {
-    display: inline-block;
-    width: 18px;
-    height: 18px;
-    border: 2px solid rgba(255, 255, 255, 0.35);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
+/* Sign-out button centering */
+.dashboard-card .connect-button {
+    margin: 0 auto;
 }
 
 /* ── Loading page ─────────────────────────────────────────────────────────── */
 
 .loading-page {
-    background: var(--color-bg);
+    background: var(--ds-color-surface-background-base-default);
 }
 
 .loading-card {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 20px;
-    padding: 48px 36px;
-}
-
-.loading-spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid var(--color-border);
-    border-top-color: var(--color-primary);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
+    gap: var(--ds-layout-spacing-250);
+    padding: var(--ds-layout-spacing-600) var(--ds-layout-spacing-400);
 }
 
 .loading-text {
-    font-size: 0.938rem;
-    color: var(--color-text-muted);
-    font-weight: 500;
-}
-
-/* ── Alert ────────────────────────────────────────────────────────────────── */
-
-.alert {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 12px 14px;
-    border-radius: var(--radius-sm);
-    font-size: 0.875rem;
-    line-height: 1.5;
-}
-
-.alert-error {
-    background: var(--color-error-bg);
-    color: var(--color-error);
-    border: 1px solid var(--color-error-border);
-}
-
-.alert-icon {
-    width: 18px;
-    height: 18px;
-    flex-shrink: 0;
-    margin-top: 1px;
+    font-size: var(--ds-screen-text-body-md-font-size, 1rem);
+    color: var(--ds-color-content-muted);
+    font-weight: var(--ds-screen-text-font-weight-medium, 500);
 }
 
 /* ── Dashboard card ───────────────────────────────────────────────────────── */
@@ -302,21 +166,24 @@ form {
 }
 
 .dashboard-card h1 {
-    font-size: 1.5rem;
-    font-weight: 700;
-    margin-bottom: 4px;
+    font-size: var(--ds-screen-text-heading-xl-font-size, 1.375rem);
+    font-weight: var(--ds-screen-text-font-weight-bold, 700);
+    line-height: var(--ds-screen-text-heading-xl-line-height, 1.35);
+    margin-bottom: var(--ds-layout-spacing-50);
 }
+
+/* ── Success badge ────────────────────────────────────────────────────────── */
 
 .success-badge {
     width: 56px;
     height: 56px;
-    margin: 0 auto 20px;
+    margin: 0 auto var(--ds-layout-spacing-250);
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--color-success-bg);
-    border-radius: var(--radius-full);
-    animation: popIn 0.4s var(--ease);
+    background: var(--ds-color-support-positive-inverse);
+    border-radius: var(--ds-layout-radius-round, 999px);
+    animation: popIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes popIn {
@@ -333,16 +200,16 @@ form {
     }
 }
 
-.success-check {
+.success-check-icon {
     width: 28px;
     height: 28px;
-    color: var(--color-success);
+    color: var(--ds-color-support-positive-default);
 }
 
 .success-text {
-    color: var(--color-text-muted);
-    font-size: 0.938rem;
-    margin-bottom: 28px;
+    color: var(--ds-color-content-muted);
+    font-size: var(--ds-screen-text-body-md-font-size, 1rem);
+    margin-bottom: var(--ds-layout-spacing-300);
 }
 
 /* ── User card ────────────────────────────────────────────────────────────── */
@@ -350,28 +217,13 @@ form {
 .user-card {
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 16px;
-    margin-bottom: 28px;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    gap: var(--ds-layout-spacing-150);
+    padding: var(--ds-layout-spacing-200);
+    margin-bottom: var(--ds-layout-spacing-300);
+    background: var(--ds-color-surface-background-base-muted);
+    border: var(--ds-layout-stroke-width-10) solid var(--ds-color-stroke-subtle);
+    border-radius: var(--ds-layout-radius-150);
     text-align: left;
-}
-
-.avatar {
-    width: 48px;
-    height: 48px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-full);
-    background: var(--color-avatar);
-    color: var(--color-avatar-text);
-    font-weight: 700;
-    font-size: 1rem;
-    letter-spacing: 0.02em;
 }
 
 .user-details {
@@ -381,17 +233,17 @@ form {
 }
 
 .user-name {
-    font-weight: 600;
-    font-size: 0.938rem;
-    color: var(--color-text);
+    font-weight: var(--ds-screen-text-font-weight-bold, 700);
+    font-size: var(--ds-screen-text-label-md-font-size, 1rem);
+    color: var(--ds-color-content-default);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .user-email {
-    font-size: 0.813rem;
-    color: var(--color-text-muted);
+    font-size: var(--ds-screen-text-body-xs-font-size, 0.75rem);
+    color: var(--ds-color-content-subtle);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -401,11 +253,23 @@ form {
 
 @media (max-width: 480px) {
     .card {
-        padding: 32px 24px;
-        border-radius: var(--radius-md);
+        padding: var(--ds-layout-spacing-400) var(--ds-layout-spacing-300);
+        border-radius: var(--ds-layout-radius-150);
     }
 
     .brand {
-        font-size: 1.5rem;
+        font-size: var(--ds-screen-text-heading-xl-font-size, 1.375rem);
+    }
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
     }
 }

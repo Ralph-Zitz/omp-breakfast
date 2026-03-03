@@ -156,9 +156,8 @@ pub async fn get_team_users(client: &Client, tid: Uuid) -> Result<Vec<UsersInTea
                 select user_id, firstname, lastname, email, title, memberof.joined, memberof.changed as role_changed
                 from memberof
                 join users on users.user_id = memberof.memberof_user_id
-                join teams on teams.team_id = memberof.memberof_team_id
                 join roles on roles.role_id = memberof.memberof_role_id
-                where teams.team_id = $1
+                where memberof.memberof_team_id = $1
             "#,
         )
         .await

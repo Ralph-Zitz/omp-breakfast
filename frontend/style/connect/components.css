@@ -1,0 +1,66 @@
+/*
+ * CONNECT Design System — Component CSS Imports
+ *
+ * Imports framework-agnostic component styles from connect-components-styles.
+ * These .module.css files use plain .connect-* class names that can be applied
+ * directly in Leptos view! macros without any JS bundler.
+ *
+ * Source: git@github.com:LEGO/connect-design-system.git
+ */
+
+/* Utility CSS */
+@import '../../../connect-design-system/packages/connect-components-styles/css/utils/modules/keyframes.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/utils/modules/reset.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/utils/modules/sr-only.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/utils/modules/elevation-classes.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/utils/modules/typography-classes.module.css';
+
+/* Components — alphabetical */
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/avatar/avatar.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/avatar-group/avatar-group.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/badge/badge.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/button/button.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/char-count/char-count.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/checkbox/checkbox.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/checkbox-group/checkbox-group.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/content-switcher/content-switcher.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/content-switcher-segment/content-switcher-segment.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/divider/divider.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/drawer/drawer.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/drawer/drawer-content.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/drawer/drawer-footer.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/drawer/drawer-inline.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/drawer/drawer-overlay.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/drawer/drawer-title.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/dropdown/dropdown.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/help-text/help-text.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/icon/icon.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/image/image.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/inline-alert/inline-alert.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/label/label.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/menu/menu.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/menu-divider/menu-divider.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/menu-item/menu-item.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/menu-section/menu-section.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/overlay/overlay.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/popover/popover.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/progress-circle/progress-circle.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/radio-button/radio-button.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/radio-group/radio-group.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/table/table.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/table/table-container.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/table/table-pagination.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/table/table-bulk-action-bar.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/tag/tag.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/text-field/text-field.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/text-link/text-link.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/toast/toast.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/toast/toast-desktop.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/toast/toast-mobile.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/toast/toast-region-desktop.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/toast/toast-region-mobile.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/toast/toast-title.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/toggle/toggle.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/tooltip/tooltip.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/utility-button/utility-button.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/visually-hidden/visually-hidden.module.css';
