@@ -62,7 +62,7 @@ async fn seed_user_id(client: &deadpool_postgres::Client, email: &str) -> Uuid {
 
 /// Lookup a seed team by name, returning the team_id.
 async fn seed_team_id(client: &deadpool_postgres::Client, tname: &str) -> Uuid {
-    let teams = db::get_teams(client).await.expect("should list teams");
+    let (teams, _) = db::get_teams(client, 100, 0).await.expect("should list teams");
     teams
         .into_iter()
         .find(|t| t.tname == tname)
@@ -72,7 +72,7 @@ async fn seed_team_id(client: &deadpool_postgres::Client, tname: &str) -> Uuid {
 
 /// Lookup a seed role by title, returning the role_id.
 async fn seed_role_id(client: &deadpool_postgres::Client, title: &str) -> Uuid {
-    let roles = db::get_roles(client).await.expect("should list roles");
+    let (roles, _) = db::get_roles(client, 100, 0).await.expect("should list roles");
     roles
         .into_iter()
         .find(|r| r.title == title)
@@ -196,7 +196,7 @@ async fn get_user_by_email_returns_update_user_entry() {
 #[ignore]
 async fn get_users_returns_seed_data() {
     let client = test_client().await;
-    let users = db::get_users(&client)
+    let (users, _) = db::get_users(&client, 100, 0)
         .await
         .expect("get_users should succeed");
     assert!(
@@ -460,7 +460,7 @@ async fn get_team_by_id() {
 #[ignore]
 async fn get_teams_returns_seed_data() {
     let client = test_client().await;
-    let teams = db::get_teams(&client)
+    let (teams, _) = db::get_teams(&client, 100, 0)
         .await
         .expect("get_teams should succeed");
     assert!(
@@ -591,7 +591,7 @@ async fn get_role_by_id() {
 #[ignore]
 async fn get_roles_returns_seed_data() {
     let client = test_client().await;
-    let roles = db::get_roles(&client)
+    let (roles, _) = db::get_roles(&client, 100, 0)
         .await
         .expect("get_roles should succeed");
     assert!(
@@ -746,7 +746,7 @@ async fn get_item_by_id() {
 #[ignore]
 async fn get_items_returns_seed_data() {
     let client = test_client().await;
-    let items = db::get_items(&client)
+    let (items, _) = db::get_items(&client, 100, 0)
         .await
         .expect("get_items should succeed");
     assert!(
@@ -922,7 +922,7 @@ async fn get_team_orders_returns_seed_data() {
     let client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
 
-    let orders = db::get_team_orders(&client, team_id)
+    let (orders, _) = db::get_team_orders(&client, team_id, 100, 0)
         .await
         .expect("get_team_orders should succeed");
     assert!(
@@ -1140,12 +1140,12 @@ async fn get_order_items_returns_list() {
     // Use `last()` because orders are sorted by `created desc` so the seed-data
     // order (created first) appears last; other concurrently-running tests may
     // create newer (empty) orders for the same team.
-    let orders = db::get_team_orders(&client, team_id).await.unwrap();
+    let (orders, _) = db::get_team_orders(&client, team_id, 100, 0).await.unwrap();
     let seed_order = orders
         .last()
         .expect("seed data should have at least one order");
 
-    let items = db::get_order_items(&client, seed_order.teamorders_id, team_id)
+    let (items, _) = db::get_order_items(&client, seed_order.teamorders_id, team_id, 100, 0)
         .await
         .expect("get_order_items should succeed");
     assert!(
@@ -1877,7 +1877,7 @@ async fn get_user_teams_returns_memberships() {
     let client = test_client().await;
     let admin_id = seed_user_id(&client, "admin@admin.com").await;
 
-    let teams = db::get_user_teams(&client, admin_id)
+    let (teams, _) = db::get_user_teams(&client, admin_id, 100, 0)
         .await
         .expect("get_user_teams should succeed");
     assert!(
@@ -1909,7 +1909,7 @@ async fn get_user_teams_returns_empty_for_no_memberships() {
     .await
     .unwrap();
 
-    let teams = db::get_user_teams(&client, user.user_id)
+    let (teams, _) = db::get_user_teams(&client, user.user_id, 100, 0)
         .await
         .expect("get_user_teams should succeed for user with no teams");
     assert!(
@@ -1929,7 +1929,7 @@ async fn get_team_users_returns_members() {
     let client = test_client().await;
     let team_id = seed_team_id(&client, "League of Cool Coders").await;
 
-    let users = db::get_team_users(&client, team_id)
+    let (users, _) = db::get_team_users(&client, team_id, 100, 0)
         .await
         .expect("get_team_users should succeed");
     assert!(
@@ -1954,7 +1954,7 @@ async fn get_team_users_returns_empty_for_empty_team() {
         .await
         .unwrap();
 
-    let users = db::get_team_users(&client, team.team_id)
+    let (users, _) = db::get_team_users(&client, team.team_id, 100, 0)
         .await
         .expect("get_team_users should succeed for empty team");
     assert!(users.is_empty(), "empty team should return []");
@@ -1972,7 +1972,7 @@ async fn get_user_teams_for_multi_team_user() {
     // U4_F is a member of both "League of Cool Coders" (Team Admin) and "Pixel Bakers" (Member)
     let u4_id = seed_user_id(&client, "U4_F.U4_L@LEGO.com").await;
 
-    let teams = db::get_user_teams(&client, u4_id)
+    let (teams, _) = db::get_user_teams(&client, u4_id, 100, 0)
         .await
         .expect("get_user_teams should succeed");
     assert!(
@@ -2482,4 +2482,242 @@ async fn check_team_access_admin_in_unrelated_team() {
         team_role.is_none(),
         "admin should have no role in Pixel Bakers (not a member)"
     );
+}
+
+// ===========================================================================
+// Group 9: FK Cascade Behaviour
+// ===========================================================================
+
+/// Deleting a team cascades to memberof, teamorders, and orders.
+#[actix_web::test]
+#[ignore]
+async fn delete_team_cascades_membership_and_orders() {
+    let mut client = test_client().await;
+
+    // Create isolated team, user, item
+    let team = db::create_team(
+        &client,
+        CreateTeamEntry {
+            tname: format!("dbtest-cascade-{}", Uuid::now_v7()),
+            descr: None,
+        },
+    )
+    .await
+    .unwrap();
+    let user = db::create_user(
+        &client,
+        CreateUserEntry {
+            firstname: "Cascade".to_string(),
+            lastname: "Test".to_string(),
+            email: unique_email(),
+            password: "password123".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    let item = db::create_item(
+        &client,
+        CreateItemEntry {
+            descr: format!("dbtest-cascade-item-{}", Uuid::now_v7()),
+            price: Decimal::from_str("3.00").unwrap(),
+        },
+    )
+    .await
+    .unwrap();
+
+    // Add user as member
+    let member_role_id = seed_role_id(&client, "Member").await;
+    db::add_team_member(&mut client, team.team_id, user.user_id, member_role_id)
+        .await
+        .unwrap();
+
+    // Create a team order with an order item
+    let order = db::create_team_order(
+        &client,
+        team.team_id,
+        user.user_id,
+        CreateTeamOrderEntry { duedate: None },
+    )
+    .await
+    .unwrap();
+    db::create_order_item(
+        &mut client,
+        order.teamorders_id,
+        team.team_id,
+        CreateOrderEntry {
+            orders_item_id: item.item_id,
+            amt: 2,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Delete the team — should cascade
+    let deleted = db::delete_team(&client, team.team_id).await.unwrap();
+    assert!(deleted);
+
+    // Membership should be gone
+    let (members, _) = db::get_team_users(&client, team.team_id, 100, 0).await.unwrap();
+    assert!(members.is_empty(), "membership should be cascade-deleted");
+
+    // Team orders should be gone
+    let (orders, _) = db::get_team_orders(&client, team.team_id, 100, 0).await.unwrap();
+    assert!(orders.is_empty(), "team orders should be cascade-deleted");
+
+    // Cleanup: user and item are independent, not cascaded
+    db::delete_user(&client, user.user_id).await.unwrap();
+    db::delete_item(&client, item.item_id).await.unwrap();
+}
+
+/// Deleting a team order cascades to its order items.
+#[actix_web::test]
+#[ignore]
+async fn delete_team_order_cascades_order_items() {
+    let mut client = test_client().await;
+    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
+
+    let item = db::create_item(
+        &client,
+        CreateItemEntry {
+            descr: format!("dbtest-oi-cascade-{}", Uuid::now_v7()),
+            price: Decimal::from_str("1.50").unwrap(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let order = db::create_team_order(
+        &client,
+        team_id,
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
+    )
+    .await
+    .unwrap();
+
+    db::create_order_item(
+        &mut client,
+        order.teamorders_id,
+        team_id,
+        CreateOrderEntry {
+            orders_item_id: item.item_id,
+            amt: 3,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Delete the order — items should cascade
+    db::delete_team_order(&client, team_id, order.teamorders_id)
+        .await
+        .unwrap();
+
+    let (items, _) = db::get_order_items(&client, order.teamorders_id, team_id, 100, 0)
+        .await
+        .unwrap();
+    assert!(items.is_empty(), "order items should be cascade-deleted");
+
+    db::delete_item(&client, item.item_id).await.unwrap();
+}
+
+/// Deleting a user cascades to memberof but is restricted by teamorders FK.
+#[actix_web::test]
+#[ignore]
+async fn delete_user_cascades_membership() {
+    let mut client = test_client().await;
+
+    let team = db::create_team(
+        &client,
+        CreateTeamEntry {
+            tname: format!("dbtest-ucascade-{}", Uuid::now_v7()),
+            descr: None,
+        },
+    )
+    .await
+    .unwrap();
+    let user = db::create_user(
+        &client,
+        CreateUserEntry {
+            firstname: "UserCascade".to_string(),
+            lastname: "Test".to_string(),
+            email: unique_email(),
+            password: "password123".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let member_role_id = seed_role_id(&client, "Member").await;
+    db::add_team_member(&mut client, team.team_id, user.user_id, member_role_id)
+        .await
+        .unwrap();
+
+    // Verify membership exists
+    let (members, _) = db::get_team_users(&client, team.team_id, 100, 0).await.unwrap();
+    assert!(!members.is_empty());
+
+    // Delete user — membership should cascade
+    db::delete_user(&client, user.user_id).await.unwrap();
+
+    let (members, _) = db::get_team_users(&client, team.team_id, 100, 0).await.unwrap();
+    assert!(
+        members.is_empty(),
+        "membership should be cascade-deleted with user"
+    );
+
+    db::delete_team(&client, team.team_id).await.unwrap();
+}
+
+/// Deleting an item referenced by an order is blocked by FK RESTRICT (V3 migration).
+#[actix_web::test]
+#[ignore]
+async fn delete_item_with_order_reference_is_restricted() {
+    let mut client = test_client().await;
+    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
+
+    let item = db::create_item(
+        &client,
+        CreateItemEntry {
+            descr: format!("dbtest-restrict-{}", Uuid::now_v7()),
+            price: Decimal::from_str("5.00").unwrap(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let order = db::create_team_order(
+        &client,
+        team_id,
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
+    )
+    .await
+    .unwrap();
+
+    db::create_order_item(
+        &mut client,
+        order.teamorders_id,
+        team_id,
+        CreateOrderEntry {
+            orders_item_id: item.item_id,
+            amt: 1,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Attempt to delete item — should fail due to FK RESTRICT
+    let result = db::delete_item(&client, item.item_id).await;
+    assert!(
+        result.is_err(),
+        "deleting an item referenced by an order should fail (FK RESTRICT)"
+    );
+
+    // Cleanup: delete order first (cascades order items), then item
+    db::delete_team_order(&client, team_id, order.teamorders_id)
+        .await
+        .unwrap();
+    db::delete_item(&client, item.item_id).await.unwrap();
 }

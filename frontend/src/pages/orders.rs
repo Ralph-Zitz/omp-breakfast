@@ -1,6 +1,6 @@
 use crate::api::{
-    HttpMethod, ItemEntry, OrderItemEntry, TeamEntry, TeamOrderEntry, UserContext, authed_get,
-    authed_request,
+    HttpMethod, ItemEntry, OrderItemEntry, PaginatedResponse, TeamEntry, TeamOrderEntry,
+    UserContext, authed_get, authed_request,
 };
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
@@ -42,16 +42,16 @@ pub fn OrdersPage() -> impl IntoView {
     wasm_bindgen_futures::spawn_local(async move {
         if let Some(resp) = authed_get("/api/v1.0/teams").await {
             if resp.ok() {
-                if let Ok(data) = resp.json::<Vec<TeamEntry>>().await {
-                    set_teams.set(data);
+                if let Ok(data) = resp.json::<PaginatedResponse<TeamEntry>>().await {
+                    set_teams.set(data.items);
                 }
             }
         }
         // Also fetch catalog items for the "add item" dropdown
         if let Some(resp) = authed_get("/api/v1.0/items").await {
             if resp.ok() {
-                if let Ok(data) = resp.json::<Vec<ItemEntry>>().await {
-                    set_catalog_items.set(data);
+                if let Ok(data) = resp.json::<PaginatedResponse<ItemEntry>>().await {
+                    set_catalog_items.set(data.items);
                 }
             }
         }
@@ -69,8 +69,8 @@ pub fn OrdersPage() -> impl IntoView {
             let url = format!("/api/v1.0/teams/{}/orders", team_id);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
-                    if let Ok(data) = resp.json::<Vec<TeamOrderEntry>>().await {
-                        set_orders.set(data);
+                    if let Ok(data) = resp.json::<PaginatedResponse<TeamOrderEntry>>().await {
+                        set_orders.set(data.items);
                     }
                 }
             }
@@ -88,8 +88,8 @@ pub fn OrdersPage() -> impl IntoView {
             let url = format!("/api/v1.0/teams/{}/orders/{}/items", team_id, order_id);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
-                    if let Ok(data) = resp.json::<Vec<OrderItemEntry>>().await {
-                        set_order_items.set(data);
+                    if let Ok(data) = resp.json::<PaginatedResponse<OrderItemEntry>>().await {
+                        set_order_items.set(data.items);
                     }
                 }
             }

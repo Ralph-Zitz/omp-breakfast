@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-04
+Last assessed: 2026-03-06
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -34,20 +34,6 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Informational Items
 
-### Documentation — Test Count Maintenance Burden
-
-- [ ] **#54 — Test counts in CLAUDE.md will drift as tests are added**
-  - File: `CLAUDE.md`
-  - Source command: `practices-audit`
-  - Action: Inherent maintenance cost. The assessment process updates counts each time it runs.
-
-### API Design — No Pagination on List Endpoints
-
-- [ ] **#61 — List endpoints return all records without pagination**
-  - Files: `src/db/`, `src/handlers/`
-  - Source commands: `review`, `api-completeness`
-  - Action: Add `LIMIT`/`OFFSET` when data growth warrants it.
-
 ### Security — Rate Limiter Uses IP-Based Key Extraction
 
 - [ ] **#119 — Behind a reverse proxy, all requests share one IP**
@@ -69,11 +55,6 @@ This file is **generated and maintained by the project assessment process** defi
 
 - [ ] **#123 — `tracing-bunyan-formatter` has infrequent releases**
   - Source commands: `dependency-check`
-
-### Testing — Additional Coverage Gaps
-
-- [ ] **#124 — FK cascade and `fix_migration_history` DB interaction lack tests**
-  - Source commands: `test-gaps`
 
 ### Deployment — `HTTP_REDIRECT_PORT` Hardcoded to 80
 
@@ -134,18 +115,6 @@ This file is **generated and maintained by the project assessment process** defi
 - [ ] **#265 — No test calls `add_team_member` or `update_member_role` with a non-existent `role_id`**
   - File: `src/handlers/mod.rs`
   - Source commands: `test-gaps`
-
-### Security — Token Responses Lack `Cache-Control: no-store`
-
-- [ ] **#247 — `/auth` and `/auth/refresh` responses contain JWT tokens but no `Cache-Control` header**
-  - Files: `src/server.rs`, `src/handlers/users.rs`
-  - Source commands: `security-audit`
-
-### Security — Missing `Referrer-Policy` Header
-
-- [ ] **#248 — `DefaultHeaders` does not include `Referrer-Policy`**
-  - File: `src/server.rs`
-  - Source commands: `security-audit`
 
 ### Deployment — Docker Compose Exposes PostgreSQL on All Interfaces
 

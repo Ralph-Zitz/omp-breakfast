@@ -7,6 +7,7 @@ use crate::{
 };
 use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
+    web::Query,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -14,17 +15,22 @@ use uuid::Uuid;
 #[utoipa::path(
     get,
     path = "/api/v1.0/items",
+    params(PaginationParams),
     responses(
-        (status = 200, description = "List of Items", body = [ItemEntry]),
+        (status = 200, description = "Paginated list of Items", body = PaginatedResponse<ItemEntry>),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
 #[instrument(skip(state), level = "debug")]
-pub async fn get_items(state: Data<State>) -> Result<impl Responder, Error> {
+pub async fn get_items(
+    state: Data<State>,
+    pagination: Query<PaginationParams>,
+) -> Result<impl Responder, Error> {
+    let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
-    let items = db::get_items(&client).await?;
-    Ok(HttpResponse::Ok().json(items))
+    let (items, total) = db::get_items(&client, limit, offset).await?;
+    Ok(HttpResponse::Ok().json(PaginatedResponse { items, total, limit, offset }))
 }
 
 #[utoipa::path(

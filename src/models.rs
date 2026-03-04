@@ -4,9 +4,47 @@ use deadpool_postgres::Pool;
 use serde::{Deserialize, Serialize};
 use std::{fmt, fmt::Display};
 
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
+
+// ── Pagination ──────────────────────────────────────────────────────────────
+
+/// Default number of items per page.
+pub const DEFAULT_PAGE_LIMIT: i64 = 50;
+/// Maximum allowed items per page.
+pub const MAX_PAGE_LIMIT: i64 = 100;
+
+/// Query parameters for paginated list endpoints.
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct PaginationParams {
+    /// Maximum number of items to return (1–100, default 50).
+    pub limit: Option<i64>,
+    /// Number of items to skip (default 0).
+    pub offset: Option<i64>,
+}
+
+impl PaginationParams {
+    /// Returns sanitised (limit, offset) values clamped to valid ranges.
+    pub fn sanitize(&self) -> (i64, i64) {
+        let limit = self.limit.unwrap_or(DEFAULT_PAGE_LIMIT).clamp(1, MAX_PAGE_LIMIT);
+        let offset = self.offset.unwrap_or(0).max(0);
+        (limit, offset)
+    }
+}
+
+/// Paginated response envelope returned by all list endpoints.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PaginatedResponse<T: Serialize> {
+    /// The page of items.
+    pub items: Vec<T>,
+    /// Total number of items matching the query (ignoring limit/offset).
+    pub total: i64,
+    /// The limit that was applied.
+    pub limit: i64,
+    /// The offset that was applied.
+    pub offset: i64,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]

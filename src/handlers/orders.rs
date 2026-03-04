@@ -7,6 +7,7 @@ use crate::{
 };
 use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
+    web::Query,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -14,8 +15,9 @@ use uuid::Uuid;
 #[utoipa::path(
     get,
     path = "/api/v1.0/teams/{team_id}/orders/{order_id}/items",
+    params(PaginationParams),
     responses(
-        (status = 200, description = "List of order items", body = [OrderEntry]),
+        (status = 200, description = "Paginated list of order items", body = PaginatedResponse<OrderEntry>),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
     ),
     params(
@@ -28,11 +30,13 @@ use uuid::Uuid;
 pub async fn get_order_items(
     state: Data<State>,
     path: Path<(Uuid, Uuid)>,
+    pagination: Query<PaginationParams>,
 ) -> Result<impl Responder, Error> {
+    let (limit, offset) = pagination.sanitize();
     let (team_id, order_id) = path.into_inner();
     let client: Client = get_client(&state.pool).await?;
-    let items = db::get_order_items(&client, order_id, team_id).await?;
-    Ok(HttpResponse::Ok().json(items))
+    let (items, total) = db::get_order_items(&client, order_id, team_id, limit, offset).await?;
+    Ok(HttpResponse::Ok().json(PaginatedResponse { items, total, limit, offset }))
 }
 
 #[utoipa::path(

@@ -154,7 +154,7 @@ fn install_mock_fetch_success() {
                 // GET /api/v1.0/users/*/teams — must come BEFORE the general /users/ check
                 if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {{
                     return Promise.resolve(new Response(
-                        JSON.stringify([]),
+                        JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
@@ -808,7 +808,7 @@ fn install_mock_fetch_user_401() {
                 var url = (typeof input === 'string') ? input : input.url;
                 if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {
                     return Promise.resolve(new Response(
-                        JSON.stringify([]),
+                        JSON.stringify({"items":[],"total":0,"limit":50,"offset":0}),
                         { status: 200, headers: { "Content-Type": "application/json" } }
                     ));
                 }
@@ -915,7 +915,7 @@ async fn test_loading_page_shown_during_session_restore() {
                     return new Promise(function(resolve) {
                         setTimeout(function() {
                             resolve(new Response(
-                                JSON.stringify([]),
+                                JSON.stringify({"items":[],"total":0,"limit":50,"offset":0}),
                                 { status: 200, headers: { "Content-Type": "application/json" } }
                             ));
                         }, 2000);
@@ -1038,7 +1038,7 @@ fn install_mock_fetch_refresh_retry() {
                 // GET /api/v1.0/users/*/teams — return empty team list
                 if (url.includes('/api/v1.0/users/') && url.endsWith('/teams') && method === 'GET') {{
                     return Promise.resolve(new Response(
-                        JSON.stringify([]),
+                        JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
@@ -1223,7 +1223,7 @@ fn install_mock_fetch_double_failure() {
                 // GET /api/v1.0/users/*/teams — return empty team list
                 if (url.includes('/api/v1.0/users/') && url.endsWith('/teams') && method === 'GET') {{
                     return Promise.resolve(new Response(
-                        JSON.stringify([]),
+                        JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
@@ -1645,14 +1645,14 @@ fn install_mock_fetch_full() {
                 // GET /api/v1.0/users/*/teams — returns admin membership
                 if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {{
                     return Promise.resolve(new Response(
-                        JSON.stringify([{{
+                        JSON.stringify({{"items":[{{
                             "tname": "Core Team",
                             "title": "Admin",
                             "firstname": "John",
                             "lastname": "Doe",
                             "joined": "2025-01-01T00:00:00Z",
                             "role_changed": "2025-01-01T00:00:00Z"
-                        }}]),
+                        }}],"total":1,"limit":50,"offset":0}}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
@@ -1675,14 +1675,14 @@ fn install_mock_fetch_full() {
                 // GET /api/v1.0/users (list all)
                 if (url.endsWith('/api/v1.0/users') && method === 'GET') {{
                     return Promise.resolve(new Response(
-                        JSON.stringify([{{
+                        JSON.stringify({{"items":[{{
                             user_id: "12345678-1234-1234-1234-1234567890ab",
                             firstname: "John",
                             lastname: "Doe",
                             email: "john@example.com",
                             created: "2025-01-01T00:00:00Z",
                             changed: "2025-01-01T00:00:00Z"
-                        }}]),
+                        }}],"total":1,"limit":50,"offset":0}}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
@@ -1690,7 +1690,7 @@ fn install_mock_fetch_full() {
                 // GET /api/v1.0/teams/*/users
                 if (url.match(/\/api\/v1\.0\/teams\/[^/]+\/users/) && method === 'GET') {{
                     return Promise.resolve(new Response(
-                        JSON.stringify([{{
+                        JSON.stringify({{"items":[{{
                             user_id: "12345678-1234-1234-1234-1234567890ab",
                             firstname: "John",
                             lastname: "Doe",
@@ -1698,7 +1698,7 @@ fn install_mock_fetch_full() {
                             title: "Admin",
                             joined: "2025-01-01T00:00:00Z",
                             role_changed: "2025-01-01T00:00:00Z"
-                        }}]),
+                        }}],"total":1,"limit":50,"offset":0}}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
@@ -1706,7 +1706,7 @@ fn install_mock_fetch_full() {
                 // GET /api/v1.0/teams/*/orders/*/items
                 if (url.match(/\/api\/v1\.0\/teams\/[^/]+\/orders\/[^/]+\/items/) && method === 'GET') {{
                     return Promise.resolve(new Response(
-                        JSON.stringify([]),
+                        JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
@@ -1714,7 +1714,7 @@ fn install_mock_fetch_full() {
                 // GET /api/v1.0/teams/*/orders
                 if (url.match(/\/api\/v1\.0\/teams\/[^/]+\/orders/) && method === 'GET') {{
                     return Promise.resolve(new Response(
-                        JSON.stringify([{{
+                        JSON.stringify({{"items":[{{
                             teamorders_id: "aaaa1111-0000-0000-0000-000000000001",
                             teamorders_team_id: "bbbb2222-0000-0000-0000-000000000001",
                             teamorders_user_id: "12345678-1234-1234-1234-1234567890ab",
@@ -1722,7 +1722,7 @@ fn install_mock_fetch_full() {
                             closed: false,
                             created: "2025-01-01T00:00:00Z",
                             changed: "2025-01-01T00:00:00Z"
-                        }}]),
+                        }}],"total":1,"limit":50,"offset":0}}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
@@ -1730,13 +1730,13 @@ fn install_mock_fetch_full() {
                 // GET /api/v1.0/teams (list all)
                 if (url.endsWith('/api/v1.0/teams') && method === 'GET') {{
                     return Promise.resolve(new Response(
-                        JSON.stringify([{{
+                        JSON.stringify({{"items":[{{
                             team_id: "bbbb2222-0000-0000-0000-000000000001",
                             tname: "Core Team",
                             descr: "The core breakfast team",
                             created: "2025-01-01T00:00:00Z",
                             changed: "2025-01-01T00:00:00Z"
-                        }}]),
+                        }}],"total":1,"limit":50,"offset":0}}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
@@ -1744,13 +1744,13 @@ fn install_mock_fetch_full() {
                 // GET /api/v1.0/items
                 if (url.endsWith('/api/v1.0/items') && method === 'GET') {{
                     return Promise.resolve(new Response(
-                        JSON.stringify([{{
+                        JSON.stringify({{"items":[{{
                             item_id: "cccc3333-0000-0000-0000-000000000001",
                             descr: "Croissant",
                             price: "25.00",
                             created: "2025-01-01T00:00:00Z",
                             changed: "2025-01-01T00:00:00Z"
-                        }}]),
+                        }}],"total":1,"limit":50,"offset":0}}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}
@@ -1758,7 +1758,7 @@ fn install_mock_fetch_full() {
                 // GET /api/v1.0/roles
                 if (url.endsWith('/api/v1.0/roles') && method === 'GET') {{
                     return Promise.resolve(new Response(
-                        JSON.stringify([{{
+                        JSON.stringify({{"items":[{{
                             role_id: "dddd4444-0000-0000-0000-000000000001",
                             title: "Admin",
                             created: "2025-01-01T00:00:00Z",
@@ -1768,7 +1768,7 @@ fn install_mock_fetch_full() {
                             title: "Member",
                             created: "2025-01-01T00:00:00Z",
                             changed: "2025-01-01T00:00:00Z"
-                        }}]),
+                        }}],"total":2,"limit":50,"offset":0}}),
                         {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
                     ));
                 }}

@@ -1,4 +1,4 @@
-use crate::api::{HttpMethod, UserContext, UserInTeams, authed_get, authed_request};
+use crate::api::{HttpMethod, PaginatedResponse, UserContext, UserInTeams, authed_get, authed_request};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::toast::{toast_error, toast_success};
@@ -79,7 +79,10 @@ pub fn ProfilePage() -> impl IntoView {
                                 let teams_url = format!("/api/v1.0/users/{}/teams", user_id);
                                 let teams = if let Some(tr) = authed_get(&teams_url).await {
                                     if tr.ok() {
-                                        tr.json::<Vec<UserInTeams>>().await.unwrap_or_default()
+                                        tr.json::<PaginatedResponse<UserInTeams>>()
+                                            .await
+                                            .map(|p| p.items)
+                                            .unwrap_or_default()
                                     } else {
                                         Vec::new()
                                     }

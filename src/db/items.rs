@@ -3,21 +3,27 @@ use crate::{errors::Error, models::*};
 use deadpool_postgres::Client;
 use uuid::Uuid;
 
-/// Fetches all breakfast items, ordered alphabetically by description.
+/// Fetches breakfast items with pagination, ordered alphabetically by description.
 ///
 /// Rows that fail to map are logged with `warn!()` and skipped.
-pub async fn get_items(client: &Client) -> Result<Vec<ItemEntry>, Error> {
+pub async fn get_items(client: &Client, limit: i64, offset: i64) -> Result<(Vec<ItemEntry>, i64), Error> {
+    let count: i64 = client
+        .query_one("select count(*) from items", &[])
+        .await
+        .map_err(Error::Db)?
+        .get(0);
+
     let statement = client
-        .prepare("select item_id, descr, price, created, changed from items order by descr asc")
+        .prepare("select item_id, descr, price, created, changed from items order by descr asc limit $1 offset $2")
         .await
         .map_err(Error::Db)?;
 
     let rows = client
-        .query(&statement, &[])
+        .query(&statement, &[&limit, &offset])
         .await
         .map_err(Error::Db)?;
 
-    Ok(map_rows(&rows, "item"))
+    Ok((map_rows(&rows, "item"), count))
 }
 
 /// Fetches a single breakfast item by ID.

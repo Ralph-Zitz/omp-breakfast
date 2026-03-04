@@ -53,7 +53,7 @@ src/
     healthcheck.rs – Minimal TLS healthcheck binary for distroless Docker containers
   config.rs        – Settings loaded from config/*.yml + env vars
   from_row.rs      – Custom FromRow trait and FromRowError enum (manual row mapping)
-  models.rs        – All data structs (User, Team, Role, Order, Claims, State)
+  models.rs        – All data structs (User, Team, Role, Order, Claims, State, PaginationParams, PaginatedResponse)
   db/
     mod.rs         – Module declarations + re-exports of all public DB functions
     migrate.rs     – Refinery migration runner (embed_migrations! + run_migrations)
@@ -169,6 +169,7 @@ tests/
 - `Error::Unauthorized` variant maps to HTTP 401 for authentication failures
 - Production safety: server panics at startup if `server.secret` or `server.jwtsecret` is still the default value when `ENV=production`, if `pg.user` or `pg.password` is still the default `actix`, or if `pg.host` is still the placeholder `pick.a.proper.hostname`
 - Error responses are JSON `{"error": "..."}` via `ErrorResponse` struct; DB constraint violations return sanitized messages (never raw SQL)
+- **Pagination:** All list endpoints accept `?limit=` and `?offset=` query parameters via `PaginationParams` (default limit 50, max 100, offset ≥ 0). Responses are wrapped in `PaginatedResponse<T>` with `items`, `total`, `limit`, `offset` fields. DB list functions return `(Vec<T>, i64)` where the second element is the total count from a `SELECT COUNT(*)` query. Sanitization via `PaginationParams::sanitize()` clamps values to valid ranges.
 - List queries (`get_users`, `get_teams`, `get_roles`, `get_items`, `get_team_orders`, `get_order_items`) log a `warn!()` when a row fails to map instead of silently dropping it
 - `get_user_teams` and `get_team_users` return an empty `[]` (200 OK) when no records are found, rather than a 404 error
 - 4xx errors log with `warn!()`, 5xx errors log with `error!()` for color-coded severity
@@ -176,7 +177,7 @@ tests/
 - Health endpoint (`/health`) returns HTTP 503 with `{"up": false}` when the database is unreachable, and HTTP 200 with `{"up": true}` when healthy
 - Backend serves `frontend/dist/` as static files via `actix-files`, with `index_file("index.html")`
 - Static files are served with a `Content-Security-Policy` header: `default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://assets.lego.com; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'`. The `'unsafe-inline'` directive in `script-src` is required because Trunk generates an inline `<script type="module">` to initialize the WASM module; removing it causes a white-screen failure in Chrome. The `font-src` directive includes `https://assets.lego.com` to allow loading the LEGO Typewell proprietary font from the LEGO CDN.
-- Security headers: `Strict-Transport-Security` (HSTS), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` are set globally via `DefaultHeaders`
+- Security headers: `Strict-Transport-Security` (HSTS), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin` are set globally via `DefaultHeaders`
 - Password hashing uses explicit Argon2id parameters (`Algorithm::Argon2id`, `Version::V0x13`, `Params::default()`) rather than `Argon2::default()` to prevent silent weakening via crate updates
 
 ## Frontend Architecture
@@ -368,7 +369,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 - 193 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
 - 87 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
-- 92 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 96 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
 - Test DB uses `docker-compose.test.yml` overlay to expose port 5433 (avoids conflicts with dev DB on 5432)

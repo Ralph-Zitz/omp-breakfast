@@ -1,4 +1,4 @@
-use crate::api::{HttpMethod, ItemEntry, UserContext, authed_get, authed_request};
+use crate::api::{HttpMethod, ItemEntry, PaginatedResponse, UserContext, authed_get, authed_request};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
@@ -20,8 +20,8 @@ pub fn ItemsPage() -> impl IntoView {
     wasm_bindgen_futures::spawn_local(async move {
         if let Some(resp) = authed_get("/api/v1.0/items").await {
             if resp.ok() {
-                if let Ok(data) = resp.json::<Vec<ItemEntry>>().await {
-                    set_items.set(data);
+                if let Ok(data) = resp.json::<PaginatedResponse<ItemEntry>>().await {
+                    set_items.set(data.items);
                 }
             }
         }

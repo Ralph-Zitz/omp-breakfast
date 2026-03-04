@@ -26,6 +26,14 @@ const PEER: SocketAddr = SocketAddr::new(
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Extract the `items` array from a paginated response envelope.
+fn paginated_items(body: Value) -> Vec<Value> {
+    body["items"]
+        .as_array()
+        .expect("response should have 'items' array")
+        .to_vec()
+}
+
 /// Build a `Data<State>` pointing at the local Docker postgres (no TLS).
 ///
 /// Reads `TEST_DB_PORT` from the environment (default: 5432) so that
@@ -212,7 +220,7 @@ async fn get_users_with_valid_token() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert!(body.as_array().unwrap().len() >= 5, "seed data has 5 users");
+    assert!(body["items"].as_array().unwrap().len() >= 5, "seed data has 5 users");
 }
 
 #[actix_web::test]
@@ -231,7 +239,7 @@ async fn get_teams_with_valid_token() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert!(body.as_array().unwrap().len() >= 2, "seed data has 2 teams");
+    assert!(body["items"].as_array().unwrap().len() >= 2, "seed data has 2 teams");
 }
 
 #[actix_web::test]
@@ -250,7 +258,7 @@ async fn get_roles_with_valid_token() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert!(body.as_array().unwrap().len() >= 3, "seed data has 3 roles");
+    assert!(body["items"].as_array().unwrap().len() >= 3, "seed data has 3 roles");
 }
 
 #[actix_web::test]
@@ -493,7 +501,7 @@ async fn get_items_returns_seed_data() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert!(body.as_array().unwrap().len() >= 4, "seed data has 4 items");
+    assert!(body["items"].as_array().unwrap().len() >= 4, "seed data has 4 items");
 }
 
 #[actix_web::test]
@@ -562,7 +570,7 @@ async fn delete_other_user_returns_forbidden() {
         .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
 
     // Find a user that is not U1_F
     let other_user = users
@@ -599,7 +607,7 @@ async fn update_other_user_returns_forbidden() {
         .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
 
     let other_user = users
         .iter()
@@ -645,7 +653,7 @@ async fn create_and_list_team_orders() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -660,7 +668,7 @@ async fn create_and_list_team_orders() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let _user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
@@ -686,7 +694,7 @@ async fn create_and_list_team_orders() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
-    let orders: Vec<Value> = test::read_body_json(resp).await;
+    let orders = paginated_items(test::read_body_json(resp).await);
     assert!(
         orders
             .iter()
@@ -718,7 +726,7 @@ async fn get_single_team_order_returns_details() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -805,7 +813,7 @@ async fn non_member_cannot_create_team_order() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
@@ -819,7 +827,7 @@ async fn non_member_cannot_create_team_order() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let _user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U1_F.U1_L@LEGO.com"))
@@ -884,7 +892,7 @@ async fn non_admin_cannot_delete_team() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams[0]["team_id"].as_str().unwrap();
 
     let req = test::TestRequest::delete()
@@ -1078,7 +1086,7 @@ async fn create_duplicate_item_returns_409() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let items: Vec<Value> = test::read_body_json(resp).await;
+    let items = paginated_items(test::read_body_json(resp).await);
     if let Some(item) = items
         .iter()
         .find(|i| i["descr"].as_str() == Some("duplicate-test-item"))
@@ -1248,7 +1256,7 @@ async fn non_admin_cannot_update_item() {
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let items: Vec<Value> = test::read_body_json(resp).await;
+    let items = paginated_items(test::read_body_json(resp).await);
     let item_id = items[0]["item_id"].as_str().unwrap();
 
     // Non-admin tries to update → 403
@@ -1285,7 +1293,7 @@ async fn non_admin_cannot_delete_item() {
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let items: Vec<Value> = test::read_body_json(resp).await;
+    let items = paginated_items(test::read_body_json(resp).await);
     let item_id = items[0]["item_id"].as_str().unwrap();
 
     // Non-admin tries to delete → 403
@@ -1341,7 +1349,7 @@ async fn non_admin_cannot_delete_role() {
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let roles: Vec<Value> = test::read_body_json(resp).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
     let guest_role = roles
         .iter()
         .find(|r| r["title"].as_str() == Some("Guest"))
@@ -1428,7 +1436,7 @@ async fn team_admin_can_manage_team_members() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -1463,7 +1471,7 @@ async fn team_admin_can_manage_team_members() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let roles: Vec<Value> = test::read_body_json(resp).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
     let member_role_id = roles
         .iter()
         .find(|r| r["title"].as_str() == Some("Member"))
@@ -1534,7 +1542,7 @@ async fn admin_can_manage_any_team_orders() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
@@ -1549,7 +1557,7 @@ async fn admin_can_manage_any_team_orders() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let _admin_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
@@ -1601,7 +1609,7 @@ async fn admin_can_manage_any_team_members() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
@@ -1632,7 +1640,7 @@ async fn admin_can_manage_any_team_members() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let roles: Vec<Value> = test::read_body_json(resp).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
     let member_role_id = roles
         .iter()
         .find(|r| r["title"].as_str() == Some("Member"))
@@ -1774,7 +1782,7 @@ async fn team_admin_can_update_user_in_their_team() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let u1 = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U1_F.U1_L@LEGO.com"))
@@ -1850,7 +1858,7 @@ async fn team_admin_cannot_update_user_outside_their_team() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let pb_team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
@@ -1865,7 +1873,7 @@ async fn team_admin_cannot_update_user_outside_their_team() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let roles: Vec<Value> = test::read_body_json(resp).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
     let member_role_id = roles
         .iter()
         .find(|r| r["title"].as_str() == Some("Member"))
@@ -1957,7 +1965,7 @@ async fn team_admin_can_delete_user_in_their_team() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let locc_team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -1971,7 +1979,7 @@ async fn team_admin_can_delete_user_in_their_team() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let roles: Vec<Value> = test::read_body_json(resp).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
     let member_role_id = roles
         .iter()
         .find(|r| r["title"].as_str() == Some("Member"))
@@ -2071,7 +2079,7 @@ async fn user_can_still_update_self() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let u1 = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U1_F.U1_L@LEGO.com"))
@@ -2133,7 +2141,7 @@ async fn create_get_update_delete_order_item() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -2148,7 +2156,7 @@ async fn create_get_update_delete_order_item() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let items: Vec<Value> = test::read_body_json(resp).await;
+    let items = paginated_items(test::read_body_json(resp).await);
     assert!(!items.is_empty(), "seed data should have items");
     let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
@@ -2158,7 +2166,7 @@ async fn create_get_update_delete_order_item() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let _user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
@@ -2216,7 +2224,7 @@ async fn create_get_update_delete_order_item() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
-    let list: Vec<Value> = test::read_body_json(resp).await;
+    let list = paginated_items(test::read_body_json(resp).await);
     assert!(
         list.iter()
             .any(|i| i["orders_item_id"].as_str() == Some(&item_id)),
@@ -2287,7 +2295,7 @@ async fn duplicate_order_item_returns_409() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -2301,7 +2309,7 @@ async fn duplicate_order_item_returns_409() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let items: Vec<Value> = test::read_body_json(resp).await;
+    let items = paginated_items(test::read_body_json(resp).await);
     let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
     // Get user ID for the logged-in user
@@ -2310,7 +2318,7 @@ async fn duplicate_order_item_returns_409() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let _user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
@@ -2381,7 +2389,7 @@ async fn non_member_cannot_create_order_item() {
         .insert_header(("Authorization", format!("Bearer {}", token_u4)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -2395,7 +2403,7 @@ async fn non_member_cannot_create_order_item() {
         .insert_header(("Authorization", format!("Bearer {}", token_u4)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let items: Vec<Value> = test::read_body_json(resp).await;
+    let items = paginated_items(test::read_body_json(resp).await);
     let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
     // Get user ID for U4_F
@@ -2404,7 +2412,7 @@ async fn non_member_cannot_create_order_item() {
         .insert_header(("Authorization", format!("Bearer {}", token_u4)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let _u4_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
@@ -2522,7 +2530,7 @@ async fn admin_can_manage_order_items_on_any_team() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
@@ -2537,7 +2545,7 @@ async fn admin_can_manage_order_items_on_any_team() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let items: Vec<Value> = test::read_body_json(resp).await;
+    let items = paginated_items(test::read_body_json(resp).await);
     let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
     // Get admin user ID
@@ -2546,7 +2554,7 @@ async fn admin_can_manage_order_items_on_any_team() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let _admin_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
@@ -2638,7 +2646,7 @@ async fn closed_order_rejects_add_item() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -2653,7 +2661,7 @@ async fn closed_order_rejects_add_item() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let _admin_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
@@ -2689,7 +2697,7 @@ async fn closed_order_rejects_add_item() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let items: Vec<Value> = test::read_body_json(resp).await;
+    let items = paginated_items(test::read_body_json(resp).await);
     let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
     // Try to add an item to the closed order → should be 403
@@ -2730,7 +2738,7 @@ async fn closed_order_rejects_update_item() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -2745,7 +2753,7 @@ async fn closed_order_rejects_update_item() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let _admin_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
@@ -2770,7 +2778,7 @@ async fn closed_order_rejects_update_item() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let items: Vec<Value> = test::read_body_json(resp).await;
+    let items = paginated_items(test::read_body_json(resp).await);
     let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
     // Add an item while the order is still open
@@ -2838,7 +2846,7 @@ async fn closed_order_rejects_delete_item() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -2853,7 +2861,7 @@ async fn closed_order_rejects_delete_item() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let _admin_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
@@ -2878,7 +2886,7 @@ async fn closed_order_rejects_delete_item() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let items: Vec<Value> = test::read_body_json(resp).await;
+    let items = paginated_items(test::read_body_json(resp).await);
     let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
     // Add an item while the order is still open
@@ -2945,7 +2953,7 @@ async fn reopened_order_allows_item_mutations() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -2960,7 +2968,7 @@ async fn reopened_order_allows_item_mutations() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let _admin_user_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
@@ -3003,7 +3011,7 @@ async fn reopened_order_allows_item_mutations() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let items: Vec<Value> = test::read_body_json(resp).await;
+    let items = paginated_items(test::read_body_json(resp).await);
     let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
     // Adding items to the reopened order should succeed
@@ -3047,7 +3055,7 @@ async fn team_admin_can_update_user_in_shared_team() {
         .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let u1 = users
         .iter()
         .find(|u| u["email"].as_str() == Some("U1_F.U1_L@LEGO.com"))
@@ -3308,7 +3316,7 @@ async fn non_admin_cannot_update_team() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams[0]["team_id"].as_str().unwrap();
 
     let req = test::TestRequest::put()
@@ -3341,7 +3349,7 @@ async fn non_admin_cannot_update_role() {
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let roles: Vec<Value> = test::read_body_json(resp).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
     let guest_role = roles
         .iter()
         .find(|r| r["title"].as_str() == Some("Guest"))
@@ -3385,7 +3393,7 @@ async fn team_admin_cannot_assign_admin_role_via_add_member() {
         .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -3400,7 +3408,7 @@ async fn team_admin_cannot_assign_admin_role_via_add_member() {
         .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let roles: Vec<Value> = test::read_body_json(resp).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
     let admin_role_id = roles
         .iter()
         .find(|r| r["title"].as_str() == Some("Admin"))
@@ -3472,7 +3480,7 @@ async fn team_admin_cannot_assign_admin_role_via_update_role() {
         .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -3487,7 +3495,7 @@ async fn team_admin_cannot_assign_admin_role_via_update_role() {
         .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let roles: Vec<Value> = test::read_body_json(resp).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
     let member_role_id = roles
         .iter()
         .find(|r| r["title"].as_str() == Some("Member"))
@@ -3700,7 +3708,7 @@ async fn user_teams_returns_teams_for_seed_admin() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let admin = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
@@ -3714,7 +3722,7 @@ async fn user_teams_returns_teams_for_seed_admin() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200, "user_teams should return 200");
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     assert!(
         teams.iter().any(|t| t["tname"] == "League of Cool Coders"),
         "admin should be member of League of Cool Coders"
@@ -3762,7 +3770,7 @@ async fn user_teams_returns_empty_for_user_with_no_teams() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     assert!(teams.is_empty(), "new user should have no teams");
 
     // Clean up
@@ -4027,7 +4035,7 @@ async fn admin_can_bulk_delete_team_orders() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     let _admin_id = users
         .iter()
         .find(|u| u["email"].as_str() == Some("admin@admin.com"))
@@ -4074,7 +4082,7 @@ async fn admin_can_bulk_delete_team_orders() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let orders: Vec<Value> = test::read_body_json(resp).await;
+    let orders = paginated_items(test::read_body_json(resp).await);
     assert!(orders.is_empty(), "all orders should be deleted");
 
     // Clean up team
@@ -4103,7 +4111,7 @@ async fn admin_can_update_member_role() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -4117,7 +4125,7 @@ async fn admin_can_update_member_role() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let roles: Vec<Value> = test::read_body_json(resp).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
     let member_role_id = roles
         .iter()
         .find(|r| r["title"].as_str() == Some("Member"))
@@ -4308,7 +4316,7 @@ async fn team_users_returns_members_of_seed_team() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
     let team_id = teams
         .iter()
         .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
@@ -4323,7 +4331,7 @@ async fn team_users_returns_members_of_seed_team() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
 
     // Seed data has 5 members in LoCC: admin, U1_F, U2_F, U3_F, U4_F
     assert_eq!(users.len(), 5, "LoCC should have 5 seed members");
@@ -4365,7 +4373,7 @@ async fn team_users_returns_empty_for_team_with_no_members() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
-    let users: Vec<Value> = test::read_body_json(resp).await;
+    let users = paginated_items(test::read_body_json(resp).await);
     assert!(users.is_empty(), "new team should have no members");
 
     // Clean up

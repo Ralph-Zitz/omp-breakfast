@@ -1,4 +1,4 @@
-use crate::api::{HttpMethod, RoleEntry, UserContext, authed_get, authed_request};
+use crate::api::{HttpMethod, PaginatedResponse, RoleEntry, UserContext, authed_get, authed_request};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
@@ -21,8 +21,8 @@ pub fn RolesPage() -> impl IntoView {
     wasm_bindgen_futures::spawn_local(async move {
         if let Some(resp) = authed_get("/api/v1.0/roles").await {
             if resp.ok() {
-                if let Ok(data) = resp.json::<Vec<RoleEntry>>().await {
-                    set_roles.set(data);
+                if let Ok(data) = resp.json::<PaginatedResponse<RoleEntry>>().await {
+                    set_roles.set(data.items);
                 }
             }
         }

@@ -11,6 +11,7 @@ use crate::{
 };
 use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
+    web::Query,
 };
 use actix_web_httpauth::extractors::basic::BasicAuth;
 use argon2::password_hash::PasswordVerifier;
@@ -21,17 +22,22 @@ use uuid::Uuid;
 #[utoipa::path(
     get,
     path = "/api/v1.0/users",
+    params(PaginationParams),
     responses(
-        (status = 200, description = "List of Users", body = [UserEntry]),
+        (status = 200, description = "Paginated list of Users", body = PaginatedResponse<UserEntry>),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
 #[instrument(skip(state), level = "debug")]
-pub async fn get_users(state: Data<State>) -> Result<impl Responder, Error> {
+pub async fn get_users(
+    state: Data<State>,
+    pagination: Query<PaginationParams>,
+) -> Result<impl Responder, Error> {
+    let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
-    let users = db::get_users(&client).await?;
-    Ok(HttpResponse::Ok().json(users))
+    let (users, total) = db::get_users(&client, limit, offset).await?;
+    Ok(HttpResponse::Ok().json(PaginatedResponse { items: users, total, limit, offset }))
 }
 
 #[utoipa::path(
@@ -72,7 +78,9 @@ pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Resp
         .map(|cached| cached.user.user_id)
         .ok_or_else(|| Error::Unauthorized("Unauthorized".to_string()))?;
     let auth = generate_token_pair(user_id, &state.jwtsecret)?;
-    Ok(HttpResponse::Ok().json(auth))
+    Ok(HttpResponse::Ok()
+        .insert_header(("Cache-Control", "no-store"))
+        .json(auth))
 }
 
 #[utoipa::path(
@@ -120,7 +128,9 @@ pub async fn refresh_token(state: Data<State>, req: HttpRequest) -> Result<impl 
 
     // Issue a new token pair
     let auth = generate_token_pair(claims.sub, &state.jwtsecret)?;
-    Ok(HttpResponse::Ok().json(auth))
+    Ok(HttpResponse::Ok()
+        .insert_header(("Cache-Control", "no-store"))
+        .json(auth))
 }
 
 #[utoipa::path(
@@ -383,8 +393,9 @@ pub async fn update_user(
 #[utoipa::path(
     get,
     path = "/api/v1.0/users/{user_id}/teams",
+    params(PaginationParams),
     responses(
-        (status = 200, description = "List of Teams the User is a member of", body = [UserInTeams]),
+        (status = 200, description = "Paginated list of Teams the User is a member of", body = PaginatedResponse<UserInTeams>),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
     ),
     params(
@@ -393,8 +404,13 @@ pub async fn update_user(
     security(("bearer_auth" = [])),
 )]
 #[instrument(skip(state), level = "debug")]
-pub async fn user_teams(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
+pub async fn user_teams(
+    state: Data<State>,
+    path: Path<Uuid>,
+    pagination: Query<PaginationParams>,
+) -> Result<impl Responder, Error> {
+    let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
-    let teams = db::get_user_teams(&client, path.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(teams))
+    let (teams, total) = db::get_user_teams(&client, path.into_inner(), limit, offset).await?;
+    Ok(HttpResponse::Ok().json(PaginatedResponse { items: teams, total, limit, offset }))
 }

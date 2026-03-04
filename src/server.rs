@@ -442,7 +442,8 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
                 DefaultHeaders::new()
                     .add(("Strict-Transport-Security", "max-age=31536000; includeSubDomains"))
                     .add(("X-Content-Type-Options", "nosniff"))
-                    .add(("X-Frame-Options", "DENY")),
+                    .add(("X-Frame-Options", "DENY"))
+                    .add(("Referrer-Policy", "strict-origin-when-cross-origin")),
             )
             .app_data(state.clone())
             .app_data(swagger_config.clone())

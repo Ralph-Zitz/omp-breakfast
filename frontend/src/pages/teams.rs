@@ -1,4 +1,4 @@
-use crate::api::{HttpMethod, TeamEntry, UserContext, UsersInTeam, authed_get, authed_request};
+use crate::api::{HttpMethod, PaginatedResponse, TeamEntry, UserContext, UsersInTeam, authed_get, authed_request};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
@@ -25,8 +25,8 @@ pub fn TeamsPage() -> impl IntoView {
     wasm_bindgen_futures::spawn_local(async move {
         if let Some(resp) = authed_get("/api/v1.0/teams").await {
             if resp.ok() {
-                if let Ok(data) = resp.json::<Vec<TeamEntry>>().await {
-                    set_teams_load.set(data);
+                if let Ok(data) = resp.json::<PaginatedResponse<TeamEntry>>().await {
+                    set_teams_load.set(data.items);
                 }
             }
         }
@@ -40,8 +40,8 @@ pub fn TeamsPage() -> impl IntoView {
             let url = format!("/api/v1.0/teams/{}/users", team_id);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
-                    if let Ok(data) = resp.json::<Vec<UsersInTeam>>().await {
-                        set_team_members.set(data);
+                    if let Ok(data) = resp.json::<PaginatedResponse<UsersInTeam>>().await {
+                        set_team_members.set(data.items);
                     }
                 }
             }

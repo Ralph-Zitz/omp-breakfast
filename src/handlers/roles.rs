@@ -7,6 +7,7 @@ use crate::{
 };
 use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
+    web::Query,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -14,17 +15,22 @@ use uuid::Uuid;
 #[utoipa::path(
     get,
     path = "/api/v1.0/roles",
+    params(PaginationParams),
     responses(
-        (status = 200, description = "List of Roles", body = [RoleEntry]),
+        (status = 200, description = "Paginated list of Roles", body = PaginatedResponse<RoleEntry>),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
 #[instrument(skip(state), level = "debug")]
-pub async fn get_roles(state: Data<State>) -> Result<impl Responder, Error> {
+pub async fn get_roles(
+    state: Data<State>,
+    pagination: Query<PaginationParams>,
+) -> Result<impl Responder, Error> {
+    let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
-    let roles = db::get_roles(&client).await?;
-    Ok(HttpResponse::Ok().json(roles))
+    let (roles, total) = db::get_roles(&client, limit, offset).await?;
+    Ok(HttpResponse::Ok().json(PaginatedResponse { items: roles, total, limit, offset }))
 }
 
 #[utoipa::path(

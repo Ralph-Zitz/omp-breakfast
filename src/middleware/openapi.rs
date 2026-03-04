@@ -366,7 +366,16 @@ mod tests {
             "OrderEntry",
             "CreateOrderEntry",
             "UpdateOrderEntry",
+            "PaginatedResponse_UserEntry",
+            "PaginatedResponse_UserInTeams",
+            "PaginatedResponse_TeamEntry",
+            "PaginatedResponse_UsersInTeam",
+            "PaginatedResponse_RoleEntry",
+            "PaginatedResponse_ItemEntry",
+            "PaginatedResponse_TeamOrderEntry",
+            "PaginatedResponse_OrderEntry",
         ];
+        let schema_map = schemas.as_object().expect("schemas should be an object");
         for name in &expected {
             assert!(
                 schemas[name].is_object(),
@@ -374,7 +383,6 @@ mod tests {
                 name
             );
         }
-        let schema_map = schemas.as_object().expect("schemas should be an object");
         assert_eq!(
             schema_map.len(),
             expected.len(),

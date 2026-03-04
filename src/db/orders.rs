@@ -4,11 +4,20 @@ use crate::models::*;
 use deadpool_postgres::Client;
 use uuid::Uuid;
 
-/// Fetches all team orders for a team, ordered by creation date descending
-/// (newest first).
+/// Fetches team orders with pagination for a team, ordered by creation date
+/// descending (newest first).
 ///
 /// Rows that fail to map are logged with `warn!()` and skipped.
-pub async fn get_team_orders(client: &Client, team_id: Uuid) -> Result<Vec<TeamOrderEntry>, Error> {
+pub async fn get_team_orders(client: &Client, team_id: Uuid, limit: i64, offset: i64) -> Result<(Vec<TeamOrderEntry>, i64), Error> {
+    let count: i64 = client
+        .query_one(
+            "select count(*) from teamorders where teamorders_team_id = $1",
+            &[&team_id],
+        )
+        .await
+        .map_err(Error::Db)?
+        .get(0);
+
     let statement = client
         .prepare(
             r#"
@@ -17,17 +26,18 @@ pub async fn get_team_orders(client: &Client, team_id: Uuid) -> Result<Vec<TeamO
                 from teamorders
                 where teamorders_team_id = $1
                 order by created desc
+                limit $2 offset $3
             "#,
         )
         .await
         .map_err(Error::Db)?;
 
     let rows = client
-        .query(&statement, &[&team_id])
+        .query(&statement, &[&team_id, &limit, &offset])
         .await
         .map_err(Error::Db)?;
 
-    Ok(map_rows(&rows, "team order"))
+    Ok((map_rows(&rows, "team order"), count))
 }
 
 /// Fetches a single team order by order ID and team ID.

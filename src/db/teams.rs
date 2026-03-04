@@ -4,11 +4,20 @@ use crate::models::*;
 use deadpool_postgres::Client;
 use uuid::Uuid;
 
-/// Returns all teams a user belongs to, with the role title and membership
-/// timestamps (`joined`, `role_changed`).
+/// Returns teams a user belongs to (paginated), with the role title and
+/// membership timestamps (`joined`, `role_changed`).
 ///
 /// Returns an empty `Vec` (not 404) when the user has no memberships.
-pub async fn get_user_teams(client: &Client, uid: Uuid) -> Result<Vec<UserInTeams>, Error> {
+pub async fn get_user_teams(client: &Client, uid: Uuid, limit: i64, offset: i64) -> Result<(Vec<UserInTeams>, i64), Error> {
+    let count: i64 = client
+        .query_one(
+            "select count(*) from memberof where memberof_user_id = $1",
+            &[&uid],
+        )
+        .await
+        .map_err(Error::Db)?
+        .get(0);
+
     let statement = client
         .prepare(
             r#"
@@ -19,34 +28,41 @@ pub async fn get_user_teams(client: &Client, uid: Uuid) -> Result<Vec<UserInTeam
                 join roles on roles.role_id = memberof.memberof_role_id
                 where users.user_id = $1
                 order by tname asc
+                limit $2 offset $3
             "#,
         )
         .await
         .map_err(Error::Db)?;
 
     let rows = client
-        .query(&statement, &[&uid])
+        .query(&statement, &[&uid, &limit, &offset])
         .await
         .map_err(Error::Db)?;
 
-    Ok(map_rows(&rows, "user-in-teams"))
+    Ok((map_rows(&rows, "user-in-teams"), count))
 }
 
-/// Fetches all teams, ordered alphabetically by team name.
+/// Fetches teams with pagination, ordered alphabetically by team name.
 ///
 /// Rows that fail to map are logged with `warn!()` and skipped.
-pub async fn get_teams(client: &Client) -> Result<Vec<TeamEntry>, Error> {
+pub async fn get_teams(client: &Client, limit: i64, offset: i64) -> Result<(Vec<TeamEntry>, i64), Error> {
+    let count: i64 = client
+        .query_one("select count(*) from teams", &[])
+        .await
+        .map_err(Error::Db)?
+        .get(0);
+
     let statement = client
-        .prepare("select team_id, tname, descr, created, changed from teams order by tname asc")
+        .prepare("select team_id, tname, descr, created, changed from teams order by tname asc limit $1 offset $2")
         .await
         .map_err(Error::Db)?;
 
     let rows = client
-        .query(&statement, &[])
+        .query(&statement, &[&limit, &offset])
         .await
         .map_err(Error::Db)?;
 
-    Ok(map_rows(&rows, "team"))
+    Ok((map_rows(&rows, "team"), count))
 }
 
 /// Fetches a single team by ID.
@@ -127,11 +143,20 @@ pub async fn update_team(
         .map_err(Error::DbMapper)
 }
 
-/// Returns all users who are members of a team, with their role titles
+/// Returns users who are members of a team (paginated), with their role titles
 /// and membership timestamps (`joined`, `role_changed`).
 ///
 /// Returns an empty `Vec` (not 404) when the team has no members.
-pub async fn get_team_users(client: &Client, tid: Uuid) -> Result<Vec<UsersInTeam>, Error> {
+pub async fn get_team_users(client: &Client, tid: Uuid, limit: i64, offset: i64) -> Result<(Vec<UsersInTeam>, i64), Error> {
+    let count: i64 = client
+        .query_one(
+            "select count(*) from memberof where memberof_team_id = $1",
+            &[&tid],
+        )
+        .await
+        .map_err(Error::Db)?
+        .get(0);
+
     let statement = client
         .prepare(
             r#"
@@ -141,15 +166,16 @@ pub async fn get_team_users(client: &Client, tid: Uuid) -> Result<Vec<UsersInTea
                 join roles on roles.role_id = memberof.memberof_role_id
                 where memberof.memberof_team_id = $1
                 order by lastname asc, firstname asc
+                limit $2 offset $3
             "#,
         )
         .await
         .map_err(Error::Db)?;
 
     let rows = client
-        .query(&statement, &[&tid])
+        .query(&statement, &[&tid, &limit, &offset])
         .await
         .map_err(Error::Db)?;
 
-    Ok(map_rows(&rows, "users-in-team"))
+    Ok((map_rows(&rows, "users-in-team"), count))
 }

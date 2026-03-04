@@ -4,21 +4,27 @@ use crate::models::*;
 use deadpool_postgres::Client;
 use uuid::Uuid;
 
-/// Fetches all roles, ordered alphabetically by title.
+/// Fetches roles with pagination, ordered alphabetically by title.
 ///
 /// Rows that fail to map are logged with `warn!()` and skipped.
-pub async fn get_roles(client: &Client) -> Result<Vec<RoleEntry>, Error> {
+pub async fn get_roles(client: &Client, limit: i64, offset: i64) -> Result<(Vec<RoleEntry>, i64), Error> {
+    let count: i64 = client
+        .query_one("select count(*) from roles", &[])
+        .await
+        .map_err(Error::Db)?
+        .get(0);
+
     let statement = client
-        .prepare("select role_id, title, created, changed from roles order by title asc")
+        .prepare("select role_id, title, created, changed from roles order by title asc limit $1 offset $2")
         .await
         .map_err(Error::Db)?;
 
     let rows = client
-        .query(&statement, &[])
+        .query(&statement, &[&limit, &offset])
         .await
         .map_err(Error::Db)?;
 
-    Ok(map_rows(&rows, "role"))
+    Ok((map_rows(&rows, "role"), count))
 }
 
 /// Fetches a single role by ID.

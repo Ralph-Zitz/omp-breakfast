@@ -5,6 +5,18 @@ use web_sys::wasm_bindgen::JsCast;
 
 // ── API response types ──────────────────────────────────────────────────────
 
+/// Paginated response envelope returned by all list endpoints.
+#[derive(Clone, Debug, Deserialize)]
+pub struct PaginatedResponse<T> {
+    pub items: Vec<T>,
+    #[allow(dead_code)]
+    pub total: i64,
+    #[allow(dead_code)]
+    pub limit: i64,
+    #[allow(dead_code)]
+    pub offset: i64,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct AuthResponse {
     pub access_token: String,
@@ -347,7 +359,11 @@ pub async fn fetch_user_details(
 pub async fn fetch_user_teams(user_id: &str) -> Vec<UserInTeams> {
     let url = format!("/api/v1.0/users/{}/teams", user_id);
     match authed_get(&url).await {
-        Some(resp) if resp.ok() => resp.json::<Vec<UserInTeams>>().await.unwrap_or_default(),
+        Some(resp) if resp.ok() => resp
+            .json::<PaginatedResponse<UserInTeams>>()
+            .await
+            .map(|p| p.items)
+            .unwrap_or_default(),
         _ => Vec::new(),
     }
 }

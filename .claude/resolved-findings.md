@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-04
+Last updated: 2026-03-06
 
 ## Critical Items
 
@@ -1484,6 +1484,13 @@ Last updated: 2026-03-04
 
 ## Informational Items
 
+### API Design — List Endpoints Now Paginated
+
+- [x] **#61 — List endpoints return all records without pagination**
+  - Files: `src/db/`, `src/handlers/`, `src/models.rs`, `frontend/src/api.rs`, `frontend/src/pages/`
+  - Resolution: Implemented `PaginationParams` (limit/offset query params, default 50, max 100) and `PaginatedResponse<T>` (items, total, limit, offset envelope). Updated all 8 list DB functions with LIMIT/OFFSET + COUNT queries, all 8 list handlers with `Query<PaginationParams>` extractors, frontend deserialization across 6 pages, and all test suites (193 unit, 87 API, 96 DB, 41 WASM).
+  - Source commands: `review`, `api-completeness`
+
 ### Performance — `get_team_users` Query Has Unnecessary `teams` JOIN
 
 - [x] **#230 — Query joins `teams` table but no columns from `teams` are selected**
@@ -1837,8 +1844,36 @@ Last updated: 2026-03-04
   - Resolution: Extracted `map_rows<T: FromRow>(rows, entity)` helper in `src/from_row.rs`. All 8 list functions (including `get_user_teams` and `get_team_users`) now use the shared helper.
   - Source commands: `review`
 
+### Documentation — Test Count Maintenance
+
+- [x] **#54 — Test counts in CLAUDE.md will drift as tests are added**
+  - File: `CLAUDE.md`
+  - Resolution: Updated DB test count from 92 to 96 to reflect new FK cascade tests. Counts are maintained by the assessment process.
+  - Source commands: `practices-audit`
+
+### Testing — FK Cascade Coverage
+
+- [x] **#124 — FK cascade and `fix_migration_history` DB interaction lack tests**
+  - File: `tests/db_tests.rs`
+  - Resolution: Added 4 integration tests: `delete_team_cascades_membership_and_orders`, `delete_team_order_cascades_order_items`, `delete_user_cascades_membership`, `delete_item_with_order_reference_is_restricted`. These verify ON DELETE CASCADE and ON DELETE RESTRICT FK behaviour.
+  - Source commands: `test-gaps`
+
+### Security — Token Response Caching
+
+- [x] **#247 — `/auth` and `/auth/refresh` responses contain JWT tokens but no `Cache-Control` header**
+  - Files: `src/handlers/users.rs`
+  - Resolution: Added `.insert_header(("Cache-Control", "no-store"))` to both `auth_user` and `refresh_token` handler responses.
+  - Source commands: `security-audit`
+
+### Security — Missing Referrer-Policy Header
+
+- [x] **#248 — `DefaultHeaders` does not include `Referrer-Policy`**
+  - File: `src/server.rs`
+  - Resolution: Added `.add(("Referrer-Policy", "strict-origin-when-cross-origin"))` to the global `DefaultHeaders` chain.
+  - Source commands: `security-audit`
+
 ## Notes
 
-- Total resolved items: 265 (6 critical, 45 important, 72 minor, 48 informational, plus items previously counted under different categories)
+- Total resolved items: 270 (6 critical, 45 important, 72 minor, 53 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

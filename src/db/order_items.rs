@@ -61,27 +61,38 @@ async fn guard_open_order(
     Ok(())
 }
 
-/// Fetches all line items for a team order, ordered by item ID.
+/// Fetches line items for a team order (paginated), ordered by item ID.
 ///
 /// Rows that fail to map are logged with `warn!()` and skipped.
 pub async fn get_order_items(
     client: &Client,
     teamorder_id: Uuid,
     team_id: Uuid,
-) -> Result<Vec<OrderEntry>, Error> {
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<OrderEntry>, i64), Error> {
+    let count: i64 = client
+        .query_one(
+            "select count(*) from orders where orders_teamorders_id = $1 and orders_team_id = $2",
+            &[&teamorder_id, &team_id],
+        )
+        .await
+        .map_err(Error::Db)?
+        .get(0);
+
     let statement = client
         .prepare(
-            "select orders_teamorders_id, orders_item_id, orders_team_id, amt, created, changed from orders where orders_teamorders_id = $1 and orders_team_id = $2 order by orders_item_id",
+            "select orders_teamorders_id, orders_item_id, orders_team_id, amt, created, changed from orders where orders_teamorders_id = $1 and orders_team_id = $2 order by orders_item_id limit $3 offset $4",
         )
         .await
         .map_err(Error::Db)?;
 
     let rows = client
-        .query(&statement, &[&teamorder_id, &team_id])
+        .query(&statement, &[&teamorder_id, &team_id, &limit, &offset])
         .await
         .map_err(Error::Db)?;
 
-    Ok(map_rows(&rows, "order item"))
+    Ok((map_rows(&rows, "order item"), count))
 }
 
 /// Fetches a single line item by team order ID, item ID, and team ID.

@@ -5,18 +5,25 @@ use argon2::password_hash::{PasswordHasher, SaltString, rand_core::OsRng};
 use deadpool_postgres::Client;
 use uuid::Uuid;
 
-/// Fetches all users, ordered by first name then last name.
+/// Fetches users with pagination, ordered by first name then last name.
 ///
+/// Returns the page of results and the total count (for pagination metadata).
 /// Rows that fail to map are logged with `warn!()` and skipped.
-pub async fn get_users(client: &Client) -> Result<Vec<UserEntry>, Error> {
+pub async fn get_users(client: &Client, limit: i64, offset: i64) -> Result<(Vec<UserEntry>, i64), Error> {
+    let count: i64 = client
+        .query_one("select count(*) from users", &[])
+        .await
+        .map_err(Error::Db)?
+        .get(0);
+
     let statement = client
-        .prepare("select user_id, firstname, lastname, email, created, changed from users order by firstname asc, lastname asc")
+        .prepare("select user_id, firstname, lastname, email, created, changed from users order by firstname asc, lastname asc limit $1 offset $2")
         .await
         .map_err(Error::Db)?;
 
-    let rows = client.query(&statement, &[]).await.map_err(Error::Db)?;
+    let rows = client.query(&statement, &[&limit, &offset]).await.map_err(Error::Db)?;
 
-    Ok(map_rows(&rows, "user"))
+    Ok((map_rows(&rows, "user"), count))
 }
 
 /// Fetches a single user by ID.

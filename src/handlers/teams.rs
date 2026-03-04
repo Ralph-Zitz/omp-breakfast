@@ -7,6 +7,7 @@ use crate::{
 };
 use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
+    web::Query,
 };
 use deadpool_postgres::Client;
 use tracing::instrument;
@@ -15,17 +16,22 @@ use uuid::Uuid;
 #[utoipa::path(
     get,
     path = "/api/v1.0/teams",
+    params(PaginationParams),
     responses(
-        (status = 200, description = "List of Teams", body = [TeamEntry]),
+        (status = 200, description = "Paginated list of Teams", body = PaginatedResponse<TeamEntry>),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
 #[instrument(skip(state), level = "debug")]
-pub async fn get_teams(state: Data<State>) -> Result<impl Responder, Error> {
+pub async fn get_teams(
+    state: Data<State>,
+    pagination: Query<PaginationParams>,
+) -> Result<impl Responder, Error> {
+    let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
-    let teams = db::get_teams(&client).await?;
-    Ok(HttpResponse::Ok().json(teams))
+    let (teams, total) = db::get_teams(&client, limit, offset).await?;
+    Ok(HttpResponse::Ok().json(PaginatedResponse { items: teams, total, limit, offset }))
 }
 
 #[utoipa::path(
@@ -143,8 +149,9 @@ pub async fn update_team(
 #[utoipa::path(
     get,
     path = "/api/v1.0/teams/{team_id}/users",
+    params(PaginationParams),
     responses(
-        (status = 200, description = "List of Users in the Team", body = [UsersInTeam]),
+        (status = 200, description = "Paginated list of Users in the Team", body = PaginatedResponse<UsersInTeam>),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
     ),
     params(
@@ -153,17 +160,23 @@ pub async fn update_team(
     security(("bearer_auth" = [])),
 )]
 #[instrument(skip(state), level = "debug")]
-pub async fn team_users(state: Data<State>, path: Path<Uuid>) -> Result<impl Responder, Error> {
+pub async fn team_users(
+    state: Data<State>,
+    path: Path<Uuid>,
+    pagination: Query<PaginationParams>,
+) -> Result<impl Responder, Error> {
+    let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
-    let users = db::get_team_users(&client, path.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(users))
+    let (users, total) = db::get_team_users(&client, path.into_inner(), limit, offset).await?;
+    Ok(HttpResponse::Ok().json(PaginatedResponse { items: users, total, limit, offset }))
 }
 
 #[utoipa::path(
     get,
     path = "/api/v1.0/teams/{team_id}/orders",
+    params(PaginationParams),
     responses(
-        (status = 200, description = "List of orders for the team", body = [TeamOrderEntry]),
+        (status = 200, description = "Paginated list of orders for the team", body = PaginatedResponse<TeamOrderEntry>),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
     ),
     params(
@@ -175,10 +188,12 @@ pub async fn team_users(state: Data<State>, path: Path<Uuid>) -> Result<impl Res
 pub async fn get_team_orders(
     state: Data<State>,
     team_id: Path<Uuid>,
+    pagination: Query<PaginationParams>,
 ) -> Result<impl Responder, Error> {
+    let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
-    let orders = db::get_team_orders(&client, team_id.into_inner()).await?;
-    Ok(HttpResponse::Ok().json(orders))
+    let (orders, total) = db::get_team_orders(&client, team_id.into_inner(), limit, offset).await?;
+    Ok(HttpResponse::Ok().json(PaginatedResponse { items: orders, total, limit, offset }))
 }
 
 #[utoipa::path(
