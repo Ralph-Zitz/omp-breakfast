@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-04
+Last updated: 2026-03-05
 
 ## Critical Items
 
@@ -498,6 +498,20 @@ Last updated: 2026-03-04
   - File: `frontend/tests/ui_tests.rs`
   - Fix: Added 12 WASM tests (2 per page): page rendering with data, navigation/interaction, and admin visibility checks. Extended mock fetch to return data for all API endpoints. Added timeout to Makefile `test-frontend` target. Total WASM tests: 39.
   - Source commands: `test-gaps`
+
+### Validation — `add_team_member` Missing Validation
+
+- [x] **#327 — `add_team_member` handler missing `validate(&json)?` call before DB operation**
+  - File: `src/handlers/teams.rs`
+  - Resolution: Added `validate(&json)?` call before `json.into_inner()` in `add_team_member`.
+  - Source commands: `practices-audit`
+
+### Validation — `update_member_role` Missing Validation
+
+- [x] **#328 — `update_member_role` handler missing `validate(&json)?` call before DB operation**
+  - File: `src/handlers/teams.rs`
+  - Resolution: Added `validate(&json)?` call before `json.into_inner()` in `update_member_role`.
+  - Source commands: `practices-audit`
 
 ## Minor Items
 
@@ -1395,6 +1409,55 @@ Last updated: 2026-03-04
   - Resolution: Updated the deprecated dev-reset script to incorporate all V3–V6 changes: `CHECK (amt >= 1)` (V6), `joined NOT NULL` (V5), `teamorders_user_id NOT NULL` (V5), users trigger `BEFORE UPDATE` only (V5), composite index `idx_teamorders_team_created` (V6), header references V1–V6.
   - Source commands: `cross-ref-check`
 
+### Dead Code — Deprecated `require_self_or_admin` Function
+
+- [x] **#329 — Deprecated `require_self_or_admin` function is dead code with zero call sites**
+  - File: `src/handlers/mod.rs`
+  - Resolution: Removed the 18-line deprecated function. Updated CLAUDE.md to remove it from the RBAC helper list.
+  - Source commands: `review`
+
+### Dead Code — Unused `_active_payload` in Session Restore
+
+- [x] **#330 — `_active_payload` computed but never used in session restore**
+  - File: `frontend/src/app.rs`
+  - Resolution: Removed the unused `let _active_payload = decode_jwt_payload(&active_token).unwrap_or(payload);` line.
+  - Source commands: `review`
+
+### Security — Logout Token Clearing Race
+
+- [x] **#331 — Logout clears `sessionStorage` tokens after async revocation completes, not before**
+  - File: `frontend/src/components/sidebar.rs`
+  - Resolution: Moved `sessionStorage` clearing to before the async `spawn_local` block. Token values saved to local vars first, storage cleared immediately, then saved values used for revocation POST.
+  - Source commands: `security-audit`
+
+### Validation — Order Quantity Unbounded
+
+- [x] **#332 — `amt` field validated with `range(min = 1)` but no maximum**
+  - File: `src/models.rs`
+  - Resolution: Added `max = 10000` to `range()` validation on both `CreateOrderEntry.amt` and `UpdateOrderEntry.amt`. Added 4 boundary tests.
+  - Source commands: `practices-audit`
+
+### Security — `UpdateUserEntry` Derives `Serialize` Despite Containing Password Hash
+
+- [x] **#333 — `UpdateUserEntry` contains password hash but derives `Serialize`**
+  - File: `src/models.rs`
+  - Resolution: Removed `Serialize` from `UpdateUserEntry`'s derive list.
+  - Source commands: `security-audit`
+
+### Security — `PayloadConfig` Default Larger Than `JsonConfig`
+
+- [x] **#334 — `JsonConfig` limits to 64 KB but `PayloadConfig` default is 256 KB**
+  - File: `src/routes.rs`
+  - Resolution: Added `.app_data(PayloadConfig::default().limit(65_536))` to align payload limit with JSON limit.
+  - Source commands: `security-audit`
+
+### Validation — No Email Format Validation in Delete-by-Email Path
+
+- [x] **#335 — No server-side validation of email format in the URL path parameter**
+  - File: `src/handlers/users.rs`
+  - Resolution: Added email format validation (`len > 255 || !contains('@')` → `Error::Validation`) before DB call in `delete_user_by_email`.
+  - Source commands: `security-audit`
+
 ## Informational Items
 
 ### Performance — `get_team_users` Query Has Unnecessary `teams` JOIN
@@ -1607,8 +1670,64 @@ Last updated: 2026-03-04
   - Resolution: Added `///` doc comments to all 40 undocumented public functions across 8 DB module files. All 49 public functions in `src/db/` now have documentation.
   - Source commands: `review`
 
+### Documentation — CLAUDE.md Test Count Stale
+
+- [x] **#341 — Line 118 says "39 WASM integration tests" but actual count is 41**
+  - File: `CLAUDE.md`
+  - Resolution: Updated to "41 WASM integration tests".
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md Missing V6 Migration
+
+- [x] **#342 — `migrations/` listing stops at V5; V6 exists on disk**
+  - File: `CLAUDE.md`
+  - Resolution: Added `V6__order_constraint_and_index.sql` entry to migrations listing.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md Missing `bundle-css.sh`
+
+- [x] **#343 — `frontend/bundle-css.sh` and related bundled CSS not listed in Project Structure**
+  - File: `CLAUDE.md`
+  - Resolution: Added `bundled.css` and `bundle-css.sh` to the frontend style/tests section.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md Wrong Icon Path
+
+- [x] **#344 — States `connect-icons/svg/` but actual path is `connect-design-system/packages/icons/src/svgs/`**
+  - File: `CLAUDE.md`
+  - Resolution: Fixed icon path reference.
+  - Source commands: `cross-ref-check`
+
+### Documentation — `api-completeness.md` Stale Path
+
+- [x] **#345 — Command file references `db.rs` instead of the `db/` module directory**
+  - File: `.claude/commands/api-completeness.md`
+  - Resolution: Changed `db.rs` to `db/`.
+  - Source commands: `cross-ref-check`
+
+### Documentation — `rbac-rules.md` Incorrect Claim
+
+- [x] **#346 — Claims `database_seed.sql` uses no hardcoded role strings, but it does**
+  - File: `.claude/commands/rbac-rules.md`
+  - Resolution: Fixed the incorrect claim to acknowledge hardcoded role strings in seed data.
+  - Source commands: `cross-ref-check`
+
+### Documentation — Assessment Command List Incomplete
+
+- [x] **#347 — The enumerated list of assessment commands doesn't mention `resume-assessment`**
+  - File: `CLAUDE.md`
+  - Resolution: Added `resume-assessment` to the assessment command list.
+  - Source commands: `cross-ref-check`
+
+### Documentation — Root-Level Files Missing from Project Structure
+
+- [x] **#348 — Dockerfiles, `docker-compose.*`, `Makefile`, `README.md`, etc. not in the `text` block**
+  - File: `CLAUDE.md`
+  - Resolution: Added root-level files to the Project Structure section.
+  - Source commands: `cross-ref-check`
+
 ## Notes
 
-- Total resolved items: 170 (6 critical, 43 important, 65 minor, 26 informational, plus items previously counted under different categories)
+- Total resolved items: 251 (6 critical, 45 important, 72 minor, 34 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

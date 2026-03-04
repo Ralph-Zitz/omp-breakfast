@@ -50,7 +50,7 @@ For each handler in `src/handlers/`, verify:
 4. **Team Admin user scoping** is enforced: Team Admin can only update/delete users who share a team they administer (via `db::is_team_admin_of_user`)
 5. **OpenAPI annotations** include `403` response for every guarded endpoint
 6. **Seed data** in `database_seed.sql` assigns roles correctly: "Admin" for global admins, "Team Admin" for team-scoped admins
-7. **Role string constants** (`ROLE_ADMIN`, `ROLE_TEAM_ADMIN` in `middleware/auth.rs`) are used consistently across `db/membership.rs`, `handlers/mod.rs`, and `database_seed.sql` — no hardcoded role strings
+7. **Role string constants** (`ROLE_ADMIN`, `ROLE_TEAM_ADMIN` in `middleware/auth.rs`) are used consistently across `db/membership.rs` and `handlers/mod.rs` — `database_seed.sql` uses literal role strings for seeding purposes
 
 ## Report Format
 

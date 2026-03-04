@@ -4,8 +4,8 @@ use crate::middleware::auth::{basic_validator, jwt_validator, refresh_validator}
 use crate::middleware::openapi::*;
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{
-    middleware::Compat, web::JsonConfig, web::PathConfig, web::ServiceConfig, web::delete,
-    web::get, web::post, web::put, web::resource, web::scope,
+    middleware::Compat, web::JsonConfig, web::PathConfig, web::PayloadConfig, web::ServiceConfig,
+    web::delete, web::get, web::post, web::put, web::resource, web::scope,
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
 use std::env;
@@ -75,6 +75,7 @@ pub fn routes(cfg: &mut ServiceConfig) {
                         .limit(65_536)
                         .error_handler(json_error_handler),
                 )
+                .app_data(PayloadConfig::default().limit(65_536))
                 .app_data(PathConfig::default().error_handler(path_error_handler))
                 .service(
                     resource("/users")

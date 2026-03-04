@@ -207,13 +207,18 @@ fn LogoutButton() -> impl IntoView {
             .and_then(|s| s.get_item("refresh_token").ok())
             .flatten();
 
+        // Clear tokens immediately — before async revocation — to prevent
+        // a race window where tokens remain readable in sessionStorage.
+        if let Some(storage) = session_storage() {
+            let _ = storage.remove_item("access_token");
+            let _ = storage.remove_item("refresh_token");
+        }
+
         // Update UI immediately — redirect to login
         set_user.set(None);
         set_page.set(Page::Login);
 
-        // Fire-and-forget: revoke tokens using authed_request which handles
-        // transparent token refresh, so revocation works even if the access
-        // token is expired (#279).
+        // Fire-and-forget: revoke tokens server-side using the saved values.
         leptos::task::spawn_local(async move {
             if let Some(at) = access {
                 let body = serde_json::json!({"token": at});
@@ -222,11 +227,6 @@ fn LogoutButton() -> impl IntoView {
             if let Some(rt) = refresh {
                 let body = serde_json::json!({"token": rt});
                 let _ = authed_request(HttpMethod::Post, "/auth/revoke", Some(&body)).await;
-            }
-            // Clear tokens after revocation completes
-            if let Some(storage) = session_storage() {
-                let _ = storage.remove_item("access_token");
-                let _ = storage.remove_item("refresh_token");
             }
         });
     };

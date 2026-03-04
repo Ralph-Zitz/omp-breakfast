@@ -96,7 +96,7 @@ pub struct UserEntry {
 /// This struct is NOT used as an API request body — see `UpdateUserRequest` for
 /// the API-facing update type. No `Validate` derive: the `password` field contains
 /// an Argon2 hash, not plaintext.
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub struct UpdateUserEntry {
     pub user_id: Uuid,
     pub firstname: String,
@@ -365,13 +365,13 @@ pub struct OrderEntry {
 #[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct CreateOrderEntry {
     pub orders_item_id: Uuid,
-    #[validate(range(min = 1, message = "quantity must be at least 1"))]
+    #[validate(range(min = 1, max = 10000, message = "quantity must be between 1 and 10000"))]
     pub amt: i32,
 }
 
 #[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct UpdateOrderEntry {
-    #[validate(range(min = 1, message = "quantity must be at least 1"))]
+    #[validate(range(min = 1, max = 10000, message = "quantity must be between 1 and 10000"))]
     pub amt: i32,
 }
 
@@ -440,7 +440,7 @@ mod tests {
         };
         let err = entry.validate().unwrap_err();
         let msg = format!("{}", err);
-        assert!(msg.contains("quantity must be at least 1"));
+        assert!(msg.contains("quantity must be between 1 and 10000"));
     }
 
     #[test]
@@ -462,6 +462,24 @@ mod tests {
     }
 
     #[test]
+    fn create_order_entry_rejects_exceeding_max_quantity() {
+        let entry = CreateOrderEntry {
+            orders_item_id: Uuid::nil(),
+            amt: 10001,
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn create_order_entry_accepts_max_quantity() {
+        let entry = CreateOrderEntry {
+            orders_item_id: Uuid::nil(),
+            amt: 10000,
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
     fn update_order_entry_rejects_zero_quantity() {
         let entry = UpdateOrderEntry { amt: 0 };
         assert!(entry.validate().is_err());
@@ -470,6 +488,18 @@ mod tests {
     #[test]
     fn update_order_entry_accepts_positive_quantity() {
         let entry = UpdateOrderEntry { amt: 3 };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn update_order_entry_rejects_exceeding_max_quantity() {
+        let entry = UpdateOrderEntry { amt: 10001 };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn update_order_entry_accepts_max_quantity() {
+        let entry = UpdateOrderEntry { amt: 10000 };
         assert!(entry.validate().is_ok());
     }
 

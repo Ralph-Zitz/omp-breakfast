@@ -276,6 +276,14 @@ pub async fn delete_user_by_email(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let email = path.into_inner();
+
+    // Basic email format validation — reject obviously invalid paths before DB query
+    if email.len() > 255 || !email.contains('@') {
+        return Err(Error::Validation(
+            "Invalid email format".to_string(),
+        ));
+    }
+
     let client: Client = get_client(&state.pool).await?;
 
     // RBAC: self, global admin, or team admin of a shared team

@@ -12,7 +12,7 @@ You are an API architect reviewing a REST API for completeness. Compare all migr
 2. **API inventory** — List every implemented endpoint with its HTTP method, path, handler function, and what DB function it calls
 3. **Gap analysis** — For each table, check:
    - Does it have a corresponding Rust model struct?
-   - Does it have CRUD functions in `db.rs`?
+   - Does it have CRUD functions in `db/`?
    - Does it have handler functions in `handlers/`?
    - Does it have routes in `routes.rs`?
    - Is it documented in the OpenAPI spec (`middleware/openapi.rs`)?

@@ -385,7 +385,7 @@ async fn revoke_endpoint_rejects_invalid_token() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 500, "invalid token should be rejected");
+    assert_eq!(resp.status(), 400, "invalid token should be rejected");
 }
 
 // ---------------------------------------------------------------------------

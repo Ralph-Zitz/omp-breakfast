@@ -143,9 +143,6 @@ async fn restore_session(set_page: WriteSignal<Page>, set_user: WriteSignal<Opti
         token
     };
 
-    // Re-decode payload in case the token changed after refresh
-    let _active_payload = decode_jwt_payload(&active_token).unwrap_or(payload);
-
     // Build full user context (fetches user details + team memberships)
     match build_user_context(&active_token).await {
         Some(ctx) => {

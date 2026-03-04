@@ -363,6 +363,7 @@ pub async fn add_team_member(
     json: Json<AddMemberEntry>,
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
+    validate(&json)?;
     let tid = team_id.into_inner();
     let member = json.into_inner();
     let mut client: Client = get_client(&state.pool).await?;
@@ -435,6 +436,7 @@ pub async fn update_member_role(
     json: Json<UpdateMemberRoleEntry>,
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
+    validate(&json)?;
     let (team_id, user_id) = path.into_inner();
     let role_id = json.into_inner().role_id;
     let mut client: Client = get_client(&state.pool).await?;

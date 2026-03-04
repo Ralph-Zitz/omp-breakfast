@@ -26,11 +26,11 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
-*All Important items resolved — see `.claude/resolved-findings.md`.*
+*No open important items.*
 
 ## Minor Items
 
-*No open items.*
+*No open minor items.*
 
 ## Informational Items
 
@@ -338,8 +338,9 @@ This file is **generated and maintained by the project assessment process** defi
 ### Frontend — Duplicated `role_tag_class()` Function Across 4 Files
 
 - [ ] **#318 — Same role-to-CSS-class mapping repeated in 4 frontend files**
-  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/admin.rs`
-  - Fix: Extract to a shared helper in `frontend/src/components/` or a `utils.rs` module.
+  - Files: `frontend/src/pages/dashboard.rs`, `frontend/src/pages/teams.rs`, `frontend/src/pages/profile.rs`, `frontend/src/pages/roles.rs`
+  - Problem: `role_tag_class()` is duplicated with identical logic. `dashboard.rs`/`teams.rs` return `String`; `profile.rs`/`roles.rs` return `&'static str` — inconsistent signatures.
+  - Fix: Extract to a shared helper in `frontend/src/components/` or a `utils.rs` module; prefer `&'static str` return type.
   - Source commands: `review`
 
 ### Frontend — Duplicated `LoadingSpinner` Markup in 5 Pages
@@ -396,6 +397,113 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Update 403 descriptions to match actual RBAC policy once #302/#303 are fixed.
   - Source commands: `openapi-sync`
 
+### Security — Swagger UI Gated by Negation Rather Than Explicit Opt-In
+
+- [ ] **#336 — Swagger UI at `/explorer` available in all non-production environments (staging, preprod, etc.)**
+  - File: `src/routes.rs` (lines ~33–35)
+  - Problem: Gate is `ENV != "production"`, so staging/preprod environments expose full API docs. Consider explicit opt-in (e.g., `ENABLE_SWAGGER=true`).
+  - Source commands: `security-audit`
+
+### Security — Refresh Token Rotation Doesn't Revoke Old Access Token
+
+- [ ] **#337 — When refresh token is used to obtain a new pair, the old access token remains valid up to 15 minutes**
+  - File: `src/handlers/users.rs` (lines ~121–129)
+  - Problem: Only the old refresh token is revoked. An attacker with both tokens could still use the access token.
+  - Source commands: `security-audit`
+
+### Security — HSTS Header Missing `preload` Directive
+
+- [ ] **#338 — HSTS value is `max-age=31536000; includeSubDomains` but lacks `preload`**
+  - File: `src/server.rs` (line ~443)
+  - Problem: Without `preload`, the first visit is vulnerable to MITM downgrade.
+  - Source commands: `security-audit`
+
+### Security — Account Lockout State In-Memory Only
+
+- [ ] **#339 — Login attempt tracking stored in `DashMap`, not shared across instances**
+  - File: `src/middleware/auth.rs` (lines ~189–213)
+  - Problem: In multi-instance deployment, attacker can distribute brute-force attempts across instances.
+  - Source commands: `security-audit`
+
+### Frontend — No Client-Side `maxlength` on Form Inputs
+
+- [ ] **#340 — Frontend input fields lack `maxlength` attributes matching backend validation rules**
+  - Files: `frontend/src/pages/login.rs`, `frontend/src/pages/admin.rs`, `frontend/src/pages/profile.rs`
+  - Problem: Arbitrarily long strings transmitted to server before backend validator catches them.
+  - Fix: Add `maxlength=50` on name fields, `maxlength=128` on password, `maxlength=255` on team/role names.
+  - Source commands: `security-audit`
+
+### Testing — `verify_jwt_for_revocation` Has Zero Dedicated Unit Tests
+
+- [ ] **#349 — Security-sensitive function that skips expiry validation has no test verifying expired-but-valid tokens are accepted**
+  - File: `src/middleware/auth.rs` (lines ~124–136)
+  - Problem: This function intentionally sets `validate_exp = false`. No test confirms that an expired token with a valid signature passes, or that a tampered token still fails.
+  - Source commands: `test-gaps`
+
+### Testing — `basic_validator` Malformed Password Hash Path Untested
+
+- [ ] **#350 — When DB stores a corrupted/non-Argon2 hash, `PasswordHash::new()` fails and returns 500 — no test**
+  - File: `src/middleware/auth.rs` (lines ~484–498)
+  - Source commands: `test-gaps`
+
+### Testing — `jwt_validator` Rejects Refresh Token — No Explicit Test
+
+- [ ] **#351 — The `if c.claims.token_type != TokenType::Access` branch returns 401 but is never directly tested**
+  - File: `src/middleware/auth.rs` (lines ~230–248)
+  - Problem: The reverse (refresh endpoint rejects access token) is tested, but no test submits a refresh token to a JWT-protected API endpoint.
+  - Source commands: `test-gaps`
+
+### Testing — `validate_non_negative_price` Has No Unit Tests
+
+- [ ] **#352 — Custom validator for item price never directly tested (negative, zero, positive cases)**
+  - File: `src/models.rs` (lines ~301–312)
+  - Source commands: `test-gaps`
+
+### Testing — No Boundary Tests for `CreateUserEntry` Name Fields
+
+- [ ] **#353 — firstname/lastname max=50 boundary untested (50 chars should pass, 51 should fail)**
+  - File: `src/models.rs` (lines ~159–185)
+  - Source commands: `test-gaps`
+
+### Testing — No Boundary Tests for Team/Role/Item Model Field Lengths
+
+- [ ] **#354 — `tname` max=255, `descr` max=1000, role `title` max=255, item `descr` max=255 — all untested at boundary**
+  - File: `src/models.rs`
+  - Source commands: `test-gaps`
+
+### Testing — Non-Owner Member Cannot Update/Delete Team Order — Untested
+
+- [ ] **#355 — A team member who didn't create the order, and is not a team admin, tries PUT/DELETE — no test**
+  - File: `tests/api_tests.rs`
+  - Problem: Differs from #291 (non-member). This concerns a member who is not the order creator.
+  - Source commands: `test-gaps`
+
+### Testing — `ActixJson` Deserialize Error Branch Untested
+
+- [ ] **#356 — `JsonPayloadError::Deserialize` with `.data()` → 422 path has no test (only parse error is tested)**
+  - File: `src/errors.rs` (lines ~82–118)
+  - Problem: Sending valid JSON with wrong field types (type mismatch) hits a different `JsonPayloadError` variant than malformed JSON.
+  - Source commands: `test-gaps`
+
+### Testing — Frontend Orders Page Interactive Flows Untested
+
+- [ ] **#357 — Add-item, remove-item, create/delete order interactions have no WASM tests**
+  - Files: `frontend/src/pages/orders.rs`, `frontend/tests/ui_tests.rs`
+  - Problem: The 721-line orders page has extensive interactive logic, all untested.
+  - Source commands: `test-gaps`
+
+### Testing — Frontend Profile Page Password Change Flow Untested
+
+- [ ] **#358 — Edit mode, password validation, and save logic have no WASM tests**
+  - Files: `frontend/src/pages/profile.rs`, `frontend/tests/ui_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — `DbMapper::Conversion` Error Variant Returns 500 — Never Tested
+
+- [ ] **#359 — Only `ColumnNotFound` sub-variant is tested; `Conversion` has its own log-and-respond branch with zero coverage**
+  - File: `src/errors.rs` (lines ~124–140)
+  - Source commands: `test-gaps`
+
 ## Completed Items
 
 Resolved items are maintained in [`.claude/resolved-findings.md`](.claude/resolved-findings.md), organized by original severity.
@@ -403,20 +511,19 @@ See that file for the full history of resolved findings.
 
 ## Notes
 
-- All 412 tests pass: 189 backend unit (167 lib + 22 healthcheck), 87 API integration, 92 DB integration, 41 WASM, 3 doc tests. Total: **412 tests, 0 failures**.
-- Backend unit test breakdown: config: 6, db/migrate: 34, errors: 16, from_row: 10, handlers/mod: 12, middleware/auth+openapi: 32, models: 12, routes: 19, server: 17, validate: 9, healthcheck: 22 = **189 total**.
+- All 416 tests pass: 193 backend unit (171 lib + 22 healthcheck), 87 API integration, 92 DB integration, 41 WASM, 3 doc tests. Total: **416 tests, 0 failures**.
+- Backend unit test breakdown: config: 6, db/migrate: 34, errors: 16, from_row: 10, handlers/mod: 12, middleware/auth+openapi: 32, models: 16, routes: 19, server: 17, validate: 9, healthcheck: 22 = **193 total**.
 - `cargo audit --ignore RUSTSEC-2023-0071` reports 0 vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) is intentionally ignored — **blocked on upstream**, see #132. `rsa` 0.10.0 remains at rc.16. Re-evaluate periodically.
 - All dependencies are up to date (`cargo outdated -R` shows zero outdated).
 - Clippy is clean on both backend and frontend.
-- `cargo fmt --check` has diffs in `src/middleware/auth.rs` (see #304) and frontend files (see #305).
 - CONNECT Design System: `git pull` reports "Already up to date" — no migration needed.
 - Frontend was refactored from monolithic `app.rs` (600+ lines) into modular architecture: `api.rs` (377 lines), `pages/` (10 files, ~2,800 lines), `components/` (7 files, ~680 lines). `app.rs` is now 164 lines (routing shell only).
 - Frontend consumes 22 of 37 API endpoints (up from 4 at last assessment).
-- RBAC enforcement privilege escalation vectors in order-item handlers (#302, #303) were fixed in prior session.
+- RBAC enforcement: no violations found. All 30 handlers enforce correct guards per CLAUDE.md policy.
 - OpenAPI spec has 41 operations; remaining annotation inaccuracies tracked (#287, #326).
 - All SQL queries use parameterized prepared statements — zero injection risk.
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- 36 resolved findings archived in this session: 3 prior (#71, #116, #297) + 33 minor items (#163–#316).
-- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 58 informational. **Total: 59 open items**.
-- 234 resolved items in `.claude/resolved-findings.md`.
-- Highest finding number: #326.
+- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 74 informational. **Total: 75 open items**.
+- 33 new findings in this assessment: #327–#359. 17 resolved in this session (#327–#335, #341–#348).
+- 251 resolved items in `.claude/resolved-findings.md`.
+- Highest finding number: #359.

@@ -71,7 +71,7 @@ src/
   routes.rs        – All route definitions with auth middleware wiring
   lib.rs           – Module declarations
   handlers/
-    mod.rs         – get_client() utility, health endpoint, RBAC helpers (require_admin, require_admin_or_team_admin, require_team_admin, require_team_member, require_order_owner_or_team_admin, require_self_or_admin, require_self_or_admin_or_team_admin, guard_admin_role_assignment, requesting_user_id)
+    mod.rs         – get_client() utility, health endpoint, RBAC helpers (require_admin, require_admin_or_team_admin, require_team_admin, require_team_member, require_order_owner_or_team_admin, require_self_or_admin_or_team_admin, guard_admin_role_assignment, requesting_user_id)
     users.rs       – User CRUD + auth handlers (RBAC: self or admin)
     teams.rs       – Team CRUD + team order + member management handlers (team RBAC)
     roles.rs       – Role CRUD handlers (admin-gated CUD)
@@ -111,11 +111,13 @@ frontend/
       teams.rs     – Team management page (CRUD teams, members, team roles)
   style/
     main.css       – App-level styles using CONNECT design system tokens (--ds-* custom properties)
+    bundled.css    – Concatenated CONNECT token + component CSS (built by bundle-css.sh)
     connect/
       tokens.css   – Imports CONNECT core tokens + enterprise theme from connect-design-system/
       components.css – Imports all CONNECT component CSS modules from connect-design-system/
   tests/
-    ui_tests.rs    – 39 WASM integration tests (headless Chrome)
+    ui_tests.rs    – 41 WASM integration tests (headless Chrome)
+  bundle-css.sh    – Script to bundle CONNECT CSS into style/bundled.css
 connect-design-system/ – Local clone of git@github.com:LEGO/connect-design-system.git (gitignored, read-only asset source)
 config/
   default.yml      – Base config
@@ -124,12 +126,19 @@ config/
 database.sql       – Full schema (deprecated — kept for manual dev resets only; seed data moved to database_seed.sql)
 database_seed.sql  – Seed data for development/testing
 init_dev_db.sh     – Docker development database initialization script
+Dockerfile.breakfast – Multi-stage Docker build for the application
+Dockerfile.postgres  – Custom Postgres image with init scripts
+docker-compose.yml   – Development stack (app + Postgres)
+docker-compose.test.yml – Test stack overlay (port 5433)
+Makefile           – Build, test, and dev convenience targets
+README.md          – Project readme
 migrations/
   V1__initial_schema.sql – Refinery migration for the database schema
   V2__uuid_v7_defaults.sql – UUID v7 default migration (PostgreSQL 18+)
   V3__indexes_constraints.sql – Indexes, FK RESTRICT, NOT NULL constraints
   V4__schema_hardening.sql – Schema hardening migration
   V5__trigger_and_notnull_fixes.sql – Trigger fix on users, NOT NULL on teamorders_user_id and memberof.joined
+  V6__order_constraint_and_index.sql – NOT NULL + unique constraint on orders, covering index
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
   db_tests.rs      – DB function integration tests (ignored without running DB)
@@ -155,7 +164,7 @@ tests/
 - Order RBAC: `require_order_owner_or_team_admin` gates single-order mutations (update, delete); allows the order creator, a Team Admin for the team, or a global Admin. Regular members and guests may only mutate their own orders.
 - Order Items RBAC: Creating an order item requires team membership (any role — by design, all team members may add items to a breakfast order). Updating or deleting an order item requires `require_order_owner_or_team_admin` (same as team orders). Adding items to a closed order is blocked by `guard_open_order`.
 - Admin role guard: `guard_admin_role_assignment` prevents non-admin users from assigning the "Admin" role. Called after `require_team_admin` in membership handlers (add member, update role). Only global Admins may grant Admin privileges; Team Admins may assign any other role.
-- Self-or-Admin-or-Team-Admin RBAC: `require_self_or_admin_or_team_admin` helper gates user mutations (update, delete); allows the user themselves, a global Admin, or a Team Admin of any team where the target user is also a member (checked via `db::is_team_admin_of_user` — a self-join on `memberof`). The legacy `require_self_or_admin` helper is retained but no longer used by any handler.
+- Self-or-Admin-or-Team-Admin RBAC: `require_self_or_admin_or_team_admin` helper gates user mutations (update, delete); allows the user themselves, a global Admin, or a Team Admin of any team where the target user is also a member (checked via `db::is_team_admin_of_user` — a self-join on `memberof`).
 - `Error::Forbidden` variant maps to HTTP 403 for authorization failures
 - `Error::Unauthorized` variant maps to HTTP 401 for authentication failures
 - Production safety: server panics at startup if `server.secret` or `server.jwtsecret` is still the default value when `ENV=production`, if `pg.user` or `pg.password` is still the default `actix`, or if `pg.host` is still the placeholder `pick.a.proper.hostname`
@@ -277,7 +286,7 @@ The frontend UI is built on the LEGO CONNECT Design System. A local clone of the
 - **Component CSS:** Class names follow `.connect-{component}--{modifier}` (modified BEM), imported from `.module.css` files in `connect-components-styles`
 - **Theme:** Enterprise theme (`connect-theme-enterprise`) with light/dark mode via `data-mode` attribute and `@media (prefers-color-scheme)`
 - **Typography:** LEGO Typewell proprietary font loaded from `https://assets.lego.com/fonts/v6/typewell/` CDN via `@font-face` declarations; Noto Sans and system-ui as fallbacks
-- **Icons:** 1,048 SVG icons available in `connect-icons/svg/` (40×40 viewBox, `fill="currentColor"`)
+- **Icons:** 1,048 SVG icons available in `connect-design-system/packages/icons/src/svgs/` (40×40 viewBox, `fill="currentColor"`)
 - **CSS imports:** `frontend/style/connect/tokens.css` imports core tokens + enterprise theme; `frontend/style/connect/components.css` imports all 48+ component style modules. Both use relative `@import` paths into `connect-design-system/`.
 
 ### Keeping the design system up to date
@@ -311,6 +320,7 @@ When asked to **assess the project** (or "project assessment"), perform the foll
    - `review` — full code review (idioms, error handling, duplication, dead code)
    - `security-audit` — JWT/auth, input validation, secrets, TLS, Docker, frontend security
    - `test-gaps` — identify missing test coverage and suggest specific new tests
+   - `resume-assessment` — loads assessment-findings.md and continues unfinished work
 2. **Update the CONNECT Design System** — run `cd connect-design-system && git pull` to fetch the latest upstream changes. If `git pull` reports new commits:
    - Diff the incoming changes (`git log --oneline HEAD@{1}..HEAD` and `git diff HEAD@{1}..HEAD -- packages/`).
    - Identify any CSS token renames/removals, component class changes, new components, `@font-face` URL updates, or icon additions/removals that affect the frontend.
@@ -356,7 +366,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 189 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
+- 193 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
 - 87 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - 92 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`

@@ -92,26 +92,6 @@ pub async fn require_admin_or_team_admin(client: &Client, req: &HttpRequest) -> 
     }
 }
 
-/// Require the requesting user to be the target user themselves, or a global Admin.
-#[deprecated(note = "Use require_self_or_admin_or_team_admin instead")]
-pub async fn require_self_or_admin(
-    client: &Client,
-    req: &HttpRequest,
-    target_user_id: Uuid,
-) -> Result<(), Error> {
-    let user_id = requesting_user_id(req)
-        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
-    if user_id == target_user_id {
-        return Ok(());
-    }
-    if db::is_admin(client, user_id).await? {
-        return Ok(());
-    }
-    Err(Error::Forbidden(
-        "You can only modify your own account".to_string(),
-    ))
-}
-
 /// Require the requesting user to be the target user themselves, a global Admin,
 /// or a Team Admin of any team where the target user is also a member.
 pub async fn require_self_or_admin_or_team_admin(
