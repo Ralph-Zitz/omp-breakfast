@@ -10,7 +10,7 @@ You are a database engineer reviewing a PostgreSQL-backed Rust application. The 
 
 The application uses different initialization strategies:
 
-- **Schema:** `migrations/` directory — all Refinery migration files (V1 initial schema, V2 UUID v7 defaults, V3 indexes/constraints, and any newer migrations)
+- **Schema:** `migrations/` directory — all Refinery migration files (V1 initial schema, V2 UUID v7 defaults, V3 indexes/constraints, V4 schema hardening, V5 trigger/NOT NULL fixes, V6 order constraint/index, and any newer migrations)
 - **Seed data (dev/test only):** `database_seed.sql` - INSERT statements with ON CONFLICT DO NOTHING for test fixtures
 - **Manual reset (deprecated):** `database.sql` - Full DROP/CREATE script, kept for manual dev resets only
 - **Initialization:** `init_dev_db.sh` - Sets up refinery tracking table and loads seed data for docker-compose
@@ -56,7 +56,7 @@ End with:
 
 Read the following files:
 
-- `migrations/` - All migration files (V1 schema, V2 UUID defaults, V3 indexes/constraints, and any newer)
+- `migrations/` - All migration files (V1 schema, V2 UUID defaults, V3 indexes/constraints, V4 schema hardening, V5 trigger/NOT NULL fixes, V6 order constraint/index, and any newer)
 - `database_seed.sql` - Seed data for development/testing
 - `src/db/` - All database query modules
 - `src/db/migrate.rs` - Migration runner

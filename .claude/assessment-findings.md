@@ -140,22 +140,6 @@ _No open items._
   - File: `src/from_row.rs`
   - Source commands: `review`
 
-### Documentation — Command Files Reference Stale Migration Range
-
-- [ ] **#250 — `api-completeness.md` scope only references V1–V3 migrations**
-  - File: `.claude/commands/api-completeness.md`
-  - Source commands: `cross-ref-check`
-
-- [ ] **#251 — `db-review.md` scope only references V1–V3 migrations**
-  - File: `.claude/commands/db-review.md`
-  - Source commands: `cross-ref-check`
-
-### Documentation — `database.sql` Stale vs V3–V5
-
-- [ ] **#252 — `database.sql` deprecated script doesn't reflect V3–V5 changes**
-  - File: `database.sql`
-  - Source commands: `cross-ref-check`
-
 ### Code Quality — `from_row_ref` Boilerplate Reducible by Macro
 
 - [ ] **#254 — 9 `FromRow` implementations total ~200 lines of repetitive `try_get`/`map_err` per column**
@@ -433,6 +417,6 @@ See that file for the full history of resolved findings.
 - All SQL queries use parameterized prepared statements — zero injection risk.
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
 - 36 resolved findings archived in this session: 3 prior (#71, #116, #297) + 33 minor items (#163–#316).
-- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 61 informational. **Total: 62 open items**.
-- 231 resolved items in `.claude/resolved-findings.md`.
+- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 58 informational. **Total: 59 open items**.
+- 234 resolved items in `.claude/resolved-findings.md`.
 - Highest finding number: #326.

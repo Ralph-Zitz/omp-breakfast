@@ -1376,6 +1376,25 @@ Last updated: 2026-03-04
   - Resolution: Added `team_id: Uuid` and `descr: Option<String>` to `UserInTeams` struct and `FromRow` impl. Updated SQL query to select `teams.team_id, tname, teams.descr`.
   - Source commands: `db-review`, `api-completeness`
 
+### Documentation — Command Files Reference Stale Migration Range
+
+- [x] **#250 — `api-completeness.md` scope only references V1–V3 migrations**
+  - File: `.claude/commands/api-completeness.md`
+  - Resolution: Updated scope to reference "V1 initial schema through V6 order constraint/index, and any newer migrations".
+  - Source commands: `cross-ref-check`
+
+- [x] **#251 — `db-review.md` scope only references V1–V3 migrations**
+  - File: `.claude/commands/db-review.md`
+  - Resolution: Updated both Schema section and Scope section to enumerate V1–V6 (with descriptions) plus "and any newer migrations".
+  - Source commands: `cross-ref-check`
+
+### Documentation — `database.sql` Stale vs V3–V6
+
+- [x] **#252 — `database.sql` deprecated script doesn't reflect V3–V6 changes**
+  - File: `database.sql`
+  - Resolution: Updated the deprecated dev-reset script to incorporate all V3–V6 changes: `CHECK (amt >= 1)` (V6), `joined NOT NULL` (V5), `teamorders_user_id NOT NULL` (V5), users trigger `BEFORE UPDATE` only (V5), composite index `idx_teamorders_team_created` (V6), header references V1–V6.
+  - Source commands: `cross-ref-check`
+
 ## Informational Items
 
 ### Performance — `get_team_users` Query Has Unnecessary `teams` JOIN

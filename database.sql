@@ -4,7 +4,7 @@
    ⚠️  DEPRECATED for docker-compose workflows ⚠️
 
    docker-compose now uses:
-     - migrations/V1__initial_schema.sql (via Refinery migrations)
+     - migrations/V1__initial_schema.sql through V6 (via Refinery migrations)
      - database_seed.sql (for test data)
 
    This file is kept ONLY for manual database resets during development:
@@ -90,7 +90,7 @@ CREATE TABLE memberof (
   memberof_team_id uuid,
   memberof_user_id uuid,
   memberof_role_id uuid NOT NULL,
-  joined timestamptz DEFAULT CURRENT_TIMESTAMP,
+  joined timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (memberof_team_id, memberof_user_id),
   FOREIGN KEY (memberof_team_id) REFERENCES teams (team_id) ON DELETE CASCADE,
@@ -117,6 +117,8 @@ CREATE TABLE teamorders (
 
 CREATE INDEX idx_teamorders_id_due ON teamorders (teamorders_team_id, duedate);
 
+CREATE INDEX idx_teamorders_team_created ON teamorders (teamorders_team_id, created DESC);
+
 CREATE INDEX idx_teamorders_user ON teamorders (teamorders_user_id);
 
 /* Orders table */
@@ -124,7 +126,7 @@ CREATE TABLE orders (
   orders_teamorders_id uuid,
   orders_item_id uuid,
   orders_team_id uuid,
-  amt int NOT NULL DEFAULT 1 CHECK (amt >= 0),
+  amt int NOT NULL DEFAULT 1 CHECK (amt >= 1),
   created timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (orders_teamorders_id, orders_item_id),
@@ -194,7 +196,7 @@ LANGUAGE plpgsql;
 
 /* Create triggers */
 CREATE TRIGGER update_users_changed_at
-  BEFORE INSERT OR UPDATE ON users
+  BEFORE UPDATE ON users
   FOR EACH ROW
   EXECUTE PROCEDURE update_changed_timestamp ();
 
