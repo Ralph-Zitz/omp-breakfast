@@ -79,7 +79,6 @@ COPY rds-ca-rsa2048-g1.pem /etc/ssl/certs/
 COPY --from=builder --chown=web:web /app/target/release/breakfast /breakfast
 COPY --from=builder --chown=web:web /app/target/release/healthcheck /healthcheck
 COPY --chown=web:web config/default.yml /config/default.yml
-COPY --chown=web:web config/development.yml /config/development.yml
 COPY --chown=web:web config/production.yml config/production.yml
 # Copy built frontend assets
 COPY --from=frontend-builder --chown=web:web /frontend/dist /frontend/dist

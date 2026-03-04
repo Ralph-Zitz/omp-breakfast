@@ -193,7 +193,6 @@ fn UsernameField(username: ReadSignal<String>, set_username: WriteSignal<String>
                     type="text"
                     placeholder="you@example.com or username"
                     autocomplete="username"
-                    required=true
                     prop:value=move || username.get()
                     on:input=move |ev| {
                         let Some(target) = ev.target() else { return; };
@@ -238,7 +237,6 @@ fn PasswordField(password: ReadSignal<String>, set_password: WriteSignal<String>
                     type="password"
                     placeholder="Enter your password"
                     autocomplete="current-password"
-                    required=true
                     prop:value=move || password.get()
                     on:input=move |ev| {
                         let Some(target) = ev.target() else { return; };

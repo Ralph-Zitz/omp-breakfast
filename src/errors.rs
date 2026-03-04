@@ -56,7 +56,10 @@ impl std::fmt::Display for ErrorResponse {
             f,
             "{}",
             serde_json::to_string(self)
-                .unwrap_or_else(|_| format!(r#"{{"error":"{}"}}"#, self.error))
+                .unwrap_or_else(|_| {
+                    let escaped = self.error.replace('\\', "\\\\").replace('"', "\\\"");
+                    format!(r#"{{"error":"{}"}}"#, escaped)
+                })
         )
     }
 }

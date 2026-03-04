@@ -1,6 +1,8 @@
+use std::error::Error as StdError;
 use std::fmt;
 
 use tokio_postgres::Row;
+use tracing::warn;
 
 /// Error type for row-to-struct mapping, replacing `tokio_pg_mapper::Error`.
 #[derive(Debug)]
@@ -20,7 +22,7 @@ impl fmt::Display for FromRowError {
     }
 }
 
-impl std::error::Error for FromRowError {}
+impl StdError for FromRowError {}
 
 /// Trait for converting a `tokio_postgres::Row` into a typed struct.
 pub trait FromRow: Sized {
@@ -34,187 +36,61 @@ pub trait FromRow: Sized {
 }
 
 /// Helper to convert a `tokio_postgres` column-get error into a `FromRowError`.
+///
+/// Uses `Error::source()` to distinguish column-not-found (no source) from
+/// type conversion errors (source present), avoiding fragile string matching.
 fn map_err(column: &str, e: tokio_postgres::Error) -> FromRowError {
-    let msg = e.to_string();
-    if msg.contains("column") || msg.contains("not found") {
-        FromRowError::ColumnNotFound(column.to_string())
+    if e.source().is_some() {
+        FromRowError::Conversion(format!("{}: {}", column, e))
     } else {
-        FromRowError::Conversion(format!("{}: {}", column, msg))
+        FromRowError::ColumnNotFound(column.to_string())
     }
 }
 
-// ── UserEntry ───────────────────────────────────────────────────────────────
+/// Maps query result rows into typed structs, logging and skipping rows that
+/// fail to convert. Used by all list-query functions in `db/`.
+pub fn map_rows<T: FromRow>(rows: &[Row], entity: &str) -> Vec<T> {
+    rows.iter()
+        .filter_map(|row| match T::from_row_ref(row) {
+            Ok(entry) => Some(entry),
+            Err(e) => {
+                warn!(error = %e, "Failed to map {} row — skipping", entity);
+                None
+            }
+        })
+        .collect()
+}
+
+/// Generates a `FromRow` implementation for a struct where every field name
+/// matches the corresponding database column name.
+macro_rules! impl_from_row {
+    ($type:ty { $($field:ident),+ $(,)? }) => {
+        impl FromRow for $type {
+            fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
+                Ok(Self {
+                    $( $field: row.try_get(stringify!($field)).map_err(|e| map_err(stringify!($field), e))?, )+
+                })
+            }
+        }
+    };
+}
+
+// ── FromRow implementations ─────────────────────────────────────────────────
 
 use crate::models::{
     ItemEntry, OrderEntry, RoleEntry, TeamEntry, TeamOrderEntry, UpdateUserEntry, UserEntry,
     UserInTeams, UsersInTeam,
 };
 
-impl FromRow for UserEntry {
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            user_id: row.try_get("user_id").map_err(|e| map_err("user_id", e))?,
-            firstname: row
-                .try_get("firstname")
-                .map_err(|e| map_err("firstname", e))?,
-            lastname: row
-                .try_get("lastname")
-                .map_err(|e| map_err("lastname", e))?,
-            email: row.try_get("email").map_err(|e| map_err("email", e))?,
-            created: row.try_get("created").map_err(|e| map_err("created", e))?,
-            changed: row.try_get("changed").map_err(|e| map_err("changed", e))?,
-        })
-    }
-}
-
-// ── UpdateUserEntry ─────────────────────────────────────────────────────────
-
-impl FromRow for UpdateUserEntry {
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            user_id: row.try_get("user_id").map_err(|e| map_err("user_id", e))?,
-            firstname: row
-                .try_get("firstname")
-                .map_err(|e| map_err("firstname", e))?,
-            lastname: row
-                .try_get("lastname")
-                .map_err(|e| map_err("lastname", e))?,
-            email: row.try_get("email").map_err(|e| map_err("email", e))?,
-            password: row
-                .try_get("password")
-                .map_err(|e| map_err("password", e))?,
-        })
-    }
-}
-
-// ── TeamEntry ───────────────────────────────────────────────────────────────
-
-impl FromRow for TeamEntry {
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            team_id: row.try_get("team_id").map_err(|e| map_err("team_id", e))?,
-            tname: row.try_get("tname").map_err(|e| map_err("tname", e))?,
-            descr: row.try_get("descr").map_err(|e| map_err("descr", e))?,
-            created: row.try_get("created").map_err(|e| map_err("created", e))?,
-            changed: row.try_get("changed").map_err(|e| map_err("changed", e))?,
-        })
-    }
-}
-
-// ── RoleEntry ───────────────────────────────────────────────────────────────
-
-impl FromRow for RoleEntry {
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            role_id: row.try_get("role_id").map_err(|e| map_err("role_id", e))?,
-            title: row.try_get("title").map_err(|e| map_err("title", e))?,
-            created: row.try_get("created").map_err(|e| map_err("created", e))?,
-            changed: row.try_get("changed").map_err(|e| map_err("changed", e))?,
-        })
-    }
-}
-
-// ── ItemEntry ───────────────────────────────────────────────────────────────
-
-impl FromRow for ItemEntry {
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            item_id: row.try_get("item_id").map_err(|e| map_err("item_id", e))?,
-            descr: row.try_get("descr").map_err(|e| map_err("descr", e))?,
-            price: row.try_get("price").map_err(|e| map_err("price", e))?,
-            created: row.try_get("created").map_err(|e| map_err("created", e))?,
-            changed: row.try_get("changed").map_err(|e| map_err("changed", e))?,
-        })
-    }
-}
-
-// ── TeamOrderEntry ──────────────────────────────────────────────────────────
-
-impl FromRow for TeamOrderEntry {
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            teamorders_id: row
-                .try_get("teamorders_id")
-                .map_err(|e| map_err("teamorders_id", e))?,
-            teamorders_team_id: row
-                .try_get("teamorders_team_id")
-                .map_err(|e| map_err("teamorders_team_id", e))?,
-            teamorders_user_id: row
-                .try_get("teamorders_user_id")
-                .map_err(|e| map_err("teamorders_user_id", e))?,
-            duedate: row.try_get("duedate").map_err(|e| map_err("duedate", e))?,
-            closed: row.try_get("closed").map_err(|e| map_err("closed", e))?,
-            created: row.try_get("created").map_err(|e| map_err("created", e))?,
-            changed: row.try_get("changed").map_err(|e| map_err("changed", e))?,
-        })
-    }
-}
-
-// ── OrderEntry ──────────────────────────────────────────────────────────────
-
-impl FromRow for OrderEntry {
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            orders_teamorders_id: row
-                .try_get("orders_teamorders_id")
-                .map_err(|e| map_err("orders_teamorders_id", e))?,
-            orders_item_id: row
-                .try_get("orders_item_id")
-                .map_err(|e| map_err("orders_item_id", e))?,
-            orders_team_id: row
-                .try_get("orders_team_id")
-                .map_err(|e| map_err("orders_team_id", e))?,
-            amt: row.try_get("amt").map_err(|e| map_err("amt", e))?,
-            created: row.try_get("created").map_err(|e| map_err("created", e))?,
-            changed: row.try_get("changed").map_err(|e| map_err("changed", e))?,
-        })
-    }
-}
-
-// ── UsersInTeam ─────────────────────────────────────────────────────────────
-
-impl FromRow for UsersInTeam {
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            user_id: row.try_get("user_id").map_err(|e| map_err("user_id", e))?,
-            firstname: row
-                .try_get("firstname")
-                .map_err(|e| map_err("firstname", e))?,
-            lastname: row
-                .try_get("lastname")
-                .map_err(|e| map_err("lastname", e))?,
-            email: row.try_get("email").map_err(|e| map_err("email", e))?,
-            title: row.try_get("title").map_err(|e| map_err("title", e))?,
-            joined: row.try_get("joined").map_err(|e| map_err("joined", e))?,
-            role_changed: row
-                .try_get("role_changed")
-                .map_err(|e| map_err("role_changed", e))?,
-        })
-    }
-}
-
-// ── UserInTeams ─────────────────────────────────────────────────────────────
-
-impl FromRow for UserInTeams {
-    fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
-        Ok(Self {
-            team_id: row.try_get("team_id").map_err(|e| map_err("team_id", e))?,
-            tname: row.try_get("tname").map_err(|e| map_err("tname", e))?,
-            descr: row.try_get("descr").map_err(|e| map_err("descr", e))?,
-            title: row.try_get("title").map_err(|e| map_err("title", e))?,
-            firstname: row
-                .try_get("firstname")
-                .map_err(|e| map_err("firstname", e))?,
-            lastname: row
-                .try_get("lastname")
-                .map_err(|e| map_err("lastname", e))?,
-            joined: row.try_get("joined").map_err(|e| map_err("joined", e))?,
-            role_changed: row
-                .try_get("role_changed")
-                .map_err(|e| map_err("role_changed", e))?,
-        })
-    }
-}
+impl_from_row!(UserEntry { user_id, firstname, lastname, email, created, changed });
+impl_from_row!(UpdateUserEntry { user_id, firstname, lastname, email, password });
+impl_from_row!(TeamEntry { team_id, tname, descr, created, changed });
+impl_from_row!(RoleEntry { role_id, title, created, changed });
+impl_from_row!(ItemEntry { item_id, descr, price, created, changed });
+impl_from_row!(TeamOrderEntry { teamorders_id, teamorders_team_id, teamorders_user_id, duedate, closed, created, changed });
+impl_from_row!(OrderEntry { orders_teamorders_id, orders_item_id, orders_team_id, amt, created, changed });
+impl_from_row!(UsersInTeam { user_id, firstname, lastname, email, title, joined, role_changed });
+impl_from_row!(UserInTeams { team_id, tname, descr, title, firstname, lastname, joined, role_changed });
 
 #[cfg(test)]
 mod tests {
@@ -262,21 +138,18 @@ mod tests {
     // ── map_err helper ──────────────────────────────────────────────────
 
     #[test]
-    fn map_err_returns_conversion_for_non_column_errors() {
+    fn map_err_classifies_sourceless_error_as_column_not_found() {
         // tokio_postgres::Error::__private_api_timeout() produces an error
-        // whose message does NOT contain "column" or "not found", so map_err
-        // should classify it as a Conversion error.
+        // with no source (cause = None). In practice, map_err is only called
+        // from Row::try_get() closures, where sourceless errors correspond to
+        // missing columns (Kind::Column also has cause = None).
         let pg_err = tokio_postgres::Error::__private_api_timeout();
         let result = map_err("my_column", pg_err);
         match result {
-            FromRowError::Conversion(msg) => {
-                assert!(
-                    msg.starts_with("my_column:"),
-                    "Conversion message should start with the column name, got: {}",
-                    msg
-                );
+            FromRowError::ColumnNotFound(col) => {
+                assert_eq!(col, "my_column");
             }
-            other => panic!("expected Conversion, got {:?}", other),
+            other => panic!("expected ColumnNotFound, got {:?}", other),
         }
     }
 

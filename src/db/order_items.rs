@@ -1,9 +1,8 @@
 use crate::errors::Error;
-use crate::from_row::FromRow;
+use crate::from_row::{FromRow, map_rows};
 use crate::models::*;
 use deadpool_postgres::Client;
 use tokio_postgres::Transaction;
-use tracing::warn;
 use uuid::Uuid;
 
 /// Check whether a team order is closed. Returns `true` if the order exists
@@ -77,21 +76,12 @@ pub async fn get_order_items(
         .await
         .map_err(Error::Db)?;
 
-    let items = client
+    let rows = client
         .query(&statement, &[&teamorder_id, &team_id])
         .await
-        .map_err(Error::Db)?
-        .iter()
-        .filter_map(|row| match OrderEntry::from_row_ref(row) {
-            Ok(entry) => Some(entry),
-            Err(e) => {
-                warn!(error = %e, "Failed to map order item row — skipping");
-                None
-            }
-        })
-        .collect();
+        .map_err(Error::Db)?;
 
-    Ok(items)
+    Ok(map_rows(&rows, "order item"))
 }
 
 /// Fetches a single line item by team order ID, item ID, and team ID.

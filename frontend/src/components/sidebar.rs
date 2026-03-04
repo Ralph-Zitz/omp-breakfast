@@ -200,16 +200,19 @@ fn LogoutButton() -> impl IntoView {
     let set_user = expect_context::<WriteSignal<Option<UserContext>>>();
 
     let on_logout = move |_| {
-        let access = session_storage()
+        let storage = session_storage();
+        let access = storage
+            .as_ref()
             .and_then(|s| s.get_item("access_token").ok())
             .flatten();
-        let refresh = session_storage()
+        let refresh = storage
+            .as_ref()
             .and_then(|s| s.get_item("refresh_token").ok())
             .flatten();
 
         // Clear tokens immediately — before async revocation — to prevent
         // a race window where tokens remain readable in sessionStorage.
-        if let Some(storage) = session_storage() {
+        if let Some(storage) = storage {
             let _ = storage.remove_item("access_token");
             let _ = storage.remove_item("refresh_token");
         }

@@ -1,8 +1,7 @@
 use crate::errors::Error;
-use crate::from_row::FromRow;
+use crate::from_row::{FromRow, map_rows};
 use crate::models::*;
 use deadpool_postgres::Client;
-use tracing::warn;
 use uuid::Uuid;
 
 /// Fetches all team orders for a team, ordered by creation date descending
@@ -23,21 +22,12 @@ pub async fn get_team_orders(client: &Client, team_id: Uuid) -> Result<Vec<TeamO
         .await
         .map_err(Error::Db)?;
 
-    let orders = client
+    let rows = client
         .query(&statement, &[&team_id])
         .await
-        .map_err(Error::Db)?
-        .iter()
-        .filter_map(|row| match TeamOrderEntry::from_row_ref(row) {
-            Ok(entry) => Some(entry),
-            Err(e) => {
-                warn!(error = %e, "Failed to map team order row — skipping");
-                None
-            }
-        })
-        .collect();
+        .map_err(Error::Db)?;
 
-    Ok(orders)
+    Ok(map_rows(&rows, "team order"))
 }
 
 /// Fetches a single team order by order ID and team ID.

@@ -48,17 +48,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Source commands: `review`, `api-completeness`
   - Action: Add `LIMIT`/`OFFSET` when data growth warrants it.
 
-### Deployment — No `.env.example` File for Onboarding
-
-- [ ] **#76 — No `.env.example` or env documentation for new developers**
-  - Source commands: `practices-audit`
-
-### Deployment — Dev Config in Production Docker Image
-
-- [ ] **#118 — `development.yml` copied into production image unnecessarily**
-  - File: `Dockerfile.breakfast`
-  - Source commands: `security-audit`
-
 ### Security — Rate Limiter Uses IP-Based Key Extraction
 
 - [ ] **#119 — Behind a reverse proxy, all requests share one IP**
@@ -85,54 +74,6 @@ This file is **generated and maintained by the project assessment process** defi
 
 - [ ] **#124 — FK cascade and `fix_migration_history` DB interaction lack tests**
   - Source commands: `test-gaps`
-
-### Frontend — Inconsistent `spawn_local` Import
-
-- [ ] **#210 — Session restore uses `wasm_bindgen_futures::spawn_local` while logout uses `leptos::task::spawn_local`**
-  - File: `frontend/src/app.rs`
-  - Source commands: `review`
-
-### Frontend — Form Has Redundant Double Validation
-
-- [ ] **#211 — `<form>` has both native HTML5 validation and custom JavaScript validation**
-  - File: `frontend/src/pages/login.rs`
-  - Source commands: `review`
-
-### Frontend — Loading Page Spinner Not Announced to Screen Readers
-
-- [ ] **#231 — Loading spinner container lacks `role="status"` and `aria-live`**
-  - File: `frontend/src/pages/loading.rs`
-  - Source commands: `review`
-
-### Code Quality — `ErrorResponse::Display` Fallback Doesn't Escape JSON
-
-- [ ] **#232 — If `serde_json::to_string` fails, the fallback `format!` produces invalid JSON**
-  - File: `src/errors.rs`
-  - Source commands: `review`
-
-### Frontend — Redundant `session_storage()` Calls in Logout Handler
-
-- [ ] **#233 — `session_storage()` called 3 times in the `on_logout` closure**
-  - File: `frontend/src/components/sidebar.rs` (lines ~203–214)
-  - Source commands: `review`
-
-### Code Quality — `from_row.rs` Error Classification Uses Fragile String Matching
-
-- [ ] **#234 — `map_err` helper checks for `"column"` or `"not found"` in error messages**
-  - File: `src/from_row.rs`
-  - Source commands: `review`
-
-### Code Quality — `from_row_ref` Boilerplate Reducible by Macro
-
-- [ ] **#254 — 9 `FromRow` implementations total ~200 lines of repetitive `try_get`/`map_err` per column**
-  - File: `src/from_row.rs`
-  - Source commands: `review`
-
-### Code Quality — Duplicated Row-Mapping Pattern Across 6 DB List Functions
-
-- [ ] **#255 — Identical `filter_map` + `warn` block in 6 list functions**
-  - Files: `src/db/users.rs`, `src/db/teams.rs`, `src/db/roles.rs`, `src/db/items.rs`, `src/db/orders.rs`, `src/db/order_items.rs`
-  - Source commands: `review`
 
 ### Deployment — `HTTP_REDIRECT_PORT` Hardcoded to 80
 

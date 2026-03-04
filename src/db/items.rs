@@ -1,7 +1,6 @@
-use crate::from_row::FromRow;
+use crate::from_row::{FromRow, map_rows};
 use crate::{errors::Error, models::*};
 use deadpool_postgres::Client;
-use tracing::warn;
 use uuid::Uuid;
 
 /// Fetches all breakfast items, ordered alphabetically by description.
@@ -13,21 +12,12 @@ pub async fn get_items(client: &Client) -> Result<Vec<ItemEntry>, Error> {
         .await
         .map_err(Error::Db)?;
 
-    let items = client
+    let rows = client
         .query(&statement, &[])
         .await
-        .map_err(Error::Db)?
-        .iter()
-        .filter_map(|row| match ItemEntry::from_row_ref(row) {
-            Ok(entry) => Some(entry),
-            Err(e) => {
-                warn!(error = %e, "Failed to map item row — skipping");
-                None
-            }
-        })
-        .collect();
+        .map_err(Error::Db)?;
 
-    Ok(items)
+    Ok(map_rows(&rows, "item"))
 }
 
 /// Fetches a single breakfast item by ID.

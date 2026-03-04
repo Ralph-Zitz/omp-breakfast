@@ -1,8 +1,7 @@
 use crate::errors::Error;
-use crate::from_row::FromRow;
+use crate::from_row::{FromRow, map_rows};
 use crate::models::*;
 use deadpool_postgres::Client;
-use tracing::warn;
 use uuid::Uuid;
 
 /// Fetches all roles, ordered alphabetically by title.
@@ -14,21 +13,12 @@ pub async fn get_roles(client: &Client) -> Result<Vec<RoleEntry>, Error> {
         .await
         .map_err(Error::Db)?;
 
-    let roles = client
+    let rows = client
         .query(&statement, &[])
         .await
-        .map_err(Error::Db)?
-        .iter()
-        .filter_map(|row| match RoleEntry::from_row_ref(row) {
-            Ok(entry) => Some(entry),
-            Err(e) => {
-                warn!(error = %e, "Failed to map role row — skipping");
-                None
-            }
-        })
-        .collect();
+        .map_err(Error::Db)?;
 
-    Ok(roles)
+    Ok(map_rows(&rows, "role"))
 }
 
 /// Fetches a single role by ID.

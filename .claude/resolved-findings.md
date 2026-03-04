@@ -1780,8 +1780,65 @@ Last updated: 2026-03-04
   - Resolution: Backend fix complete — `teams.team_id` and `teams.descr` added to SELECT clause; `team_id: Uuid` and `descr: Option<String>` added to `UserInTeams` struct. Frontend struct gap tracked separately as #365 in assessment-findings.md.
   - Source commands: `db-review`, `api-completeness`
 
+### Deployment — Dev Config in Production Docker Image
+
+- [x] **#76 — No `.env.example` or env documentation for new developers**
+  - Resolution: Created `.env.example` with all server and PostgreSQL config variables, environment names, and TLS cert path.
+  - Source commands: `practices-audit`
+
+- [x] **#118 — `development.yml` copied into production image unnecessarily**
+  - File: `Dockerfile.breakfast`
+  - Resolution: Removed `COPY --chown=web:web config/development.yml /config/development.yml` from the final stage. Production image now only contains `default.yml` and `production.yml`.
+  - Source commands: `security-audit`
+
+### Frontend — Inconsistent Import and Redundant Validation
+
+- [x] **#210 — Session restore uses `wasm_bindgen_futures::spawn_local` while logout uses `leptos::task::spawn_local`**
+  - File: `frontend/src/app.rs`
+  - Resolution: Changed `wasm_bindgen_futures::spawn_local` to `leptos::task::spawn_local` in session restore for consistency.
+  - Source commands: `review`
+
+- [x] **#211 — `<form>` has both native HTML5 validation and custom JavaScript validation**
+  - File: `frontend/src/pages/login.rs`
+  - Resolution: Removed `required=true` from username and password inputs. Custom JS validation in `on_submit` provides better UX with the CONNECT design system error alert component.
+  - Source commands: `review`
+
+### Frontend — Accessibility and UX
+
+- [x] **#231 — Loading spinner container lacks `role="status"` and `aria-live`**
+  - File: `frontend/src/pages/loading.rs`
+  - Resolution: Added `role="status"` and `aria-live="polite"` to the loading card container.
+  - Source commands: `review`
+
+- [x] **#233 — `session_storage()` called 3 times in the `on_logout` closure**
+  - File: `frontend/src/components/sidebar.rs`
+  - Resolution: Consolidated to a single `session_storage()` call stored in a local variable, reused for reading tokens and clearing them.
+  - Source commands: `review`
+
+### Code Quality — Error Handling and Row Mapping
+
+- [x] **#232 — If `serde_json::to_string` fails, the fallback `format!` produces invalid JSON**
+  - File: `src/errors.rs`
+  - Resolution: Added backslash and double-quote escaping in the fallback branch to produce valid JSON.
+  - Source commands: `review`
+
+- [x] **#234 — `map_err` helper checks for `"column"` or `"not found"` in error messages**
+  - File: `src/from_row.rs`
+  - Resolution: Replaced fragile string matching with `e.source()` check — `tokio_postgres` column-not-found errors have no source (cause = None), while type conversion errors have a source.
+  - Source commands: `review`
+
+- [x] **#254 — 9 `FromRow` implementations total ~200 lines of repetitive `try_get`/`map_err` per column**
+  - File: `src/from_row.rs`
+  - Resolution: Created `impl_from_row!` macro that generates `FromRow::from_row_ref` from a list of field names (which match column names). All 9 implementations reduced to single-line macro invocations.
+  - Source commands: `review`
+
+- [x] **#255 — Identical `filter_map` + `warn` block in 6 list functions**
+  - Files: `src/db/users.rs`, `src/db/teams.rs`, `src/db/roles.rs`, `src/db/items.rs`, `src/db/orders.rs`, `src/db/order_items.rs`
+  - Resolution: Extracted `map_rows<T: FromRow>(rows, entity)` helper in `src/from_row.rs`. All 8 list functions (including `get_user_teams` and `get_team_users`) now use the shared helper.
+  - Source commands: `review`
+
 ## Notes
 
-- Total resolved items: 255 (6 critical, 45 important, 72 minor, 38 informational, plus items previously counted under different categories)
+- Total resolved items: 265 (6 critical, 45 important, 72 minor, 48 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

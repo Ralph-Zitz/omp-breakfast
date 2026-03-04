@@ -1,8 +1,7 @@
 use crate::errors::Error;
-use crate::from_row::FromRow;
+use crate::from_row::{FromRow, map_rows};
 use crate::models::*;
 use deadpool_postgres::Client;
-use tracing::warn;
 use uuid::Uuid;
 
 /// Returns all teams a user belongs to, with the role title and membership
@@ -25,21 +24,12 @@ pub async fn get_user_teams(client: &Client, uid: Uuid) -> Result<Vec<UserInTeam
         .await
         .map_err(Error::Db)?;
 
-    let result = client
+    let rows = client
         .query(&statement, &[&uid])
         .await
-        .map_err(Error::Db)?
-        .iter()
-        .filter_map(|row| match UserInTeams::from_row_ref(row) {
-            Ok(entry) => Some(entry),
-            Err(e) => {
-                warn!(error = %e, "Failed to map user-in-teams row — skipping");
-                None
-            }
-        })
-        .collect::<Vec<UserInTeams>>();
+        .map_err(Error::Db)?;
 
-    Ok(result)
+    Ok(map_rows(&rows, "user-in-teams"))
 }
 
 /// Fetches all teams, ordered alphabetically by team name.
@@ -51,21 +41,12 @@ pub async fn get_teams(client: &Client) -> Result<Vec<TeamEntry>, Error> {
         .await
         .map_err(Error::Db)?;
 
-    let teams = client
+    let rows = client
         .query(&statement, &[])
         .await
-        .map_err(Error::Db)?
-        .iter()
-        .filter_map(|row| match TeamEntry::from_row_ref(row) {
-            Ok(entry) => Some(entry),
-            Err(e) => {
-                warn!(error = %e, "Failed to map team row — skipping");
-                None
-            }
-        })
-        .collect();
+        .map_err(Error::Db)?;
 
-    Ok(teams)
+    Ok(map_rows(&rows, "team"))
 }
 
 /// Fetches a single team by ID.
@@ -165,19 +146,10 @@ pub async fn get_team_users(client: &Client, tid: Uuid) -> Result<Vec<UsersInTea
         .await
         .map_err(Error::Db)?;
 
-    let result = client
+    let rows = client
         .query(&statement, &[&tid])
         .await
-        .map_err(Error::Db)?
-        .iter()
-        .filter_map(|row| match UsersInTeam::from_row_ref(row) {
-            Ok(entry) => Some(entry),
-            Err(e) => {
-                warn!(error = %e, "Failed to map users-in-team row — skipping");
-                None
-            }
-        })
-        .collect::<Vec<UsersInTeam>>();
+        .map_err(Error::Db)?;
 
-    Ok(result)
+    Ok(map_rows(&rows, "users-in-team"))
 }

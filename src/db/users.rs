@@ -1,9 +1,8 @@
 use crate::errors::Error;
-use crate::from_row::FromRow;
+use crate::from_row::{FromRow, map_rows};
 use crate::models::*;
 use argon2::password_hash::{PasswordHasher, SaltString, rand_core::OsRng};
 use deadpool_postgres::Client;
-use tracing::warn;
 use uuid::Uuid;
 
 /// Fetches all users, ordered by first name then last name.
@@ -15,21 +14,12 @@ pub async fn get_users(client: &Client) -> Result<Vec<UserEntry>, Error> {
         .await
         .map_err(Error::Db)?;
 
-    let users = client
+    let rows = client
         .query(&statement, &[])
         .await
-        .map_err(Error::Db)?
-        .iter()
-        .filter_map(|row| match UserEntry::from_row_ref(row) {
-            Ok(entry) => Some(entry),
-            Err(e) => {
-                warn!(error = %e, "Failed to map user row — skipping");
-                None
-            }
-        })
-        .collect();
+        .map_err(Error::Db)?;
 
-    Ok(users)
+    Ok(map_rows(&rows, "user"))
 }
 
 /// Fetches a single user by ID.
