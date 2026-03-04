@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2025-07-20
+Last assessed: 2025-07-21
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -26,17 +26,69 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
-All important items have been resolved. See `.claude/resolved-findings.md` for details.
+### RBAC — Order Item Handlers Use Wrong Authorization Guard
+
+- [ ] **#302 — `update_order_item` allows any team member to modify other members' order items (privilege escalation)**
+  - File: `src/handlers/orders.rs`
+  - Problem: Uses `require_team_member` instead of `require_order_owner_or_team_admin`. Any authenticated team member (including Guest role) can update order items belonging to other members.
+  - Fix: Change `require_team_member(&state, &claims, team_id).await?` to `require_order_owner_or_team_admin(&state, &claims, team_id, order_id).await?`.
+  - Source commands: `rbac-rules`
+
+- [ ] **#303 — `delete_order_item` allows any team member to delete other members' order items (privilege escalation)**
+  - File: `src/handlers/orders.rs`
+  - Problem: Same as #302 — uses `require_team_member` instead of `require_order_owner_or_team_admin`.
+  - Fix: Same pattern as #302.
+  - Source commands: `rbac-rules`
+
+### Code Quality — `cargo fmt` Drift in Backend
+
+- [ ] **#304 — `cargo fmt --check` reports formatting diff in `src/middleware/auth.rs`**
+  - File: `src/middleware/auth.rs` (line ~174)
+  - Problem: Long line needs wrapping per rustfmt rules.
+  - Fix: Run `cargo fmt`.
+  - Source commands: `practices-audit`
+
+### Code Quality — `cargo fmt` Drift in Frontend
+
+- [ ] **#305 — `cargo fmt --check` reports significant formatting drift in frontend files (~15KB of diffs)**
+  - Files: `frontend/src/components/icons.rs` (SVG path data), and other frontend files
+  - Problem: Formatting drift accumulated during frontend modular refactor.
+  - Fix: Run `cd frontend && cargo fmt`.
+  - Source commands: `practices-audit`
+
+### Documentation — CLAUDE.md Missing Frontend Modular Architecture
+
+- [ ] **#306 — CLAUDE.md Project Structure tree still shows only `app.rs`, `lib.rs`, `main.rs` under `frontend/src/`**
+  - File: `CLAUDE.md` (Project Structure section)
+  - Problem: Frontend was refactored into modular architecture (`api.rs`, `components/` with 7 files, `pages/` with 10 files) but CLAUDE.md still describes old single-file structure.
+  - Fix: Update Project Structure tree, Component hierarchy, and all `frontend/src/app.rs` path references.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md Unfinished Work Section Stale
+
+- [ ] **#307 — 4 of 5 Unfinished Work items are now completed**
+  - File: `CLAUDE.md` (Unfinished Work section)
+  - Problem: Sidebar navigation, dark/light toggle, toast notifications, and confirmation modals are all implemented.
+  - Fix: Remove completed items and update remaining items.
+  - Source commands: `cross-ref-check`
+
+### Documentation — Assessment Command Files Reference Stale `app.rs` Path
+
+- [ ] **#308 — 3 command files reference `frontend/src/app.rs` as the frontend source**
+  - Files: `.claude/commands/review.md`, `.claude/commands/security-audit.md`, `.claude/commands/test-gaps.md`
+  - Problem: Frontend was refactored from monolithic `app.rs` to `api.rs` + `pages/` + `components/` modules.
+  - Fix: Update references to `frontend/src/pages/`, `frontend/src/components/`, `frontend/src/api.rs`.
+  - Source commands: `cross-ref-check`
+
+### Testing — Zero WASM Tests for 6 New Frontend Pages
+
+- [ ] **#309 — `admin.rs`, `items.rs`, `orders.rs`, `profile.rs`, `roles.rs`, `teams.rs` have no test coverage (~2,800 lines)**
+  - File: `frontend/tests/ui_tests.rs`
+  - Problem: All 27 existing WASM tests cover only login/dashboard/session flows. The 6 new pages have zero tests.
+  - Fix: Add WASM tests for each page: rendering, API interaction mocking, form validation, error states.
+  - Source commands: `test-gaps`
 
 ## Minor Items
-
-### Frontend — All Components in Single `app.rs` File
-
-- [ ] **#71 — Frontend `app.rs` is a 600+ line monolith**
-  - File: `frontend/src/app.rs`
-  - Problem: The entire frontend lives in a single file. As planned pages are built, this will become unmanageable.
-  - Fix: Split into module structure when building the next frontend page.
-  - Source commands: `review`, `practices-audit`
 
 ### Security — Swagger UI Exposed in Production
 
@@ -46,18 +98,18 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
   - Fix: Conditionally register the Swagger UI scope only when `ENV != production`, or gate behind admin auth.
   - Source commands: `security-audit`
 
-### Documentation — Frontend Test Category Breakdown Sums to 21, Not 23
+### Documentation — Frontend Test Category Breakdown Wrong
 
-- [ ] **#163 — CLAUDE.md test category breakdown omits 2 token refresh tests**
+- [ ] **#163 — CLAUDE.md test category breakdown is stale — should reflect 27 tests (was claiming 23)**
   - File: `CLAUDE.md` (Testing → Frontend → Test categories)
-  - Problem: 8 categories total 4+3+3+3+2+1+2+3 = 21, but 23 WASM tests exist.
-  - Fix: Add "Token refresh (2 tests)" category to the breakdown.
+  - Problem: Categories total does not match actual 27 WASM tests. Need to add theme toggle (4 tests), token refresh (2 tests) categories and update existing category counts.
+  - Fix: Recount all test categories and update the breakdown to sum to 27.
   - Source commands: `cross-ref-check`
 
 ### Frontend — Login Shows "Invalid Credentials" for All Non-2xx Errors
 
 - [ ] **#225 — HTTP 500, 429, and 503 responses all display "Invalid username or password"**
-  - File: `frontend/src/app.rs`
+  - File: `frontend/src/pages/login.rs`
   - Problem: The login flow's `Ok(_)` catch-all always shows a credentials error.
   - Fix: Match on `response.status()` and provide differentiated messages.
   - Source commands: `api-completeness`, `review`
@@ -111,10 +163,10 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
 
 ### Documentation — CLAUDE.md Test Counts Stale
 
-- [ ] **#246 — CLAUDE.md says "162 unit tests" and "90 API integration tests" — actual counts are 184 (162 lib + 22 healthcheck) and 86 respectively**
+- [ ] **#246 — CLAUDE.md test counts do not match actual counts**
   - File: `CLAUDE.md` (Testing → Backend section)
-  - Problem: Unit test count text says "162" but includes "and the healthcheck binary" without adding the 22 healthcheck tests. API test count says 90 but actual is 86.
-  - Fix: Update to "184 unit tests (162 library + 22 healthcheck binary)" and "86 API integration tests". Update total from 387 to 383.
+  - Problem: Actual counts are 189 unit tests (167 lib + 22 healthcheck), 86 API integration, 90 DB integration, 27 WASM frontend = 392 total. CLAUDE.md has different numbers.
+  - Fix: Update all test counts in CLAUDE.md to match actuals.
   - Source commands: `cross-ref-check`, `test-gaps`
 
 ### Validation — `Validate` Derive Still on 4 No-Rule Structs
@@ -234,13 +286,6 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
   - Fix: Insert claims into `req.extensions_mut()` like `jwt_validator` does.
   - Source commands: `review`
 
-### Code Quality — `cargo fmt` Drift in `db_tests.rs`
-
-- [ ] **#297 — `cargo fmt --check` reports formatting diff in `db_tests.rs`**
-  - File: `tests/db_tests.rs` (line ~2433)
-  - Problem: A multi-line `assert!()` should be single-line per rustfmt rules. One-liner fix: `cargo fmt`.
-  - Source commands: `practices-audit`
-
 ### Security — `revoke_user_token` Returns HTTP 500 for Expired/Malformed Tokens
 
 - [ ] **#298 — `verify_jwt` in `revoke_user_token` propagates `Error::Jwt` → 500 for expired tokens submitted for revocation**
@@ -248,6 +293,58 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
   - Problem: When a legitimately-expired (but validly-signed) token is submitted for revocation, `verify_jwt` returns `Error::Jwt` which maps to HTTP 500 "Internal server error". The user gets no actionable information.
   - Fix: Either catch `Error::Jwt` in the handler and return `HttpResponse::BadRequest().json(ErrorResponse { error: "Token is invalid or expired" })`, or use a `Validation` with `validate_exp = false` for the revocation-specific verify call (revoking an expired token is harmless, and signature verification is still performed).
   - Source commands: `security-audit`
+
+### RBAC — `create_order_item` Uses Broad `require_team_member` Guard
+
+- [ ] **#310 — Any team member (including Guest) can create order items on any team order**
+  - File: `src/handlers/orders.rs`
+  - Problem: Uses `require_team_member` which allows any team member to add items to any order, regardless of ownership.
+  - Fix: Consider whether this is intended policy. If not, restrict to order owner + team admin + global admin.
+  - Source commands: `rbac-rules`
+
+### RBAC — Policy Table Missing Order Items as Resource
+
+- [ ] **#311 — CLAUDE.md RBAC documentation does not cover `order_items` as a distinct resource**
+  - File: `CLAUDE.md` (RBAC sections)
+  - Problem: The policy table only documents `teamorders` RBAC. Per-item authorization rules are undocumented.
+  - Fix: Add an "Order Items" section to the RBAC documentation with the intended policy.
+  - Source commands: `rbac-rules`
+
+### OpenAPI — `create_user` Missing 409 Conflict Response Annotation
+
+- [ ] **#312 — Handler returns 409 on duplicate email but utoipa only documents 201/400/401/403/404**
+  - File: `src/handlers/users.rs`
+  - Fix: Add `(status = 409, description = "Conflict", body = ErrorResponse)`.
+  - Source commands: `openapi-sync`
+
+### Validation — `create_team_order` and `update_team_order` Missing `validate()` Calls
+
+- [ ] **#313 — Unlike other mutation endpoints, these two handlers do not call `validate(&json)?` before DB operations**
+  - File: `src/handlers/teams.rs`
+  - Problem: Convention is to always call `validate()` before DB calls.
+  - Fix: Either add `validate(&json)?` calls, or formally document these endpoints as exceptions.
+  - Source commands: `openapi-sync`, `practices-audit`
+
+### Database — `get_member_role` Uses `query()` Not `query_opt()`
+
+- [ ] **#314 — Non-existent membership returns 500 instead of a clean error**
+  - File: `src/db/membership.rs`
+  - Fix: Use `query_opt()` + `ok_or_else(|| Error::NotFound(...))` per project convention.
+  - Source commands: `db-review`
+
+### Database — Missing ORDER BY on `get_user_teams` and `get_team_users`
+
+- [ ] **#315 — Results returned in arbitrary order, which may vary between queries**
+  - Files: `src/db/teams.rs` (`get_user_teams`, `get_team_users`)
+  - Fix: Add `ORDER BY tname` (or `joined DESC`) to ensure deterministic results.
+  - Source commands: `db-review`
+
+### Database — `UserInTeams` Model Missing `descr` Field
+
+- [ ] **#316 — Query SELECTs team name but not description — frontend cannot show team descriptions**
+  - Files: `src/db/teams.rs`, `src/models.rs` (`UserInTeams` struct)
+  - Fix: Add `teams.descr` to the SELECT clause and `descr: Option<String>` to `UserInTeams`.
+  - Source commands: `db-review`, `api-completeness`
 
 ## Informational Items
 
@@ -269,13 +366,6 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
 
 - [ ] **#76 — No `.env.example` or env documentation for new developers**
   - Source commands: `practices-audit`
-
-### Frontend — Consumes Only 4 of 41 Endpoints
-
-- [ ] **#116 — Frontend only uses auth (3) + user-detail (1) endpoints**
-  - File: `frontend/src/app.rs`
-  - Source commands: `api-completeness`
-  - Action: Documented in CLAUDE.md Frontend Roadmap.
 
 ### Deployment — Dev Config in Production Docker Image
 
@@ -313,19 +403,19 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
 ### Frontend — `Page::Dashboard` Clones Data on Every Signal Read
 
 - [ ] **#126 — Dashboard state stored in enum variant, cloned on every re-render**
-  - File: `frontend/src/app.rs`
+  - File: `frontend/src/pages/dashboard.rs`
   - Source commands: `review`
 
 ### Frontend — Missing `aria-busy` on Submit Button
 
 - [ ] **#127 — No `aria-busy` attribute during login form submission**
-  - File: `frontend/src/app.rs`
+  - File: `frontend/src/pages/login.rs`
   - Source commands: `review`
 
 ### Frontend — Decorative Icons Lack Accessibility Attributes
 
 - [ ] **#128 — Warning icon and checkmark lack `aria-hidden="true"`**
-  - File: `frontend/src/app.rs`
+  - File: `frontend/src/pages/login.rs`
   - Source commands: `review`
 
 ### Frontend — Inconsistent `spawn_local` Import
@@ -337,13 +427,13 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
 ### Frontend — Form Has Redundant Double Validation
 
 - [ ] **#211 — `<form>` has both native HTML5 validation and custom JavaScript validation**
-  - File: `frontend/src/app.rs`
+  - File: `frontend/src/pages/login.rs`
   - Source commands: `review`
 
 ### Frontend — Loading Page Spinner Not Announced to Screen Readers
 
 - [ ] **#231 — Loading spinner container lacks `role="status"` and `aria-live`**
-  - File: `frontend/src/app.rs`
+  - File: `frontend/src/pages/loading.rs`
   - Source commands: `review`
 
 ### Code Quality — `ErrorResponse::Display` Fallback Doesn't Escape JSON
@@ -567,6 +657,75 @@ All important items have been resolved. See `.claude/resolved-findings.md` for d
   - Fix: Add `teams.team_id` to the SELECT clause and `team_id: Uuid` to the `UserInTeams` struct.
   - Source commands: `db-review`, `api-completeness`
 
+### Frontend — Signal-Inside-Reactive-Closure Anti-Pattern in 5 Pages
+
+- [ ] **#317 — `teams.rs`, `orders.rs`, `items.rs`, `roles.rs`, `admin.rs` create signals inside `move || {}` closures**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
+  - Problem: Creating `ReadSignal`/`WriteSignal` pairs inside move closures leaks reactive nodes.
+  - Fix: Use `StoredValue` or move signal creation outside closures into component scope.
+  - Source commands: `review`
+
+### Frontend — Duplicated `role_tag_class()` Function Across 4 Files
+
+- [ ] **#318 — Same role-to-CSS-class mapping repeated in 4 frontend files**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/admin.rs`
+  - Fix: Extract to a shared helper in `frontend/src/components/` or a `utils.rs` module.
+  - Source commands: `review`
+
+### Frontend — Duplicated `LoadingSpinner` Markup in 5 Pages
+
+- [ ] **#319 — Same loading spinner HTML pattern repeated in 5 page files**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
+  - Fix: Extract to a shared `LoadingSpinner` component.
+  - Source commands: `review`
+
+### Frontend — `sleep_ms` Uses `js_sys::eval` in Production Code
+
+- [ ] **#320 — `sleep_ms` helper uses `js_sys::eval` to create a Promise-based sleep**
+  - File: `frontend/src/pages/login.rs`
+  - Problem: `eval` is a code-smell in production (CSP implications, fragility).
+  - Source commands: `review`
+
+### Frontend — Uses `String` for UUIDs Everywhere
+
+- [ ] **#321 — No type safety for UUID fields in frontend API types**
+  - File: `frontend/src/api.rs`
+  - Problem: All ID fields are `String`. A typo or wrong field could silently produce invalid requests.
+  - Source commands: `review`
+
+### Testing — Zero Tests for Shared Frontend Components
+
+- [ ] **#322 — `modal.rs`, `toast.rs`, `sidebar.rs`, `card.rs`, `icons.rs`, `theme_toggle.rs` have no WASM tests**
+  - Files: `frontend/src/components/`, `frontend/tests/ui_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — Order-Item RBAC Bug Has Zero Test Coverage
+
+- [ ] **#323 — No integration test verifies that a team member cannot modify another member's order items**
+  - Files: `tests/api_tests.rs`, `src/handlers/orders.rs`
+  - Problem: The RBAC privilege escalation in #302/#303 was never caught because no negative-path test exists. HIGH PRIORITY.
+  - Source commands: `test-gaps`, `rbac-rules`
+
+### Dependencies — `tokio-postgres` Unused `serde_json` Feature
+
+- [ ] **#324 — `with-serde_json-1` feature enabled but no query uses JSON columns**
+  - File: `Cargo.toml` (tokio-postgres dependency)
+  - Fix: Remove `"with-serde_json-1"` from features list.
+  - Source commands: `dependency-check`
+
+### Database — `orders.orders_team_id` May Be Missing NOT NULL
+
+- [ ] **#325 — Advisory: verify that `orders_team_id` FK column has NOT NULL**
+  - Files: `migrations/V1__initial_schema.sql`, `src/models.rs`
+  - Source commands: `db-review`
+
+### OpenAPI — Order-Item Endpoint 403 Descriptions Are Imprecise
+
+- [ ] **#326 — `create_order_item`, `update_order_item`, `delete_order_item` utoipa 403 descriptions do not match actual RBAC guards**
+  - File: `src/handlers/orders.rs`
+  - Fix: Update 403 descriptions to match actual RBAC policy once #302/#303 are fixed.
+  - Source commands: `openapi-sync`
+
 ## Completed Items
 
 Resolved items are maintained in [`.claude/resolved-findings.md`](.claude/resolved-findings.md), organized by original severity.
@@ -574,18 +733,20 @@ See that file for the full history of resolved findings.
 
 ## Notes
 
-- All 383 tests pass: 184 backend unit (162 lib + 22 healthcheck), 86 API integration, 90 DB integration, 23 WASM. Total: **383 tests, 0 failures**.
-- Backend unit test breakdown: config: 7, db/migrate: 34, errors: 16, from_row: 10, handlers/mod: 11, middleware/auth: 13, middleware/openapi: 14, models: 12, routes: 19, server: 17, validate: 9, healthcheck: 22 = **184 total**.
-- `cargo audit --ignore RUSTSEC-2023-0071` reports 0 vulnerabilities. RUSTSEC-2023-0071 (`rsa` 0.9.10 via `jsonwebtoken`) is intentionally ignored — **blocked on upstream**, see #132. Re-evaluate periodically.
+- All 392 tests pass: 189 backend unit (167 lib + 22 healthcheck), 86 API integration, 90 DB integration, 27 WASM. Total: **392 tests, 0 failures**.
+- Backend unit test breakdown: config: 6, db/migrate: 34, errors: 16, from_row: 10, handlers/mod: 12, middleware/auth+openapi: 32, models: 12, routes: 19, server: 17, validate: 9, healthcheck: 22 = **189 total**.
+- `cargo audit --ignore RUSTSEC-2023-0071` reports 0 vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) is intentionally ignored — **blocked on upstream**, see #132. `rsa` 0.10.0 remains at rc.16. Re-evaluate periodically.
 - All dependencies are up to date (`cargo outdated -R` shows zero outdated).
 - Clippy is clean on both backend and frontend.
-- `cargo fmt --check` has one minor diff in `tests/db_tests.rs` (see #297).
+- `cargo fmt --check` has diffs in `src/middleware/auth.rs` (see #304) and frontend files (see #305).
 - CONNECT Design System: `git pull` reports "Already up to date" — no migration needed.
-- RBAC enforcement is correct across all handlers per the policy table.
-- OpenAPI spec is synchronized with routes (41 operations), with annotation inaccuracies tracked (#244, #245, #271, #276, #277, #287).
+- Frontend was refactored from monolithic `app.rs` (600+ lines) into modular architecture: `api.rs` (377 lines), `pages/` (10 files, ~2,800 lines), `components/` (7 files, ~680 lines). `app.rs` is now 164 lines (routing shell only).
+- Frontend consumes 22 of 37 API endpoints (up from 4 at last assessment).
+- RBAC enforcement has 2 important privilege escalation vectors in order-item handlers (#302, #303). All other handlers are correct.
+- OpenAPI spec has 41 operations; annotation inaccuracies tracked (#244, #245, #271, #276, #277, #287, #312, #313, #326).
 - All SQL queries use parameterized prepared statements — zero injection risk.
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- No regressions detected against 176 resolved findings.
-- Open items summary: 1 critical (#132 blocked), 0 important, 31 minor, 48 informational. **Total: 80 open items**.
-- 176 resolved items in `.claude/resolved-findings.md`.
-- Highest finding number: #301.
+- 3 resolved findings archived: #71 (monolithic app.rs), #116 (frontend endpoint consumption), #297 (db_tests.rs fmt drift).
+- Open items summary: 1 critical (#132 blocked), 8 important, 35 minor, 61 informational. **Total: 105 open items**.
+- 188 resolved items in `.claude/resolved-findings.md`.
+- Highest finding number: #326.

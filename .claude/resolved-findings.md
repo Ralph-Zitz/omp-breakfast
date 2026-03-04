@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-03
+Last updated: 2025-07-21
 
 ## Critical Items
 
@@ -452,6 +452,27 @@ Last updated: 2026-03-03
   - Source commands: `cross-ref-check`, `practices-audit`
 
 ## Minor Items
+
+### Frontend — All Components in Single `app.rs` File
+
+- [x] **#71 — Frontend `app.rs` is a 600+ line monolith**
+  - File: `frontend/src/app.rs`
+  - Resolution: Refactored into modular architecture. `app.rs` is now 164 lines (routing shell only). Frontend split into `api.rs` (377 lines), `pages/` directory (10 files, ~2,800 lines), `components/` directory (7 files, ~680 lines) covering all planned pages and shared UI components.
+  - Source commands: `review`, `practices-audit`
+
+### Frontend — Consumes Only 4 of 41 Endpoints
+
+- [x] **#116 — Frontend only uses auth (3) + user-detail (1) endpoints**
+  - File: `frontend/src/api.rs`
+  - Resolution: Frontend now consumes 22 of 37 endpoints across all page modules (teams, orders, items, roles, admin, profile). Remaining 15 endpoints are mostly update/edit operations and member management that will be added as pages mature.
+  - Source commands: `api-completeness`
+
+### Code Quality — `cargo fmt` Drift in `db_tests.rs`
+
+- [x] **#297 — `cargo fmt --check` reports formatting diff in `db_tests.rs`**
+  - File: `tests/db_tests.rs`
+  - Resolution: `db_tests.rs` no longer has formatting issues. New formatting drift tracked in #304 (backend `auth.rs`) and #305 (frontend files).
+  - Source commands: `practices-audit`
 
 ### Code Quality — Dead S3 Config Fields
 
