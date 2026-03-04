@@ -103,7 +103,8 @@ This file is **generated and maintained by the project assessment process** defi
 - [x] **#128 — Warning icon and checkmark lack `aria-hidden="true"`**
   - File: `frontend/src/pages/login.rs`
   - Source commands: `review`
-  - Note: Already resolved — both icons already had `aria-hidden="true"` at the time of review.  - Note: Already resolved — both icons already had `aria-hidden="true"` at the time of review.
+  - Note: Already resolved — both icons already had `aria-hidden="true"` at the time of review.
+
 ### Frontend — Inconsistent `spawn_local` Import
 
 - [ ] **#210 — Session restore uses `wasm_bindgen_futures::spawn_local` while logout uses `leptos::task::spawn_local`**
