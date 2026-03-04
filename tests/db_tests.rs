@@ -62,7 +62,9 @@ async fn seed_user_id(client: &deadpool_postgres::Client, email: &str) -> Uuid {
 
 /// Lookup a seed team by name, returning the team_id.
 async fn seed_team_id(client: &deadpool_postgres::Client, tname: &str) -> Uuid {
-    let (teams, _) = db::get_teams(client, 100, 0).await.expect("should list teams");
+    let (teams, _) = db::get_teams(client, 100, 0)
+        .await
+        .expect("should list teams");
     teams
         .into_iter()
         .find(|t| t.tname == tname)
@@ -72,7 +74,9 @@ async fn seed_team_id(client: &deadpool_postgres::Client, tname: &str) -> Uuid {
 
 /// Lookup a seed role by title, returning the role_id.
 async fn seed_role_id(client: &deadpool_postgres::Client, title: &str) -> Uuid {
-    let (roles, _) = db::get_roles(client, 100, 0).await.expect("should list roles");
+    let (roles, _) = db::get_roles(client, 100, 0)
+        .await
+        .expect("should list roles");
     roles
         .into_iter()
         .find(|r| r.title == title)
@@ -2557,11 +2561,15 @@ async fn delete_team_cascades_membership_and_orders() {
     assert!(deleted);
 
     // Membership should be gone
-    let (members, _) = db::get_team_users(&client, team.team_id, 100, 0).await.unwrap();
+    let (members, _) = db::get_team_users(&client, team.team_id, 100, 0)
+        .await
+        .unwrap();
     assert!(members.is_empty(), "membership should be cascade-deleted");
 
     // Team orders should be gone
-    let (orders, _) = db::get_team_orders(&client, team.team_id, 100, 0).await.unwrap();
+    let (orders, _) = db::get_team_orders(&client, team.team_id, 100, 0)
+        .await
+        .unwrap();
     assert!(orders.is_empty(), "team orders should be cascade-deleted");
 
     // Cleanup: user and item are independent, not cascaded
@@ -2654,13 +2662,17 @@ async fn delete_user_cascades_membership() {
         .unwrap();
 
     // Verify membership exists
-    let (members, _) = db::get_team_users(&client, team.team_id, 100, 0).await.unwrap();
+    let (members, _) = db::get_team_users(&client, team.team_id, 100, 0)
+        .await
+        .unwrap();
     assert!(!members.is_empty());
 
     // Delete user — membership should cascade
     db::delete_user(&client, user.user_id).await.unwrap();
 
-    let (members, _) = db::get_team_users(&client, team.team_id, 100, 0).await.unwrap();
+    let (members, _) = db::get_team_users(&client, team.team_id, 100, 0)
+        .await
+        .unwrap();
     assert!(
         members.is_empty(),
         "membership should be cascade-deleted with user"
