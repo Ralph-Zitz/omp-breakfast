@@ -111,7 +111,7 @@ pub async fn create_order_item(
     responses(
         (status = 200, description = "Order item updated", body = OrderEntry),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
+        (status = 403, description = "Forbidden - only order owner, team admin, or global admin", body = ErrorResponse),
         (status = 404, description = "Order item not found", body = ErrorResponse),
         (status = 422, description = "Validation error", body = ErrorResponse),
     ),
@@ -132,7 +132,8 @@ pub async fn update_order_item(
     validate(&json)?;
     let (team_id, order_id, item_id) = path.into_inner();
     let mut client: Client = get_client(&state.pool).await?;
-    require_team_member(&client, &req, team_id).await?;
+    let order = db::get_team_order(&client, team_id, order_id).await?;
+    require_order_owner_or_team_admin(&client, &req, team_id, order.teamorders_user_id).await?;
     let order =
         db::update_order_item(&mut client, order_id, item_id, team_id, json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(order))
@@ -144,7 +145,7 @@ pub async fn update_order_item(
     responses(
         (status = 200, description = "Order item deleted", body = DeletedResponse),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
+        (status = 403, description = "Forbidden - only order owner, team admin, or global admin", body = ErrorResponse),
         (status = 404, description = "Order item not found", body = DeletedResponse),
     ),
     params(
@@ -162,7 +163,8 @@ pub async fn delete_order_item(
 ) -> Result<impl Responder, Error> {
     let (team_id, order_id, item_id) = path.into_inner();
     let mut client: Client = get_client(&state.pool).await?;
-    require_team_member(&client, &req, team_id).await?;
+    let order = db::get_team_order(&client, team_id, order_id).await?;
+    require_order_owner_or_team_admin(&client, &req, team_id, order.teamorders_user_id).await?;
     let deleted = db::delete_order_item(&mut client, order_id, item_id, team_id).await?;
     if deleted {
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))

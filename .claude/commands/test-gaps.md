@@ -22,7 +22,7 @@ You are a QA engineer specializing in Rust. Examine the entire codebase — back
 ### Analysis steps — Frontend (Leptos WASM)
 
 1. **Inventory existing WASM tests** — List all test functions in `frontend/tests/ui_tests.rs` and what they cover
-2. **Map frontend code paths** — For each component and function in `frontend/src/app.rs`, determine whether it has test coverage
+2. **Map frontend code paths** — For each component and function in `frontend/src/` (`api.rs`, `app.rs`, `components/`, `pages/`), determine whether it has test coverage
 3. **Identify frontend gaps** — Focus on:
    - **Component rendering** — Are all components tested for correct HTML output?
    - **Signal reactivity** — Are state transitions tested (e.g., page switching, error state changes)?

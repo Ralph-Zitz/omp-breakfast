@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2025-07-21
+Last updated: 2026-03-04
 
 ## Critical Items
 
@@ -450,6 +450,54 @@ Last updated: 2025-07-21
   - Files: `CLAUDE.md`, `.claude/commands/rbac-rules.md`
   - Fix: Added `guard_admin_role_assignment` and `require_order_owner_or_team_admin` to CLAUDE.md handlers/mod.rs function list and RBAC convention paragraphs. Added separate rows in rbac-rules.md policy table for order owner checks and admin role assignment guard.
   - Source commands: `cross-ref-check`, `practices-audit`
+
+### RBAC — Order Item Handlers Use Wrong Authorization Guard
+
+- [x] **#302 — `update_order_item` allows any team member to modify other members' order items (privilege escalation)**
+  - File: `src/handlers/orders.rs`
+  - Fix: Changed `require_team_member` to `require_order_owner_or_team_admin` — now fetches the team order first, then checks ownership/admin status. Updated utoipa 403 description.
+  - Source commands: `rbac-rules`
+
+- [x] **#303 — `delete_order_item` allows any team member to delete other members' order items (privilege escalation)**
+  - File: `src/handlers/orders.rs`
+  - Fix: Same pattern as #302 — changed to `require_order_owner_or_team_admin` with team order ownership check.
+  - Source commands: `rbac-rules`
+
+### Code Quality — `cargo fmt` Drift
+
+- [x] **#304 — `cargo fmt --check` reports formatting diff in `src/middleware/auth.rs`**
+  - Fix: Ran `cargo fmt` on backend.
+  - Source commands: `practices-audit`
+
+- [x] **#305 — `cargo fmt --check` reports significant formatting drift in frontend files (~15KB of diffs)**
+  - Fix: Ran `cd frontend && cargo fmt`.
+  - Source commands: `practices-audit`
+
+### Documentation — CLAUDE.md Updates
+
+- [x] **#306 — CLAUDE.md Project Structure tree still shows only `app.rs`, `lib.rs`, `main.rs` under `frontend/src/`**
+  - File: `CLAUDE.md`
+  - Fix: Updated Project Structure tree with full modular frontend layout (api.rs, components/ with 7 files, pages/ with 10 files). Updated Frontend Architecture section with correct component hierarchy and module descriptions.
+  - Source commands: `cross-ref-check`
+
+- [x] **#307 — 4 of 5 Unfinished Work items are now completed**
+  - File: `CLAUDE.md`
+  - Fix: Removed completed items (sidebar navigation, dark/light toggle, toast notifications, confirmation modals). Updated remaining items.
+  - Source commands: `cross-ref-check`
+
+### Documentation — Assessment Command Files Reference Stale `app.rs` Path
+
+- [x] **#308 — 3 command files reference `frontend/src/app.rs` as the frontend source**
+  - File: `.claude/commands/test-gaps.md` (only file with stale reference; review.md and security-audit.md already used generic paths)
+  - Fix: Updated test-gaps.md to reference `frontend/src/` with `api.rs`, `app.rs`, `components/`, `pages/`.
+  - Source commands: `cross-ref-check`
+
+### Testing — Zero WASM Tests for 6 New Frontend Pages
+
+- [x] **#309 — `admin.rs`, `items.rs`, `orders.rs`, `profile.rs`, `roles.rs`, `teams.rs` have no test coverage (~2,800 lines)**
+  - File: `frontend/tests/ui_tests.rs`
+  - Fix: Added 12 WASM tests (2 per page): page rendering with data, navigation/interaction, and admin visibility checks. Extended mock fetch to return data for all API endpoints. Added timeout to Makefile `test-frontend` target. Total WASM tests: 39.
+  - Source commands: `test-gaps`
 
 ## Minor Items
 

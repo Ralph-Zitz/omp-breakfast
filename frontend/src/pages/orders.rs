@@ -1,6 +1,6 @@
 use crate::api::{
-    authed_get, authed_request, HttpMethod, ItemEntry, OrderItemEntry, TeamEntry, TeamOrderEntry,
-    UserContext,
+    HttpMethod, ItemEntry, OrderItemEntry, TeamEntry, TeamOrderEntry, UserContext, authed_get,
+    authed_request,
 };
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
@@ -163,10 +163,7 @@ pub fn OrdersPage() -> impl IntoView {
         let body = serde_json::json!({ "orders_item_id": item_id, "amt": amt });
 
         wasm_bindgen_futures::spawn_local(async move {
-            let url = format!(
-                "/api/v1.0/teams/{}/orders/{}/items",
-                team_id, order_id
-            );
+            let url = format!("/api/v1.0/teams/{}/orders/{}/items", team_id, order_id);
             let resp = authed_request(HttpMethod::Post, &url, Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
@@ -199,8 +196,7 @@ pub fn OrdersPage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Delete, &url, None).await;
             match resp {
                 Some(r) if r.ok() => {
-                    set_order_items
-                        .update(|list| list.retain(|i| i.orders_item_id != item_id));
+                    set_order_items.update(|list| list.retain(|i| i.orders_item_id != item_id));
                     toast_success("Item removed");
                 }
                 _ => toast_error("Failed to remove item"),

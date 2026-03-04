@@ -95,10 +95,7 @@ fn role_tag_class(role: &str) -> String {
         "Member" => "primary-default",
         _ => "neutral-default",
     };
-    format!(
-        "connect-tag connect-tag--small connect-tag--{}",
-        color
-    )
+    format!("connect-tag connect-tag--small connect-tag--{}", color)
 }
 
 #[component]

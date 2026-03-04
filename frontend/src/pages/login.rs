@@ -1,6 +1,4 @@
-use crate::api::{
-    build_user_context, session_storage, AuthResponse, UserContext,
-};
+use crate::api::{AuthResponse, UserContext, build_user_context, session_storage};
 use crate::app::Page;
 use base64::Engine;
 use gloo_net::http::Request;
@@ -67,9 +65,7 @@ pub fn LoginPage() -> impl IntoView {
                         }
                     }
                     Err(_) => {
-                        set_error.set(Some(
-                            "Unexpected server response. Please try again.".into(),
-                        ));
+                        set_error.set(Some("Unexpected server response. Please try again.".into()));
                     }
                 },
                 Ok(_) => {

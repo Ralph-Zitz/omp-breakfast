@@ -26,67 +26,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
-### RBAC — Order Item Handlers Use Wrong Authorization Guard
-
-- [ ] **#302 — `update_order_item` allows any team member to modify other members' order items (privilege escalation)**
-  - File: `src/handlers/orders.rs`
-  - Problem: Uses `require_team_member` instead of `require_order_owner_or_team_admin`. Any authenticated team member (including Guest role) can update order items belonging to other members.
-  - Fix: Change `require_team_member(&state, &claims, team_id).await?` to `require_order_owner_or_team_admin(&state, &claims, team_id, order_id).await?`.
-  - Source commands: `rbac-rules`
-
-- [ ] **#303 — `delete_order_item` allows any team member to delete other members' order items (privilege escalation)**
-  - File: `src/handlers/orders.rs`
-  - Problem: Same as #302 — uses `require_team_member` instead of `require_order_owner_or_team_admin`.
-  - Fix: Same pattern as #302.
-  - Source commands: `rbac-rules`
-
-### Code Quality — `cargo fmt` Drift in Backend
-
-- [ ] **#304 — `cargo fmt --check` reports formatting diff in `src/middleware/auth.rs`**
-  - File: `src/middleware/auth.rs` (line ~174)
-  - Problem: Long line needs wrapping per rustfmt rules.
-  - Fix: Run `cargo fmt`.
-  - Source commands: `practices-audit`
-
-### Code Quality — `cargo fmt` Drift in Frontend
-
-- [ ] **#305 — `cargo fmt --check` reports significant formatting drift in frontend files (~15KB of diffs)**
-  - Files: `frontend/src/components/icons.rs` (SVG path data), and other frontend files
-  - Problem: Formatting drift accumulated during frontend modular refactor.
-  - Fix: Run `cd frontend && cargo fmt`.
-  - Source commands: `practices-audit`
-
-### Documentation — CLAUDE.md Missing Frontend Modular Architecture
-
-- [ ] **#306 — CLAUDE.md Project Structure tree still shows only `app.rs`, `lib.rs`, `main.rs` under `frontend/src/`**
-  - File: `CLAUDE.md` (Project Structure section)
-  - Problem: Frontend was refactored into modular architecture (`api.rs`, `components/` with 7 files, `pages/` with 10 files) but CLAUDE.md still describes old single-file structure.
-  - Fix: Update Project Structure tree, Component hierarchy, and all `frontend/src/app.rs` path references.
-  - Source commands: `cross-ref-check`
-
-### Documentation — CLAUDE.md Unfinished Work Section Stale
-
-- [ ] **#307 — 4 of 5 Unfinished Work items are now completed**
-  - File: `CLAUDE.md` (Unfinished Work section)
-  - Problem: Sidebar navigation, dark/light toggle, toast notifications, and confirmation modals are all implemented.
-  - Fix: Remove completed items and update remaining items.
-  - Source commands: `cross-ref-check`
-
-### Documentation — Assessment Command Files Reference Stale `app.rs` Path
-
-- [ ] **#308 — 3 command files reference `frontend/src/app.rs` as the frontend source**
-  - Files: `.claude/commands/review.md`, `.claude/commands/security-audit.md`, `.claude/commands/test-gaps.md`
-  - Problem: Frontend was refactored from monolithic `app.rs` to `api.rs` + `pages/` + `components/` modules.
-  - Fix: Update references to `frontend/src/pages/`, `frontend/src/components/`, `frontend/src/api.rs`.
-  - Source commands: `cross-ref-check`
-
-### Testing — Zero WASM Tests for 6 New Frontend Pages
-
-- [ ] **#309 — `admin.rs`, `items.rs`, `orders.rs`, `profile.rs`, `roles.rs`, `teams.rs` have no test coverage (~2,800 lines)**
-  - File: `frontend/tests/ui_tests.rs`
-  - Problem: All 27 existing WASM tests cover only login/dashboard/session flows. The 6 new pages have zero tests.
-  - Fix: Add WASM tests for each page: rendering, API interaction mocking, form validation, error states.
-  - Source commands: `test-gaps`
+*All Important items resolved — see `.claude/resolved-findings.md`.*
 
 ## Minor Items
 

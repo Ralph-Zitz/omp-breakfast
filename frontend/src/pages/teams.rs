@@ -1,4 +1,4 @@
-use crate::api::{authed_get, authed_request, HttpMethod, TeamEntry, UsersInTeam, UserContext};
+use crate::api::{HttpMethod, TeamEntry, UserContext, UsersInTeam, authed_get, authed_request};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;

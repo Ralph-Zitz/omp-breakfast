@@ -1408,9 +1408,15 @@ async fn test_theme_toggle_switches_mode() {
     // Toggle label should update
     let html = inner_html(id);
     if new_mode == "dark" {
-        assert!(html.contains("Dark"), "label should say 'Dark' after switching to dark");
+        assert!(
+            html.contains("Dark"),
+            "label should say 'Dark' after switching to dark"
+        );
     } else {
-        assert!(html.contains("Light"), "label should say 'Light' after switching to light");
+        assert!(
+            html.contains("Light"),
+            "label should say 'Light' after switching to light"
+        );
     }
 
     remove_test_container(id);
@@ -1505,7 +1511,11 @@ async fn test_theme_toggle_aria_attributes() {
 
     // Check initial aria-checked matches the mode
     let initial_mode = get_data_mode().unwrap();
-    let expected_checked = if initial_mode == "dark" { "true" } else { "false" };
+    let expected_checked = if initial_mode == "dark" {
+        "true"
+    } else {
+        "false"
+    };
     assert_eq!(
         btn.get_attribute("aria-checked").as_deref(),
         Some(expected_checked),
@@ -1533,5 +1543,562 @@ async fn test_theme_toggle_aria_attributes() {
 
     remove_test_container(id);
     clear_theme();
+    restore_fetch();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 11 · Page rendering tests (6 new pages)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Click a sidebar navigation item by its label text.
+fn click_nav(container_id: &str, label: &str) {
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const items = document.getElementById("{}").querySelectorAll('.nav-item');
+            for (const item of items) {{
+                if (item.textContent.includes('{}')) {{
+                    item.click();
+                    return;
+                }}
+            }}
+            throw new Error("nav item not found: {}");
+        }})()"#,
+        container_id, label, label
+    ))
+    .expect("click_nav failed");
+}
+
+/// Install a comprehensive fetch mock that provides data for all pages.
+/// The user is set up as an Admin so admin-only pages are visible.
+fn install_mock_fetch_full() {
+    let token = mock_token("12345678-1234-1234-1234-1234567890ab");
+    let js = format!(
+        r#"(() => {{
+            window.__original_fetch = window.fetch;
+            window.fetch = function(input, init) {{
+                var url = (typeof input === 'string') ? input : input.url;
+                var method = 'GET';
+                if (init && init.method) {{ method = init.method; }}
+                else if (typeof input !== 'string' && input.method) {{ method = input.method; }}
+
+                // POST /auth (login)
+                if (url.endsWith('/auth') && method === 'POST' && !url.includes('/refresh')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{
+                            access_token: "{token}",
+                            refresh_token: "mock_refresh",
+                            token_type: "Bearer",
+                            expires_in: 900
+                        }}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // POST /auth/revoke
+                if (url.includes('/auth/revoke')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up": true}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/users/*/teams — returns admin membership
+                if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify([{{
+                            "tname": "Core Team",
+                            "title": "Admin",
+                            "firstname": "John",
+                            "lastname": "Doe",
+                            "joined": "2025-01-01T00:00:00Z",
+                            "role_changed": "2025-01-01T00:00:00Z"
+                        }}]),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/users/* (single user)
+                if (url.match(/\/api\/v1\.0\/users\/[^/]+$/) && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{
+                            user_id: "12345678-1234-1234-1234-1234567890ab",
+                            firstname: "John",
+                            lastname: "Doe",
+                            email: "john@example.com",
+                            created: "2025-01-01T00:00:00Z",
+                            changed: "2025-01-01T00:00:00Z"
+                        }}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/users (list all)
+                if (url.endsWith('/api/v1.0/users') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify([{{
+                            user_id: "12345678-1234-1234-1234-1234567890ab",
+                            firstname: "John",
+                            lastname: "Doe",
+                            email: "john@example.com",
+                            created: "2025-01-01T00:00:00Z",
+                            changed: "2025-01-01T00:00:00Z"
+                        }}]),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/teams/*/users
+                if (url.match(/\/api\/v1\.0\/teams\/[^/]+\/users/) && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify([{{
+                            user_id: "12345678-1234-1234-1234-1234567890ab",
+                            firstname: "John",
+                            lastname: "Doe",
+                            email: "john@example.com",
+                            title: "Admin",
+                            joined: "2025-01-01T00:00:00Z",
+                            role_changed: "2025-01-01T00:00:00Z"
+                        }}]),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/teams/*/orders/*/items
+                if (url.match(/\/api\/v1\.0\/teams\/[^/]+\/orders\/[^/]+\/items/) && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify([]),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/teams/*/orders
+                if (url.match(/\/api\/v1\.0\/teams\/[^/]+\/orders/) && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify([{{
+                            teamorders_id: "aaaa1111-0000-0000-0000-000000000001",
+                            teamorders_team_id: "bbbb2222-0000-0000-0000-000000000001",
+                            teamorders_user_id: "12345678-1234-1234-1234-1234567890ab",
+                            duedate: "2025-08-01",
+                            closed: false,
+                            created: "2025-01-01T00:00:00Z",
+                            changed: "2025-01-01T00:00:00Z"
+                        }}]),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/teams (list all)
+                if (url.endsWith('/api/v1.0/teams') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify([{{
+                            team_id: "bbbb2222-0000-0000-0000-000000000001",
+                            tname: "Core Team",
+                            descr: "The core breakfast team",
+                            created: "2025-01-01T00:00:00Z",
+                            changed: "2025-01-01T00:00:00Z"
+                        }}]),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/items
+                if (url.endsWith('/api/v1.0/items') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify([{{
+                            item_id: "cccc3333-0000-0000-0000-000000000001",
+                            descr: "Croissant",
+                            price: "25.00",
+                            created: "2025-01-01T00:00:00Z",
+                            changed: "2025-01-01T00:00:00Z"
+                        }}]),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/roles
+                if (url.endsWith('/api/v1.0/roles') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify([{{
+                            role_id: "dddd4444-0000-0000-0000-000000000001",
+                            title: "Admin",
+                            created: "2025-01-01T00:00:00Z",
+                            changed: "2025-01-01T00:00:00Z"
+                        }}, {{
+                            role_id: "dddd4444-0000-0000-0000-000000000002",
+                            title: "Member",
+                            created: "2025-01-01T00:00:00Z",
+                            changed: "2025-01-01T00:00:00Z"
+                        }}]),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                return Promise.resolve(new Response("Not Found", {{ status: 404 }}));
+            }};
+        }})()"#,
+        token = token
+    );
+    js_sys::eval(&js).expect("install_mock_fetch_full failed");
+}
+
+/// Helper: log in and wait for dashboard to appear.
+async fn login_to_dashboard(id: &str) {
+    set_input(id, "input#username", "john@example.com");
+    set_input(id, "input#password", "password123");
+    flush(50).await;
+    submit_form(id);
+    flush(500).await;
+}
+
+// ── 11a · TeamsPage ─────────────────────────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_teams_page_renders_with_data() {
+    let id = "t-teams-page";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Teams");
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(has_element(id, ".teams-page"), "teams-page root");
+    assert!(html.contains("Teams"), "page header");
+    assert!(
+        has_element(id, "table.connect-table"),
+        "teams table present"
+    );
+    assert!(html.contains("Core Team"), "team name rendered");
+    assert!(
+        html.contains("The core breakfast team"),
+        "team description rendered"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_teams_page_shows_members_on_click() {
+    let id = "t-teams-members";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Teams");
+    flush(500).await;
+
+    // Click the team row to load members
+    click_button(id, ".connect-table-row--clickable");
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(html.contains("Team Members"), "members section title");
+    assert!(
+        html.contains("John Doe") || html.contains("John"),
+        "member name shown"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 11b · ItemsPage ────────────────────────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_items_page_renders_with_data() {
+    let id = "t-items-page";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Items");
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(has_element(id, ".items-page"), "items-page root");
+    assert!(html.contains("Item Catalog"), "page header");
+    assert!(
+        has_element(id, "table.connect-table"),
+        "items table present"
+    );
+    assert!(html.contains("Croissant"), "item name rendered");
+    assert!(html.contains("25.00"), "item price rendered");
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_items_page_has_new_item_button() {
+    let id = "t-items-btn";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Items");
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(html.contains("New Item"), "new item button present");
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 11c · OrdersPage ───────────────────────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_orders_page_renders_team_selector() {
+    let id = "t-orders-page";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Orders");
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(has_element(id, ".orders-page"), "orders-page root");
+    assert!(html.contains("Orders"), "page header");
+    assert!(html.contains("Select Team"), "team selector title");
+    assert!(html.contains("Core Team"), "team button rendered");
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_orders_page_loads_orders_on_team_select() {
+    let id = "t-orders-select";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Orders");
+    flush(500).await;
+
+    // Click the team button to load orders
+    click_button(id, ".team-selector .connect-button");
+    flush(500).await;
+
+    let html = inner_html(id);
+    // Should show the order with status tag
+    assert!(
+        html.contains("Open") || html.contains("Closed"),
+        "order status tag rendered"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 11d · ProfilePage ──────────────────────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_profile_page_renders_user_details() {
+    let id = "t-profile-page";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Profile");
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(has_element(id, ".profile-page"), "profile-page root");
+    assert!(html.contains("Profile"), "page header");
+    assert!(html.contains("John"), "first name shown");
+    assert!(html.contains("Doe"), "last name shown");
+    assert!(html.contains("john@example.com"), "email shown");
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_profile_page_shows_team_memberships() {
+    let id = "t-profile-teams";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Profile");
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(html.contains("Core Team"), "team name in profile");
+    assert!(html.contains("Admin"), "role shown in profile");
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 11e · AdminPage ────────────────────────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_admin_page_renders_user_list() {
+    let id = "t-admin-page";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(has_element(id, ".admin-page"), "admin-page root");
+    assert!(html.contains("User Management"), "page header");
+    assert!(
+        has_element(id, "table.connect-table"),
+        "users table present"
+    );
+    assert!(
+        html.contains("John Doe") || html.contains("john@example.com"),
+        "user data rendered"
+    );
+    assert!(html.contains("New User"), "new user button present");
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_admin_page_hidden_for_non_admin() {
+    let id = "t-admin-hidden";
+    clear_tokens();
+    // Use the basic success mock (no admin role)
+    install_mock_fetch_success();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+
+    // The Admin nav item should NOT be present for non-admin users
+    let has_admin_nav = js_sys::eval(&format!(
+        r#"(() => {{
+            const items = document.getElementById("{}").querySelectorAll('.nav-item');
+            for (const item of items) {{
+                if (item.textContent.includes('Admin')) return true;
+            }}
+            return false;
+        }})()"#,
+        id
+    ))
+    .ok()
+    .and_then(|v| v.as_bool())
+    .unwrap_or(true);
+
+    assert!(
+        !has_admin_nav,
+        "Admin nav should be hidden for non-admin users"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 11f · RolesPage ────────────────────────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_roles_page_renders_role_list() {
+    let id = "t-roles-page";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Roles");
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(has_element(id, ".roles-page"), "roles-page root");
+    assert!(html.contains("Roles"), "page header");
+    assert!(
+        has_element(id, "table.connect-table"),
+        "roles table present"
+    );
+    assert!(html.contains("Admin"), "admin role rendered");
+    assert!(html.contains("Member"), "member role rendered");
+    assert!(html.contains("New Role"), "new role button present");
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_roles_page_hidden_for_non_admin() {
+    let id = "t-roles-hidden";
+    clear_tokens();
+    install_mock_fetch_success();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+
+    let has_roles_nav = js_sys::eval(&format!(
+        r#"(() => {{
+            const items = document.getElementById("{}").querySelectorAll('.nav-item');
+            for (const item of items) {{
+                if (item.textContent.includes('Roles')) return true;
+            }}
+            return false;
+        }})()"#,
+        id
+    ))
+    .ok()
+    .and_then(|v| v.as_bool())
+    .unwrap_or(true);
+
+    assert!(
+        !has_roles_nav,
+        "Roles nav should be hidden for non-admin users"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
     restore_fetch();
 }

@@ -76,7 +76,7 @@ src/
     teams.rs       – Team CRUD + team order + member management handlers (team RBAC)
     roles.rs       – Role CRUD handlers (admin-gated CUD)
     items.rs       – Item CRUD handlers (breakfast items with prices, admin-gated CUD)
-    orders.rs      – Order item CRUD handlers (items within team orders, member-gated)
+    orders.rs      – Order item CRUD handlers (items within team orders, owner/team-admin-gated)
   middleware/
     mod.rs         – Module declarations
     auth.rs        – JWT/Basic auth validators, token generation/verification, blacklist
@@ -86,16 +86,36 @@ frontend/
   Trunk.toml       – Trunk config: output dir, watch paths, API proxies
   index.html       – Trunk HTML shell with data-trunk CSS link
   src/
-    lib.rs         – Library entry point (pub mod app)
+    lib.rs         – Library entry point (pub mod api, app, components, pages)
     main.rs        – Binary entry point: mounts App to <body>
-    app.rs         – All UI components, auth logic, API calls
+    app.rs         – Root App component, Page enum, AppShell layout, session restore
+    api.rs         – HTTP helpers (authed_get/post/put/delete), JWT decode, UserContext, session storage
+    components/
+      mod.rs       – Module declarations
+      card.rs      – UserCard component
+      icons.rs     – SVG icon components (ChevronDown, Plus, Edit, Trash, etc.)
+      modal.rs     – ConfirmModal component (destructive-action confirmation dialog)
+      sidebar.rs   – Sidebar + MobileHeader navigation components
+      theme_toggle.rs – Dark/light mode toggle (ThemeToggle, init_theme)
+      toast.rs     – Toast notification system (ToastContext, ToastRegion, show_toast)
+    pages/
+      mod.rs       – Module declarations
+      admin.rs     – Admin dashboard page (user management, role assignment)
+      dashboard.rs – Dashboard page (SuccessBadge, UserCard)
+      items.rs     – Item catalog page (browse, create, edit, delete items)
+      loading.rs   – Loading page (session restoration spinner)
+      login.rs     – Login page (LoginHeader, LoginForm, ErrorAlert, fields)
+      orders.rs    – Order management page (team orders, line items, totals)
+      profile.rs   – User profile page (view/edit profile, change password)
+      roles.rs     – Role management page (view/assign roles, admin-gated)
+      teams.rs     – Team management page (CRUD teams, members, team roles)
   style/
     main.css       – App-level styles using CONNECT design system tokens (--ds-* custom properties)
     connect/
       tokens.css   – Imports CONNECT core tokens + enterprise theme from connect-design-system/
       components.css – Imports all CONNECT component CSS modules from connect-design-system/
   tests/
-    ui_tests.rs    – 23 WASM integration tests (headless Chrome)
+    ui_tests.rs    – 39 WASM integration tests (headless Chrome)
 connect-design-system/ – Local clone of git@github.com:LEGO/connect-design-system.git (gitignored, read-only asset source)
 config/
   default.yml      – Base config
@@ -151,13 +171,20 @@ tests/
 
 ## Frontend Architecture
 
-The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via Trunk. It runs entirely in the browser (CSR mode).
+The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via Trunk. It runs entirely in the browser (CSR mode). The codebase is organized into modules:
 
-- **Component hierarchy:** `App` → `LoginPage` / `LoadingPage` / `DashboardPage`
+- `api.rs` — HTTP client helpers, JWT decoding, `UserContext` builder, session storage utilities
+- `app.rs` — Root `App` component, `Page` enum, `AppShell` layout, session restore logic
+- `components/` — Reusable UI components (card, icons, modal, sidebar, theme toggle, toast)
+- `pages/` — Page-level components (one file per page)
+
+- **Component hierarchy:** `App` → `LoginPage` / `LoadingPage` / `AppShell`
+  - `AppShell` uses: `MobileHeader`, `Sidebar`, `ToastRegion`, and routes to page components
   - `LoginPage` uses: `LoginHeader`, `LoginForm`, `ErrorAlert`, `UsernameField`, `PasswordField`, `SubmitButton`
   - `LoadingPage`: Displayed during session restoration from stored JWT token
   - `DashboardPage` uses: `SuccessBadge`, `UserCard`
-- **Page routing:** Manual via `Page` enum (`Login` / `Loading` / `Dashboard`) + Leptos signals (no router crate)
+  - `TeamsPage`, `OrdersPage`, `ItemsPage`, `ProfilePage`, `AdminPage`, `RolesPage`: Full CRUD pages with forms, tables, modals, and toast notifications
+- **Page routing:** Manual via `Page` enum (`Loading` / `Login` / `Dashboard` / `Teams` / `Orders` / `Items` / `Profile` / `Admin` / `Roles`) + Leptos signals (no router crate). `AppShell` wraps all authenticated pages with sidebar navigation.
 - **Auth flow:** Basic Auth POST to `/auth` → receive JWT tokens → store `access_token` and `refresh_token` in `sessionStorage` → decode JWT payload for `user_id` → GET `/api/v1.0/users/{id}` for user details → render dashboard. On logout, both access and refresh tokens are revoked server-side via `POST /auth/revoke` (fire-and-forget).
 - **Session restore:** On startup, checks `sessionStorage` for existing `access_token` → shows `LoadingPage` → if token is expired, attempts refresh via `POST /auth/refresh` → validates token via user fetch → restores dashboard or falls back to login
 - **Token refresh:** Transparent refresh via `try_refresh_token()` — when the access token is expired or within 60 seconds of expiry, the frontend automatically calls `POST /auth/refresh` with the stored refresh token, stores the new token pair, and retries the original request. If refresh fails, tokens are cleared and the user is redirected to login.
@@ -321,11 +348,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ## Unfinished Work
 
-- Frontend only has login + dashboard pages; remaining pages are tracked in the **Frontend Roadmap** section
 - No client-side routing library (manual signal-based page switching, by design)
-- Frontend does not yet consume the team, role, item, or order APIs (auth and user-detail endpoints are consumed, including token refresh and token revocation)
-- Dark/light mode toggle not yet implemented
-- Toast notifications and confirmation modals not yet implemented
+- Frontend pages render CRUD UI but lack comprehensive WASM test coverage for the 6 new pages (admin, items, orders, profile, roles, teams)
 
 ## Testing
 
@@ -340,7 +364,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Frontend
 
-- 23 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
+- 39 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
 - Test categories:
   - JWT decode (4 tests): valid token, missing segments, bad base64, invalid JSON
   - Login page rendering (3 tests): brand/form elements, email attributes, password attributes
@@ -350,6 +374,9 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
   - Full end-to-end cycle (1 test): login → validation → success → dashboard → logout
   - Session persistence (2 tests): session persists across refresh, logout clears tokens
   - Session restore edge cases (3 tests): malformed token fallback, expired token fallback, loading page display
+  - Token refresh retry (2 tests): authed_get retry after 401, token stored after refresh
+  - Theme toggle (2 tests): dark/light mode switch, ARIA attributes
+  - Page rendering (14 tests): TeamsPage (2), ItemsPage (2), OrdersPage (2), ProfilePage (2), AdminPage (2), RolesPage (2) — navigation, data rendering, admin visibility
 - Mocking strategy: overrides `window.fetch` via `js_sys::eval` to intercept `gloo-net` HTTP calls; uses `Promise`-based `setTimeout` wrapper for async timing (no `gloo-timers` dependency)
 - Run frontend tests: `make test-frontend` or `cd frontend && wasm-pack test --headless --chrome`
 - Note: ChromeDriver version must match installed Chrome version

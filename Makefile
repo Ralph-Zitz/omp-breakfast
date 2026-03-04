@@ -50,7 +50,7 @@ test-integration: db-up db-wait
 
 test-frontend:
 	@echo "Running frontend WASM tests (headless Chrome)..."
-	cd frontend && wasm-pack test --headless --chrome
+	cd frontend && WASM_BINDGEN_TEST_TIMEOUT=120 wasm-pack test --headless --chrome
 
 test-all: test-unit test-integration test-frontend audit-if-available
 

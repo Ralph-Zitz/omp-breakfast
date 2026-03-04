@@ -1,4 +1,4 @@
-use crate::api::{authed_get, authed_request, HttpMethod, UserEntry, UserContext};
+use crate::api::{HttpMethod, UserContext, UserEntry, authed_get, authed_request};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;

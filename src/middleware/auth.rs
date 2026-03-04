@@ -174,7 +174,8 @@ pub fn invalidate_cache(state: Data<State>, key: &str) -> bool {
 /// Check whether the account for `email` is locked out due to too many
 /// recent failed login attempts.
 fn is_account_locked(state: &Data<State>, email: &str) -> bool {
-    let cutoff = Utc::now() - Duration::try_seconds(LOCKOUT_WINDOW_SECONDS).expect("valid duration");
+    let cutoff =
+        Utc::now() - Duration::try_seconds(LOCKOUT_WINDOW_SECONDS).expect("valid duration");
     if let Some(mut attempts) = state.login_attempts.get_mut(email) {
         // Prune attempts outside the window
         attempts.retain(|t| *t > cutoff);
