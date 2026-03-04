@@ -7,11 +7,13 @@
 # 2. Run the V2 migration SQL to switch UUID defaults from v4 to v7
 # 3. Run the V3 migration SQL to add indexes, fix FK actions, add NOT NULL
 # 4. Run the V4 migration SQL for schema hardening (NOT NULL, timestamps)
-# 5. Create the refinery_schema_history table (empty — no rows inserted)
-# 6. Load seed data for development/testing
+# 5. Run the V5 migration SQL to fix users trigger and add NOT NULL
+# 6. Run the V6 migration SQL for order constraint and covering index
+# 7. Create the refinery_schema_history table (empty — no rows inserted)
+# 8. Load seed data for development/testing
 #
 # On first start the application's refinery migration runner will detect
-# that V1 and V2 are "unapplied", re-run them (safe — the SQL is fully
+# that V1–V6 are "unapplied", re-run them (safe — the SQL is fully
 # idempotent), and record them with correct checksums and timestamps.
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -29,9 +31,15 @@ PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V3__index
 echo "==> Running V4 migration (schema hardening)..."
 PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V4__schema_hardening.sql
 
+echo "==> Running V5 migration (trigger + NOT NULL fixes)..."
+PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V5__trigger_and_notnull_fixes.sql
+
+echo "==> Running V6 migration (order constraint + index)..."
+PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V6__order_constraint_and_index.sql
+
 echo "==> Creating refinery migration tracking table..."
 # The table is created here so the app's migration runner sees it on first
-# start.  We do NOT insert rows — refinery will detect that V1 and V2 are
+# start.  We do NOT insert rows — refinery will detect that V1–V6 are
 # "unapplied", re-run them (safe because the SQL is idempotent), and record
 # them with correct checksums and timestamps.
 PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix <<-EOSQL
