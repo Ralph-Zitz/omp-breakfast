@@ -55,21 +55,21 @@ make frontend-dev   # serves at http://127.0.0.1:8081
 
 The project has three test suites:
 
-**Unit tests** (170 tests) — no external dependencies:
+**Unit tests** (193 tests) — no external dependencies:
 
 ```bash
 make test-unit     # or: cargo test
 ```
 
-**Integration tests** (153 tests: 67 API + 86 DB) — require PostgreSQL:
+**Integration tests** (179 tests: 87 API + 92 DB) — require PostgreSQL:
 
 ```bash
 make test-integration
 ```
 
-This automatically starts an isolated Postgres container on port 5433, runs all four migrations (V1–V4), seeds test data, executes all integration tests, and tears down the container.
+This automatically starts an isolated Postgres container on port 5433, runs all six migrations (V1–V6), seeds test data, executes all integration tests, and tears down the container.
 
-**Frontend WASM tests** (23 tests) — require Chrome:
+**Frontend WASM tests** (41 tests) — require Chrome:
 
 ```bash
 make test-frontend
@@ -95,7 +95,7 @@ make db-down       # stop and remove test DB
 
 ## Database Initialization
 
-The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Four migrations exist:
+The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Six migrations exist:
 
 | Migration | Description |
 | --- | --- |
@@ -103,10 +103,12 @@ The application uses [Refinery](https://github.com/rust-db/refinery) for schema 
 | V2 | UUID v7 defaults |
 | V3 | Indexes, FK constraints, NOT NULL |
 | V4 | Schema hardening |
+| V5 | Trigger fix on users, NOT NULL on teamorders/memberof |
+| V6 | Unique constraint on orders, covering index |
 
 **Production:** The application runs pending migrations automatically at startup. No seed data is inserted.
 
-**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all four migrations, creates the Refinery tracking table, and loads seed data from `database_seed.sql`. On first startup, the application's migration runner detects the migrations are already applied and continues normally.
+**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all six migrations, creates the Refinery tracking table, and loads seed data from `database_seed.sql`. On first startup, the application's migration runner detects the migrations are already applied and continues normally.
 
 **Manual database reset (development only):**
 

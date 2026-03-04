@@ -37,6 +37,16 @@ You are a documentation auditor. Cross-reference every file path, function name,
    - Verify that every `.md` file in `.claude/commands/` (excluding `resume-assessment.md`) is listed in the Project Assessment section of CLAUDE.md
    - Flag any command file that exists on disk but is missing from the assessment list, or vice versa
 
+7. **README.md accuracy**
+   - Compare test counts in README.md against actual `cargo test`, `make test-integration`, and `make test-frontend` output — flag any drift
+   - Verify the migration table lists every file in `migrations/` on disk (same check as step 2 but for README.md)
+   - Verify the Make Targets table includes every non-internal target defined in `Makefile`
+   - Verify the Prerequisites list matches the current build requirements (e.g., Trunk, wasm-pack, Docker, mkcert)
+   - Verify the Tech Stack section reflects the current dependencies (framework versions, database version, auth approach)
+   - Verify the Configuration table lists all environment variable prefixes and key variables actually used in `config/default.yml`
+   - Verify the Setup instructions still work with the current `docker-compose.yml` service names and commands
+   - **Tone:** README.md is aimed at a broader audience (new contributors, external developers). Fixes should keep language approachable and avoid internal jargon. Do not add implementation details that belong only in CLAUDE.md.
+
 ## Output format
 
 For each finding:
