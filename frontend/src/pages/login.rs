@@ -261,6 +261,7 @@ fn SubmitButton(loading: ReadSignal<bool>) -> impl IntoView {
             type="submit"
             class="connect-button connect-button--accent connect-button--large connect-button--full-width"
             aria-disabled=move || if loading.get() { "true" } else { "false" }
+            aria-busy=move || if loading.get() { "true" } else { "false" }
             disabled=move || loading.get()
         >
             <span class="connect-button__content">

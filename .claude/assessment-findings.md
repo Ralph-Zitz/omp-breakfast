@@ -88,22 +88,22 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Frontend — `Page::Dashboard` Clones Data on Every Signal Read
 
-- [ ] **#126 — Dashboard state stored in enum variant, cloned on every re-render**
+- [x] **#126 — Dashboard state stored in enum variant, cloned on every re-render**
   - File: `frontend/src/pages/dashboard.rs`
   - Source commands: `review`
 
 ### Frontend — Missing `aria-busy` on Submit Button
 
-- [ ] **#127 — No `aria-busy` attribute during login form submission**
+- [x] **#127 — No `aria-busy` attribute during login form submission**
   - File: `frontend/src/pages/login.rs`
   - Source commands: `review`
 
 ### Frontend — Decorative Icons Lack Accessibility Attributes
 
-- [ ] **#128 — Warning icon and checkmark lack `aria-hidden="true"`**
+- [x] **#128 — Warning icon and checkmark lack `aria-hidden="true"`**
   - File: `frontend/src/pages/login.rs`
   - Source commands: `review`
-
+  - Note: Already resolved — both icons already had `aria-hidden="true"` at the time of review.  - Note: Already resolved — both icons already had `aria-hidden="true"` at the time of review.
 ### Frontend — Inconsistent `spawn_local` Import
 
 - [ ] **#210 — Session restore uses `wasm_bindgen_futures::spawn_local` while logout uses `leptos::task::spawn_local`**

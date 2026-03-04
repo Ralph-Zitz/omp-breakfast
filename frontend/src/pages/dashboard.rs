@@ -11,12 +11,13 @@ pub fn DashboardPage() -> impl IntoView {
             <PageHeader title="Dashboard" />
 
             {move || {
-                user.get().map(|u| {
-                    let name = u.display_name();
-                    let initials = u.initials();
-                    let email = u.email.clone();
-                    let team_count = u.teams.len();
-                    let role_label = if u.is_admin { "Administrator" } else { "Member" };
+                user.with(|u| {
+                    u.as_ref().map(|u| {
+                        let name = u.display_name();
+                        let initials = u.initials();
+                        let email = u.email.clone();
+                        let team_count = u.teams.len();
+                        let role_label = if u.is_admin { "Administrator" } else { "Member" };
 
                     view! {
                         <div class="dashboard-welcome">
@@ -82,6 +83,7 @@ pub fn DashboardPage() -> impl IntoView {
                             }}
                         </div>
                     }
+                })
                 })
             }}
         </div>
