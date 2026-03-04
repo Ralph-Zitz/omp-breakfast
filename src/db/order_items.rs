@@ -27,7 +27,7 @@ pub async fn is_team_order_closed(
         .map_err(Error::Db)?
         .ok_or_else(|| Error::NotFound("Team order not found".to_string()))?;
 
-    Ok(row.get::<_, Option<bool>>("closed").unwrap_or(false))
+    Ok(row.get::<_, bool>("closed"))
 }
 
 /// Lock the team order row with `FOR UPDATE` inside a transaction and return
@@ -52,7 +52,7 @@ async fn guard_open_order(
         .map_err(Error::Db)?
         .ok_or_else(|| Error::NotFound("Team order not found".to_string()))?;
 
-    if row.get::<_, Option<bool>>("closed").unwrap_or(false) {
+    if row.get::<_, bool>("closed") {
         return Err(Error::Forbidden(format!(
             "Cannot {} items in a closed order",
             action,

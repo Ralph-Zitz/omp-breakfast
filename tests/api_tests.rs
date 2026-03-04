@@ -702,6 +702,89 @@ async fn create_and_list_team_orders() {
     assert_eq!(resp.status(), 200);
 }
 
+#[actix_web::test]
+#[ignore]
+async fn get_single_team_order_returns_details() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // Login as U4_F who is Admin of "League of Cool Coders"
+    let auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let token = &auth.access_token;
+
+    // Get teams to find the team ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams: Vec<Value> = test::read_body_json(resp).await;
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a new team order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2026-03-20"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // GET single order by ID
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "GET single order should return 200");
+    let fetched: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        fetched["teamorders_id"].as_str(),
+        Some(order_id.as_str()),
+        "returned order ID should match"
+    );
+    assert_eq!(
+        fetched["duedate"].as_str(),
+        Some("2026-03-20"),
+        "duedate should match"
+    );
+    assert!(
+        fetched["closed"].as_bool() == Some(false),
+        "new order should be open"
+    );
+
+    // GET nonexistent order should return 404
+    let fake_id = uuid::Uuid::now_v7();
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}",
+            team_id, fake_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "nonexistent order should return 404");
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
+
 // ---------------------------------------------------------------------------
 // Team RBAC: non-member cannot mutate team
 // ---------------------------------------------------------------------------

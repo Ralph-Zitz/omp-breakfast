@@ -107,12 +107,12 @@ pub async fn get_member_role(
         .await
         .map_err(Error::Db)?;
 
-    let rows = client
-        .query(&statement, &[&team_id, &user_id])
+    let row = client
+        .query_opt(&statement, &[&team_id, &user_id])
         .await
         .map_err(Error::Db)?;
 
-    Ok(rows.first().map(|r| r.get("title")))
+    Ok(row.map(|r| r.get("title")))
 }
 
 /// Combined RBAC check: returns whether the user is a global admin and their

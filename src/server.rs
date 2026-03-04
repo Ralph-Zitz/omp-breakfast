@@ -75,6 +75,10 @@ const FRONTEND_DIR: &str = "frontend/dist";
 /// Handler that redirects any HTTP request to the equivalent HTTPS URL.
 /// Returns `301 Moved Permanently` with a `Location` header pointing to the
 /// HTTPS equivalent, preserving the path and query string.
+///
+/// The hostname used in the redirect is extracted from the `Host` header and
+/// validated to prevent open redirect attacks — only alphanumeric characters,
+/// hyphens, dots, and colons are allowed.
 async fn redirect_to_https(req: HttpRequest, https_port: Data<u16>) -> HttpResponse {
     let host = req
         .headers()
@@ -84,6 +88,16 @@ async fn redirect_to_https(req: HttpRequest, https_port: Data<u16>) -> HttpRespo
 
     // Strip any port from the Host header to replace with the HTTPS port
     let hostname = host.split(':').next().unwrap_or(host);
+
+    // Validate hostname to prevent open redirect attacks:
+    // Only allow alphanumeric, hyphens, and dots (valid DNS characters).
+    if !hostname
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+    {
+        return HttpResponse::BadRequest().finish();
+    }
+
     let path = req
         .uri()
         .path_and_query()

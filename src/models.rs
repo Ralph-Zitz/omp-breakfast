@@ -15,7 +15,7 @@ pub enum TokenType {
     Refresh,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct Claims {
     pub sub: Uuid,
     pub exp: i64,
@@ -225,7 +225,9 @@ pub struct UpdateTeamEntry {
 
 #[derive(Deserialize, Serialize, Clone, ToSchema)]
 pub struct UserInTeams {
+    pub team_id: Uuid,
     pub tname: String,
+    pub descr: Option<String>,
     pub title: String,
     pub firstname: String,
     pub lastname: String,
@@ -327,7 +329,11 @@ pub struct CreateTeamOrderEntry {
 
 #[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
 pub struct UpdateTeamOrderEntry {
-    pub duedate: Option<chrono::NaiveDate>,
+    /// `None` = field absent (preserve existing value).
+    /// `Some(None)` = explicitly set to null (clear the due date).
+    /// `Some(Some(date))` = update to the given date.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duedate: Option<Option<chrono::NaiveDate>>,
     pub closed: Option<bool>,
 }
 
@@ -480,5 +486,12 @@ mod tests {
             closed: None,
         };
         assert!(entry.validate().is_ok());
+
+        // Also verify that duedate can be set to Some(None) (clear) and Some(Some(date))
+        let clear_entry = UpdateTeamOrderEntry {
+            duedate: Some(None),
+            closed: Some(true),
+        };
+        assert!(clear_entry.validate().is_ok());
     }
 }

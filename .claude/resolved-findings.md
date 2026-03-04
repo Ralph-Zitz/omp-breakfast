@@ -1131,6 +1131,244 @@ Last updated: 2026-03-04
   - Resolution: Documented as intentional design decision in `src/routes.rs` doc comment and CLAUDE.md Key Conventions section.
   - Source commands: `api-completeness`, `security-audit`
 
+### Documentation — Frontend Test Category Breakdown Wrong
+
+- [x] **#163 — CLAUDE.md test category breakdown is stale**
+  - File: `CLAUDE.md` (Testing → Frontend → Test categories)
+  - Resolution: Test categories already summed correctly to 39. Updated to 41 after adding 2 new login error differentiation tests (#239).
+  - Source commands: `cross-ref-check`
+
+### Frontend — Login Shows "Invalid Credentials" for All Non-2xx Errors
+
+- [x] **#225 — HTTP 500, 429, and 503 responses all display "Invalid username or password"**
+  - File: `frontend/src/pages/login.rs`
+  - Resolution: Login error handler now matches on `response.status()` with differentiated messages: 401 → "Invalid username or password", 429 → "Too many login attempts", 500 → "An unexpected server error occurred", 503 → "The service is temporarily unavailable", _ → `format!("Login failed (HTTP {})")`.
+  - Source commands: `api-completeness`, `review`
+
+### Database — `closed` Column Read as `Option<bool>` Despite `NOT NULL` Constraint
+
+- [x] **#235 — `is_team_order_closed` and `guard_open_order` use `Option<bool>` for a NOT NULL column**
+  - File: `src/db/order_items.rs`
+  - Resolution: Changed to `row.get::<_, bool>("closed")` directly without `Option` wrapper.
+  - Source commands: `db-review`
+
+### Testing — No API Test for GET Single Team Order by ID
+
+- [x] **#237 — `GET /api/v1.0/teams/{team_id}/orders/{order_id}` never called in tests**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `get_single_team_order_returns_details` test that creates an order, fetches it by ID (asserts 200 + matching fields), and tests 404 for nonexistent order ID.
+  - Source commands: `test-gaps`
+
+### Testing — `add_team_member` with FK-Violating IDs Untested
+
+- [x] **#238 — Adding a member with non-existent `user_id` or `role_id` → error quality untested**
+  - File: `tests/db_tests.rs`
+  - Resolution: Added `add_team_member_with_nonexistent_user_returns_error` and `add_team_member_with_nonexistent_role_returns_error` tests.
+  - Source commands: `test-gaps`
+
+### Testing — No Frontend Test for Non-401/Non-Network HTTP Errors
+
+- [x] **#239 — No WASM test mocks 500 or 429 responses for the login flow**
+  - File: `frontend/tests/ui_tests.rs`
+  - Resolution: Added `install_mock_fetch_rate_limited()` (429) and `install_mock_fetch_server_error()` (500) mock functions, plus `test_rate_limited_login_shows_429_message` and `test_server_error_login_shows_500_message` tests.
+  - Source commands: `test-gaps`
+
+### Auth — `revoke_user_token` Returns 403 for Missing Authentication
+
+- [x] **#243 — `revoke_user_token` uses `Error::Forbidden("Authentication required")` — should be `Error::Unauthorized`**
+  - File: `src/handlers/users.rs`
+  - Resolution: Changed to `Error::Unauthorized("Authentication required".to_string())`.
+  - Source commands: `practices-audit`
+
+### OpenAPI — `get_health` Missing 503 Response Annotation
+
+- [x] **#244 — `get_health` utoipa annotation only documents 200; handler also returns 503**
+  - File: `src/handlers/mod.rs`
+  - Resolution: Added `(status = 503, description = "Service unavailable — database unreachable", body = StatusResponse)`.
+  - Source commands: `openapi-sync`
+
+### OpenAPI — `create_user` Annotates Unreachable 404
+
+- [x] **#245 — `create_user` utoipa includes `(status = 404)` but handler never returns 404**
+  - File: `src/handlers/users.rs`
+  - Resolution: Replaced `(status = 404)` with `(status = 409, description = "Conflict - email already exists")` (also fixes #312).
+  - Source commands: `openapi-sync`
+
+### Documentation — CLAUDE.md Test Counts Stale
+
+- [x] **#246 — CLAUDE.md test counts do not match actual counts**
+  - File: `CLAUDE.md`
+  - Resolution: Updated all test counts (189 unit, 87 API, 92 DB, 41 WASM) and test category breakdown.
+  - Source commands: `cross-ref-check`, `test-gaps`
+
+### Validation — `Validate` Derive Still on 4 No-Rule Structs
+
+- [x] **#253 — `Validate` derive is still present on `CreateTeamOrderEntry`, `UpdateTeamOrderEntry`, `AddMemberEntry`, `UpdateMemberRoleEntry`**
+  - File: `src/models.rs`
+  - Resolution: Fixed via #313 — `validate()` calls added back to handlers, making `Validate` derives functional (no longer dead code).
+  - Source commands: `practices-audit`, `review`
+
+### Database — COALESCE Prevents Clearing `duedate` to NULL
+
+- [x] **#270 — `update_team_order` uses `COALESCE($2, duedate)` which prevents clearing duedate**
+  - Files: `src/db/orders.rs`, `src/models.rs`
+  - Resolution: Changed `duedate` field to `Option<Option<NaiveDate>>` with `#[serde(default)]`. SQL uses `CASE WHEN $5::boolean THEN $1 ELSE duedate END` pattern. `None` = don't touch, `Some(None)` = clear to NULL, `Some(Some(date))` = set date.
+  - Source commands: `api-completeness`, `db-review`
+
+### OpenAPI — `create_team_order` Missing 409 Annotation
+
+- [x] **#271 — `create_team_order` utoipa does not document 409 conflict response**
+  - File: `src/handlers/teams.rs`
+  - Resolution: Added `(status = 409, description = "Conflict", body = ErrorResponse)`.
+  - Source commands: `api-completeness`
+
+### Documentation — CLAUDE.md Missing `guard_admin_role_assignment` in Function List
+
+- [x] **#272 — handlers/mod.rs description omits `guard_admin_role_assignment`**
+  - File: `CLAUDE.md`
+  - Resolution: Already present in CLAUDE.md (was added in a prior session). No change needed.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md API Test Count Wrong
+
+- [x] **#273 — CLAUDE.md says "90 API integration tests" but actual count was 86**
+  - File: `CLAUDE.md`
+  - Resolution: Already corrected to 86 in a prior session. Now updated to 87 after adding new test.
+  - Source commands: `cross-ref-check`, `test-gaps`
+
+### Database — `orders.amt` CHECK Allows 0 but API Requires ≥1
+
+- [x] **#274 — DB constraint `CHECK (amt >= 0)` permits zero-quantity orders**
+  - File: `migrations/V6__order_constraint_and_index.sql`
+  - Resolution: New V6 migration updates existing zero-amt rows to 1, drops old constraint, adds `CHECK (amt >= 1)`.
+  - Source commands: `db-review`
+
+### Performance — Missing Composite Index for Team Orders Query
+
+- [x] **#275 — `get_team_orders` queries without a covering index**
+  - File: `migrations/V6__order_constraint_and_index.sql`
+  - Resolution: New V6 migration adds `idx_teamorders_team_created ON teamorders (teamorders_team_id, created DESC)`.
+  - Source commands: `db-review`
+
+### OpenAPI — `revoke_user_token` Missing 401 Response Annotation
+
+- [x] **#276 — utoipa annotation doesn't document 401 response**
+  - File: `src/handlers/users.rs`
+  - Resolution: Added `(status = 400)` and `(status = 401)` annotations.
+  - Source commands: `openapi-sync`
+
+### OpenAPI — `add_team_member` Missing 404 for Invalid Role ID
+
+- [x] **#277 — utoipa annotation doesn't document 404 when role_id doesn't exist**
+  - File: `src/handlers/teams.rs`
+  - Resolution: Added `(status = 404, description = "User or role not found", body = ErrorResponse)`.
+  - Source commands: `openapi-sync`
+
+### Security — HTTP→HTTPS Redirect Open Redirect via Host Header
+
+- [x] **#278 — `redirect_to_https` uses unvalidated Host header**
+  - File: `src/server.rs`
+  - Resolution: Added hostname validation — only allows ASCII alphanumeric chars, hyphens, and dots. Returns 400 Bad Request for invalid hostnames.
+  - Source commands: `security-audit`
+
+### Frontend — Logout Revocation Fails With Expired Access Token
+
+- [x] **#279 — `on_logout` uses potentially-expired access token for revocation**
+  - File: `frontend/src/components/sidebar.rs`
+  - Resolution: Changed to use `authed_request()` which handles transparent token refresh, so revocation works even with expired access tokens. Tokens cleared from sessionStorage after revocation completes.
+  - Source commands: `security-audit`
+
+### Config — `server.secret` Production-Checked but Never Used
+
+- [x] **#280 — `ServerConfig.secret` field has zero runtime effect**
+  - File: `src/config.rs`
+  - Resolution: Documented as a canary field — its production check ensures operators have reviewed and customised the config before deploying.
+  - Source commands: `security-audit`
+
+### Security — `update_user` Cache Invalidation Targets Wrong Key
+
+- [x] **#281 — When email changes, handler invalidates NEW email key, not OLD one**
+  - File: `src/handlers/users.rs`
+  - Resolution: Handler now fetches old email before update, then invalidates both old and new cache keys.
+  - Source commands: `review`
+
+### Code Quality — `update_user` Has Inconsistent RBAC/Validate Ordering
+
+- [x] **#282 — `update_user` does RBAC before validate (inconsistent with 9 others)**
+  - File: `src/handlers/users.rs`
+  - Resolution: Swapped ordering — `validate(&json)?` now runs before RBAC check.
+  - Source commands: `review`
+
+### Code Quality — `delete_user` Premature Cache Invalidation
+
+- [x] **#283 — Handler invalidates auth cache before DB delete succeeds**
+  - File: `src/handlers/users.rs`
+  - Resolution: Handler now fetches email before deletion, performs delete, then invalidates cache only on success.
+  - Source commands: `review`
+
+### Performance — `refresh_validator` Redundantly Re-decodes JWT
+
+- [x] **#284 — Middleware decodes JWT but doesn't pass claims to handler**
+  - Files: `src/middleware/auth.rs`, `src/handlers/users.rs`
+  - Resolution: `refresh_validator` now inserts claims into `req.extensions_mut()`. `refresh_token` handler reads claims from extensions instead of re-decoding. Added `verify_jwt_for_revocation` function for expiry-tolerant token verification. `Claims` gets `Clone` derive.
+  - Source commands: `review`
+
+### Security — `revoke_user_token` Returns HTTP 500 for Expired/Malformed Tokens
+
+- [x] **#298 — `verify_jwt` propagates `Error::Jwt` → 500 for expired tokens**
+  - File: `src/handlers/users.rs`
+  - Resolution: `revoke_user_token` now uses `verify_jwt_for_revocation` (validation with `validate_exp = false`). Returns `HttpResponse::BadRequest` with clear error message for invalid/expired tokens instead of 500.
+  - Source commands: `security-audit`
+
+### RBAC — `create_order_item` Uses Broad `require_team_member` Guard
+
+- [x] **#310 — Any team member (including Guest) can create order items**
+  - File: `src/handlers/orders.rs`
+  - Resolution: Documented as intentional policy — any team member should be able to add items to a breakfast order. Updated utoipa 403 description to explicitly state this.
+  - Source commands: `rbac-rules`
+
+### RBAC — Policy Table Missing Order Items as Resource
+
+- [x] **#311 — CLAUDE.md RBAC documentation does not cover order_items**
+  - File: `CLAUDE.md`
+  - Resolution: Added "Order Items RBAC" bullet documenting: create requires team membership (any role, by design), update/delete requires order owner or team admin or global admin, closed orders blocked by `guard_open_order`.
+  - Source commands: `rbac-rules`
+
+### OpenAPI — `create_user` Missing 409 Conflict Response Annotation
+
+- [x] **#312 — Handler returns 409 on duplicate email but utoipa doesn't document it**
+  - File: `src/handlers/users.rs`
+  - Resolution: Fixed together with #245 — replaced unreachable 404 with 409.
+  - Source commands: `openapi-sync`
+
+### Validation — `create_team_order` and `update_team_order` Missing `validate()` Calls
+
+- [x] **#313 — These two handlers do not call `validate(&json)?` before DB operations**
+  - File: `src/handlers/teams.rs`
+  - Resolution: Added `validate(&json)?` calls at the start of both handlers.
+  - Source commands: `openapi-sync`, `practices-audit`
+
+### Database — `get_member_role` Uses `query()` Not `query_opt()`
+
+- [x] **#314 — Non-existent membership returns 500 instead of a clean error**
+  - File: `src/db/membership.rs`
+  - Resolution: Changed to `query_opt()` returning `Ok(row.map(|r| r.get("title")))`.
+  - Source commands: `db-review`
+
+### Database — Missing ORDER BY on `get_user_teams` and `get_team_users`
+
+- [x] **#315 — Results returned in arbitrary order**
+  - File: `src/db/teams.rs`
+  - Resolution: Added `ORDER BY tname ASC` to `get_user_teams` and `ORDER BY lastname ASC, firstname ASC` to `get_team_users`.
+  - Source commands: `db-review`
+
+### Database — `UserInTeams` Model Missing `descr` Field
+
+- [x] **#316 — Query SELECTs team name but not description**
+  - Files: `src/db/teams.rs`, `src/models.rs`, `src/from_row.rs`
+  - Resolution: Added `team_id: Uuid` and `descr: Option<String>` to `UserInTeams` struct and `FromRow` impl. Updated SQL query to select `teams.team_id, tname, teams.descr`.
+  - Source commands: `db-review`, `api-completeness`
+
 ## Informational Items
 
 ### Performance — `get_team_users` Query Has Unnecessary `teams` JOIN

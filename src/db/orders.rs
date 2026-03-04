@@ -98,8 +98,12 @@ pub async fn create_team_order(
         .map_err(Error::DbMapper)
 }
 
-/// Updates a team order. `COALESCE` is used so `None` fields preserve the
-/// existing value rather than writing NULL.
+/// Updates a team order. `COALESCE` preserves existing values when fields are
+/// absent from the request. For `duedate`, the triple-option pattern
+/// (`Option<Option<NaiveDate>>`) is used:
+///   - `None` → field absent, preserve existing value (CASE WHEN $5)
+///   - `Some(None)` → explicitly clear to NULL
+///   - `Some(Some(date))` → set to the new date
 ///
 /// `teamorders_user_id` is intentionally excluded — order ownership cannot be
 /// reassigned after creation.
@@ -111,11 +115,17 @@ pub async fn update_team_order(
     order_id: Uuid,
     order: UpdateTeamOrderEntry,
 ) -> Result<TeamOrderEntry, Error> {
+    // Decompose the triple-option: None → preserve, Some(x) → update to x (including NULL)
+    let (duedate_val, update_duedate) = match order.duedate {
+        Some(d) => (d, true),
+        None => (None, false),
+    };
+
     let statement = client
         .prepare(
             r#"
                update teamorders
-               set duedate = COALESCE($1, duedate),
+               set duedate = CASE WHEN $5::boolean THEN $1 ELSE duedate END,
                    closed = COALESCE($2, closed)
                where teamorders_id = $3 and teamorders_team_id = $4
                returning teamorders_id, teamorders_team_id, teamorders_user_id,
@@ -128,7 +138,13 @@ pub async fn update_team_order(
     client
         .query_opt(
             &statement,
-            &[&order.duedate, &order.closed, &order_id, &team_id],
+            &[
+                &duedate_val,
+                &order.closed,
+                &order_id,
+                &team_id,
+                &update_duedate,
+            ],
         )
         .await
         .map_err(Error::Db)?

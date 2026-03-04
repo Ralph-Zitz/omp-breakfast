@@ -223,6 +223,46 @@ fn install_mock_fetch_network_error() {
     .expect("install_mock_fetch_network_error failed");
 }
 
+/// Replace `window.fetch` with a mock that returns 429 for `POST /auth`.
+fn install_mock_fetch_rate_limited() {
+    js_sys::eval(
+        r#"(() => {
+            window.__original_fetch = window.fetch;
+            window.fetch = function(input) {
+                var url = (typeof input === 'string') ? input : input.url;
+                if (url.endsWith('/auth')) {
+                    return Promise.resolve(new Response(
+                        JSON.stringify({"error":"Too Many Requests"}),
+                        { status: 429 }
+                    ));
+                }
+                return Promise.resolve(new Response("Not Found", { status: 404 }));
+            };
+        })()"#,
+    )
+    .expect("install_mock_fetch_rate_limited failed");
+}
+
+/// Replace `window.fetch` with a mock that returns 500 for `POST /auth`.
+fn install_mock_fetch_server_error() {
+    js_sys::eval(
+        r#"(() => {
+            window.__original_fetch = window.fetch;
+            window.fetch = function(input) {
+                var url = (typeof input === 'string') ? input : input.url;
+                if (url.endsWith('/auth')) {
+                    return Promise.resolve(new Response(
+                        JSON.stringify({"error":"Internal Server Error"}),
+                        { status: 500 }
+                    ));
+                }
+                return Promise.resolve(new Response("Not Found", { status: 404 }));
+            };
+        })()"#,
+    )
+    .expect("install_mock_fetch_server_error failed");
+}
+
 /// Restore the original `window.fetch`.
 fn restore_fetch() {
     let _ = js_sys::eval(
@@ -2100,5 +2140,65 @@ async fn test_roles_page_hidden_for_non_admin() {
 
     remove_test_container(id);
     clear_tokens();
+    restore_fetch();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  12 · Login error differentiation tests (500/429)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[wasm_bindgen_test]
+async fn test_rate_limited_login_shows_429_message() {
+    let id = "t-login-429";
+    clear_tokens();
+    install_mock_fetch_rate_limited();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    set_input(id, "input#username", "user@example.com");
+    set_input(id, "input#password", "password123");
+    flush(50).await;
+
+    submit_form(id);
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(
+        html.contains("Too many login attempts"),
+        "should show rate limit message, got: {}",
+        html
+    );
+    assert!(html.contains("Sign In"), "still on login page");
+
+    remove_test_container(id);
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_server_error_login_shows_500_message() {
+    let id = "t-login-500";
+    clear_tokens();
+    install_mock_fetch_server_error();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    set_input(id, "input#username", "user@example.com");
+    set_input(id, "input#password", "password123");
+    flush(50).await;
+
+    submit_form(id);
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(
+        html.contains("unexpected server error"),
+        "should show server error message, got: {}",
+        html
+    );
+    assert!(html.contains("Sign In"), "still on login page");
+
+    remove_test_container(id);
     restore_fetch();
 }

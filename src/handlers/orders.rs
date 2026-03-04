@@ -68,7 +68,7 @@ pub async fn get_order_item(
     responses(
         (status = 201, description = "Order item created", body = OrderEntry),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
+        (status = 403, description = "Forbidden - team membership required (any role, by design)", body = ErrorResponse),
         (status = 409, description = "Item already in order", body = ErrorResponse),
         (status = 422, description = "Validation error", body = ErrorResponse),
     ),

@@ -978,7 +978,7 @@ async fn update_team_order_changes_fields() {
         team_id,
         order.teamorders_id,
         UpdateTeamOrderEntry {
-            duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 25).unwrap()),
+            duedate: Some(Some(NaiveDate::from_ymd_opt(2026, 12, 25).unwrap())),
             closed: Some(true),
         },
     )
@@ -1800,6 +1800,71 @@ async fn add_duplicate_team_member_returns_error() {
         .expect("cleanup user");
 }
 
+#[actix_web::test]
+#[ignore]
+async fn add_team_member_with_nonexistent_user_returns_error() {
+    let mut client = test_client().await;
+
+    let tname = format!("dbtest-baduser-{}", Uuid::now_v7());
+    let team = db::create_team(&client, CreateTeamEntry { tname, descr: None })
+        .await
+        .unwrap();
+
+    let member_role_id = seed_role_id(&client, "Member").await;
+    let fake_user_id = Uuid::now_v7();
+
+    let result = db::add_team_member(&mut client, team.team_id, fake_user_id, member_role_id).await;
+    assert!(
+        result.is_err(),
+        "adding nonexistent user should fail with FK violation"
+    );
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup team");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn add_team_member_with_nonexistent_role_returns_error() {
+    let mut client = test_client().await;
+
+    let tname = format!("dbtest-badrole-{}", Uuid::now_v7());
+    let team = db::create_team(&client, CreateTeamEntry { tname, descr: None })
+        .await
+        .unwrap();
+
+    let email = unique_email();
+    let user = db::create_user(
+        &client,
+        CreateUserEntry {
+            firstname: "BadRole".to_string(),
+            lastname: "Test".to_string(),
+            email: email.clone(),
+            password: "securepassword123".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let fake_role_id = Uuid::now_v7();
+
+    let result = db::add_team_member(&mut client, team.team_id, user.user_id, fake_role_id).await;
+    assert!(
+        result.is_err(),
+        "adding member with nonexistent role should fail with FK violation"
+    );
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup team");
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup user");
+}
+
 // ===========================================================================
 // Group 10: User/Team relationship queries
 // ===========================================================================
@@ -2310,7 +2375,7 @@ async fn is_team_order_closed_returns_true_for_closed_order() {
         team_id,
         order.teamorders_id,
         UpdateTeamOrderEntry {
-            duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 26).unwrap()),
+            duedate: Some(Some(NaiveDate::from_ymd_opt(2026, 12, 26).unwrap())),
             closed: Some(true),
         },
     )

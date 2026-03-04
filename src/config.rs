@@ -8,6 +8,10 @@ use tracing::instrument;
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
+    /// Canary field: not used at runtime, but its production check ensures
+    /// that operators have reviewed and customised the config before deploying.
+    /// If this is still the default "Very Secret" in production, the server
+    /// panics at startup.
     pub secret: String,
     pub jwtsecret: String,
     pub git_version: String,

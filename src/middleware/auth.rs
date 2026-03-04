@@ -117,6 +117,23 @@ pub fn verify_jwt(token: &str, jwt_secret: &str) -> Result<TokenData<Claims>, Er
     Ok(result)
 }
 
+/// Verify a JWT for revocation purposes. Skips expiry validation so that
+/// legitimately-expired tokens can still be revoked (signature is still checked).
+#[must_use = "verified claims must be inspected or propagated"]
+#[instrument(skip(jwt_secret), level = "debug")]
+pub fn verify_jwt_for_revocation(
+    token: &str,
+    jwt_secret: &str,
+) -> Result<TokenData<Claims>, Error> {
+    let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.set_issuer(&[JWT_ISSUER]);
+    validation.set_audience(&[JWT_AUDIENCE]);
+    validation.validate_exp = false;
+    let result = decode::<Claims>(token, &decoding_key, &validation)?;
+    Ok(result)
+}
+
 /// Revoke a token by persisting it to the DB blacklist and caching in memory.
 /// `expires_at` is the token's original expiry so cleanup can prune stale rows.
 pub async fn revoke_token(
@@ -341,6 +358,9 @@ pub async fn refresh_validator(
             }
             Ok(false) => {}
         }
+        // Store claims in request extensions so the handler can access them
+        // without re-decoding the JWT (same pattern as jwt_validator).
+        req.extensions_mut().insert(c.claims);
         Ok(req)
     } else {
         warn!("Invalid or expired refresh token");

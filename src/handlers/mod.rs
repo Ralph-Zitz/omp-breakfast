@@ -349,7 +349,8 @@ mod tests {
     get,
     path = "/health",
     responses(
-        (status = 200, description = "Health check", body = StatusResponse)
+        (status = 200, description = "Health check", body = StatusResponse),
+        (status = 503, description = "Service unavailable — database unreachable", body = StatusResponse),
     ),
 )]
 #[instrument(skip(state), level = "debug")]

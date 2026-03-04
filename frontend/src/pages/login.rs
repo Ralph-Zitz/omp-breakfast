@@ -68,11 +68,16 @@ pub fn LoginPage() -> impl IntoView {
                         set_error.set(Some("Unexpected server response. Please try again.".into()));
                     }
                 },
-                Ok(_) => {
-                    set_error.set(Some(
-                        "Invalid username or password. Please check your credentials and try again."
-                            .into(),
-                    ));
+                Ok(response) => {
+                    let status = response.status();
+                    let msg = match status {
+                        401 => "Invalid username or password. Please check your credentials and try again.".to_string(),
+                        429 => "Too many login attempts. Please wait a few minutes and try again.".to_string(),
+                        500 => "An unexpected server error occurred. Please try again later.".to_string(),
+                        503 => "The service is temporarily unavailable. Please try again later.".to_string(),
+                        _ => format!("Login failed (HTTP {}). Please try again.", status),
+                    };
+                    set_error.set(Some(msg));
                 }
                 Err(_) => {
                     set_error.set(Some(

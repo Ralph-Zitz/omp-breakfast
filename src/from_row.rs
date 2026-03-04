@@ -198,7 +198,9 @@ impl FromRow for UsersInTeam {
 impl FromRow for UserInTeams {
     fn from_row_ref(row: &Row) -> Result<Self, FromRowError> {
         Ok(Self {
+            team_id: row.try_get("team_id").map_err(|e| map_err("team_id", e))?,
             tname: row.try_get("tname").map_err(|e| map_err("tname", e))?,
+            descr: row.try_get("descr").map_err(|e| map_err("descr", e))?,
             title: row.try_get("title").map_err(|e| map_err("title", e))?,
             firstname: row
                 .try_get("firstname")

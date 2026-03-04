@@ -4,7 +4,7 @@ use crate::{
     handlers::*,
     middleware::auth::{
         REFRESH_TOKEN_DURATION_DAYS, generate_token_pair, invalidate_cache, is_token_revoked,
-        revoke_token, verify_jwt,
+        revoke_token, verify_jwt_for_revocation,
     },
     models::*,
     validate::validate,
@@ -12,7 +12,7 @@ use crate::{
 use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
 };
-use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
+use actix_web_httpauth::extractors::basic::BasicAuth;
 use chrono::{DateTime, Duration, Utc};
 use tracing::instrument;
 use uuid::Uuid;
@@ -83,16 +83,19 @@ pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Resp
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(credentials, state), level = "debug")]
-pub async fn refresh_token(
-    credentials: BearerAuth,
-    state: Data<State>,
-) -> Result<impl Responder, Error> {
-    let claims = verify_jwt(credentials.token(), &state.jwtsecret)?;
+#[instrument(skip(state, req), level = "debug")]
+pub async fn refresh_token(state: Data<State>, req: HttpRequest) -> Result<impl Responder, Error> {
+    // Claims are already decoded and validated by the refresh_validator middleware
+    // and stored in request extensions — avoid redundant re-decode.
+    let claims = req
+        .extensions()
+        .get::<Claims>()
+        .cloned()
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
 
     // Defence-in-depth: refresh_validator middleware already rejects non-refresh tokens
     // before this handler is reached, but we check again here as a safety net.
-    if claims.claims.token_type != TokenType::Refresh {
+    if claims.token_type != TokenType::Refresh {
         return Err(Error::Unauthorized(
             "Invalid token type, refresh token required".to_string(),
         ));
@@ -102,20 +105,20 @@ pub async fn refresh_token(
     let client: Client = get_client(&state.pool).await?;
 
     // Check if revoked
-    if is_token_revoked(&client, &state, &claims.claims.jti.to_string()).await? {
+    if is_token_revoked(&client, &state, &claims.jti.to_string()).await? {
         return Err(Error::Unauthorized("Token has been revoked".to_string()));
     }
 
-    db::get_user(&client, claims.claims.sub).await?;
+    db::get_user(&client, claims.sub).await?;
 
     // Revoke the old refresh token (rotation)
-    let expires_at = DateTime::<Utc>::from_timestamp(claims.claims.exp, 0).unwrap_or_else(|| {
+    let expires_at = DateTime::<Utc>::from_timestamp(claims.exp, 0).unwrap_or_else(|| {
         Utc::now() + Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration")
     });
-    revoke_token(&client, &state, &claims.claims.jti.to_string(), expires_at).await?;
+    revoke_token(&client, &state, &claims.jti.to_string(), expires_at).await?;
 
     // Issue a new token pair
-    let auth = generate_token_pair(claims.claims.sub, &state.jwtsecret)?;
+    let auth = generate_token_pair(claims.sub, &state.jwtsecret)?;
     Ok(HttpResponse::Ok().json(auth))
 }
 
@@ -125,6 +128,8 @@ pub async fn refresh_token(
     request_body = TokenRequest,
     responses(
         (status = 200, description = "Token revoked successfully", body = RevokedResponse),
+        (status = 400, description = "Bad request - token is invalid or expired", body = ErrorResponse),
+        (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - cannot revoke another user's token", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
@@ -135,12 +140,22 @@ pub async fn revoke_user_token(
     json: Json<TokenRequest>,
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
-    let token_data = verify_jwt(&json.into_inner().token, &state.jwtsecret)?;
+    // Use lenient verification for revocation: skip expiry check so that
+    // legitimately-expired tokens can still be revoked (harmless, and the
+    // signature is still validated).
+    let token_data = match verify_jwt_for_revocation(&json.into_inner().token, &state.jwtsecret) {
+        Ok(data) => data,
+        Err(_) => {
+            return Ok(HttpResponse::BadRequest().json(ErrorResponse {
+                error: "Token is invalid or expired".to_string(),
+            }));
+        }
+    };
 
     // Ownership check: the token being revoked must belong to the requesting user,
     // unless the requester is a global admin.
     let requester_id = requesting_user_id(&req)
-        .ok_or_else(|| Error::Forbidden("Authentication required".to_string()))?;
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
 
     let client: Client = get_client(&state.pool).await?;
 
@@ -174,7 +189,7 @@ pub async fn revoke_user_token(
         (status = 201, description = "User created", body = UserEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - admin or team admin role required", body = ErrorResponse),
-        (status = 404, description = "User not created", body = ErrorResponse),
+        (status = 409, description = "Conflict - email already exists", body = ErrorResponse),
         (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
@@ -225,13 +240,15 @@ pub async fn delete_user(
     // RBAC: self, global admin, or team admin of a shared team
     require_self_or_admin_or_team_admin(&client, &req, uid).await?;
 
-    // Fetch user email before deletion to invalidate the auth cache
-    if let Ok(user) = db::get_user(&client, uid).await {
-        let _ = invalidate_cache(state.clone(), &user.email);
-    }
+    // Fetch user email before deletion so we can invalidate the auth cache after
+    let user_email = db::get_user(&client, uid).await.ok().map(|u| u.email);
 
     let deleted = db::delete_user(&client, uid).await?;
     if deleted {
+        // Invalidate auth cache after successful deletion
+        if let Some(email) = user_email {
+            let _ = invalidate_cache(state.clone(), &email);
+        }
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
     } else {
         Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
@@ -307,13 +324,26 @@ pub async fn update_user(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let uid = path.into_inner();
+    validate(&json)?;
     let client: Client = get_client(&state.pool).await?;
 
     // RBAC: self, global admin, or team admin of a shared team
     require_self_or_admin_or_team_admin(&client, &req, uid).await?;
 
-    validate(&json)?;
+    // Fetch old email before update so we can invalidate the correct cache key
+    let old_email = db::get_user(&client, uid)
+        .await
+        .ok()
+        .map(|u| u.email.clone());
+
     let user = db::update_user(&client, uid, json.into_inner()).await?;
+
+    // Invalidate both old and new email cache entries
+    if let Some(ref old) = old_email {
+        if *old != user.email {
+            let _ = invalidate_cache(state.clone(), old);
+        }
+    }
     let _ = invalidate_cache(state, &user.email);
     Ok(HttpResponse::Ok().json(user))
 }

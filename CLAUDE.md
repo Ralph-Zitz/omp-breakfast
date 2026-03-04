@@ -153,6 +153,7 @@ tests/
 - Admin-or-Team-Admin RBAC: `require_admin_or_team_admin` helper checks if user holds "Admin" or "Team Admin" role in any team (via `db::is_admin_or_team_admin`); gates user creation.
 - Team RBAC: `require_team_member` and `require_team_admin` helpers gate team-scoped mutations; both allow global Admin bypass. `require_team_admin` checks for "Team Admin" role in the specific team.
 - Order RBAC: `require_order_owner_or_team_admin` gates single-order mutations (update, delete); allows the order creator, a Team Admin for the team, or a global Admin. Regular members and guests may only mutate their own orders.
+- Order Items RBAC: Creating an order item requires team membership (any role — by design, all team members may add items to a breakfast order). Updating or deleting an order item requires `require_order_owner_or_team_admin` (same as team orders). Adding items to a closed order is blocked by `guard_open_order`.
 - Admin role guard: `guard_admin_role_assignment` prevents non-admin users from assigning the "Admin" role. Called after `require_team_admin` in membership handlers (add member, update role). Only global Admins may grant Admin privileges; Team Admins may assign any other role.
 - Self-or-Admin-or-Team-Admin RBAC: `require_self_or_admin_or_team_admin` helper gates user mutations (update, delete); allows the user themselves, a global Admin, or a Team Admin of any team where the target user is also a member (checked via `db::is_team_admin_of_user` — a self-join on `memberof`). The legacy `require_self_or_admin` helper is retained but no longer used by any handler.
 - `Error::Forbidden` variant maps to HTTP 403 for authorization failures
@@ -356,15 +357,15 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### Backend
 
 - 189 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 86 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
-- 90 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 87 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 92 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
 - Test DB uses `docker-compose.test.yml` overlay to expose port 5433 (avoids conflicts with dev DB on 5432)
 
 ### Frontend
 
-- 39 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
+- 41 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
 - Test categories:
   - JWT decode (4 tests): valid token, missing segments, bad base64, invalid JSON
   - Login page rendering (3 tests): brand/form elements, email attributes, password attributes
@@ -377,6 +378,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
   - Token refresh retry (2 tests): authed_get retry after 401, token stored after refresh
   - Theme toggle (2 tests): dark/light mode switch, ARIA attributes
   - Page rendering (14 tests): TeamsPage (2), ItemsPage (2), OrdersPage (2), ProfilePage (2), AdminPage (2), RolesPage (2) — navigation, data rendering, admin visibility
+  - Login error differentiation (2 tests): 429 rate limit message, 500 server error message
 - Mocking strategy: overrides `window.fetch` via `js_sys::eval` to intercept `gloo-net` HTTP calls; uses `Promise`-based `setTimeout` wrapper for async timing (no `gloo-timers` dependency)
 - Run frontend tests: `make test-frontend` or `cd frontend && wasm-pack test --headless --chrome`
 - Note: ChromeDriver version must match installed Chrome version

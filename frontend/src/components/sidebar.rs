@@ -1,4 +1,4 @@
-use crate::api::{UserContext, revoke_token_server_side, session_storage};
+use crate::api::{HttpMethod, UserContext, authed_request, session_storage};
 use crate::app::Page;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::theme_toggle::ThemeToggle;
@@ -207,27 +207,28 @@ fn LogoutButton() -> impl IntoView {
             .and_then(|s| s.get_item("refresh_token").ok())
             .flatten();
 
-        if let Some(storage) = session_storage() {
-            let _ = storage.remove_item("access_token");
-            let _ = storage.remove_item("refresh_token");
-        }
-
+        // Update UI immediately — redirect to login
         set_user.set(None);
         set_page.set(Page::Login);
 
-        if let Some(bearer) = &access {
-            let bearer = bearer.clone();
-            let access_clone = access.clone();
-            let refresh_clone = refresh.clone();
-            leptos::task::spawn_local(async move {
-                if let Some(at) = access_clone {
-                    revoke_token_server_side(&bearer, &at).await;
-                }
-                if let Some(rt) = refresh_clone {
-                    revoke_token_server_side(&bearer, &rt).await;
-                }
-            });
-        }
+        // Fire-and-forget: revoke tokens using authed_request which handles
+        // transparent token refresh, so revocation works even if the access
+        // token is expired (#279).
+        leptos::task::spawn_local(async move {
+            if let Some(at) = access {
+                let body = serde_json::json!({"token": at});
+                let _ = authed_request(HttpMethod::Post, "/auth/revoke", Some(&body)).await;
+            }
+            if let Some(rt) = refresh {
+                let body = serde_json::json!({"token": rt});
+                let _ = authed_request(HttpMethod::Post, "/auth/revoke", Some(&body)).await;
+            }
+            // Clear tokens after revocation completes
+            if let Some(storage) = session_storage() {
+                let _ = storage.remove_item("access_token");
+                let _ = storage.remove_item("refresh_token");
+            }
+        });
     };
 
     view! {

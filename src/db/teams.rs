@@ -13,12 +13,13 @@ pub async fn get_user_teams(client: &Client, uid: Uuid) -> Result<Vec<UserInTeam
     let statement = client
         .prepare(
             r#"
-                select tname, title, firstname, lastname, memberof.joined, memberof.changed as role_changed
+                select teams.team_id, tname, teams.descr, title, firstname, lastname, memberof.joined, memberof.changed as role_changed
                 from memberof
                 join users on users.user_id = memberof.memberof_user_id
                 join teams on teams.team_id = memberof.memberof_team_id
                 join roles on roles.role_id = memberof.memberof_role_id
                 where users.user_id = $1
+                order by tname asc
             "#,
         )
         .await
@@ -158,6 +159,7 @@ pub async fn get_team_users(client: &Client, tid: Uuid) -> Result<Vec<UsersInTea
                 join users on users.user_id = memberof.memberof_user_id
                 join roles on roles.role_id = memberof.memberof_role_id
                 where memberof.memberof_team_id = $1
+                order by lastname asc, firstname asc
             "#,
         )
         .await
