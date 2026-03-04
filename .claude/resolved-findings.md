@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-05
+Last updated: 2026-03-04
 
 ## Critical Items
 
@@ -1726,8 +1726,31 @@ Last updated: 2026-03-05
   - Resolution: Added root-level files to the Project Structure section.
   - Source commands: `cross-ref-check`
 
+### Frontend — `Page::Dashboard` Clones Data on Every Signal Read
+
+- [x] **#126 — Dashboard state stored in enum variant, cloned on every re-render**
+  - Files: `frontend/src/pages/dashboard.rs`
+  - Problem: `user.get()` inside the reactive closure cloned the full `UserContext` (including `teams: Vec<UserInTeams>`) on every re-render.
+  - Fix: Changed to `user.with(|u| …)` so only immutable borrow occurs, avoiding the clone.
+  - Source commands: `review`
+
+### Frontend — Missing `aria-busy` on Submit Button
+
+- [x] **#127 — No `aria-busy` attribute during login form submission**
+  - File: `frontend/src/pages/login.rs`
+  - Problem: The submit button did not set `aria-busy` during the loading state, making it inaccessible to screen readers.
+  - Fix: Added `aria-busy=move || loading.get().to_string()` to the `<button>` element.
+  - Source commands: `review`
+
+### Frontend — Decorative Icons Lack Accessibility Attributes
+
+- [x] **#128 — Warning icon and checkmark lack `aria-hidden="true"`**
+  - File: `frontend/src/pages/login.rs`
+  - Note: Already resolved before fix commit — both icons already had `aria-hidden="true"` at the time of review. Confirmed and archived.
+  - Source commands: `review`
+
 ## Notes
 
-- Total resolved items: 251 (6 critical, 45 important, 72 minor, 34 informational, plus items previously counted under different categories)
+- Total resolved items: 254 (6 critical, 45 important, 72 minor, 37 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

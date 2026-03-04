@@ -86,25 +86,6 @@ This file is **generated and maintained by the project assessment process** defi
 - [ ] **#124 — FK cascade and `fix_migration_history` DB interaction lack tests**
   - Source commands: `test-gaps`
 
-### Frontend — `Page::Dashboard` Clones Data on Every Signal Read
-
-- [x] **#126 — Dashboard state stored in enum variant, cloned on every re-render**
-  - File: `frontend/src/pages/dashboard.rs`
-  - Source commands: `review`
-
-### Frontend — Missing `aria-busy` on Submit Button
-
-- [x] **#127 — No `aria-busy` attribute during login form submission**
-  - File: `frontend/src/pages/login.rs`
-  - Source commands: `review`
-
-### Frontend — Decorative Icons Lack Accessibility Attributes
-
-- [x] **#128 — Warning icon and checkmark lack `aria-hidden="true"`**
-  - File: `frontend/src/pages/login.rs`
-  - Source commands: `review`
-  - Note: Already resolved — both icons already had `aria-hidden="true"` at the time of review.
-
 ### Frontend — Inconsistent `spawn_local` Import
 
 - [ ] **#210 — Session restore uses `wasm_bindgen_futures::spawn_local` while logout uses `leptos::task::spawn_local`**
@@ -505,6 +486,14 @@ This file is **generated and maintained by the project assessment process** defi
   - File: `src/errors.rs` (lines ~124–140)
   - Source commands: `test-gaps`
 
+### Frontend — Sidebar Uses `user.get()` Which Clones Full `UserContext` on Each Render
+
+- [ ] **#360 — `Sidebar` calls `user.get()` inside reactive closures, cloning the entire `UserContext` (including `teams: Vec<UserInTeams>`) on every re-render**
+  - Files: `frontend/src/components/sidebar.rs` (lines ~87 and ~119)
+  - Problem: Two locations: (1) `user.get().map(|u| u.is_admin).unwrap_or(false)` clones the full struct just to read one `bool`; (2) `user.get().map(|u| { let initials = ...; ... })` clones to render the sidebar user card. This is the same pattern fixed for `dashboard.rs` in #126 but was not carried through to `sidebar.rs`.
+  - Fix: Replace `user.get()` with `user.with(|u| ...)` at both locations (identical pattern to the #126 fix).
+  - Source commands: `review`
+
 ## Completed Items
 
 Resolved items are maintained in [`.claude/resolved-findings.md`](.claude/resolved-findings.md), organized by original severity.
@@ -524,7 +513,7 @@ See that file for the full history of resolved findings.
 - OpenAPI spec has 41 operations; remaining annotation inaccuracies tracked (#287, #326).
 - All SQL queries use parameterized prepared statements — zero injection risk.
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 74 informational. **Total: 75 open items**.
-- 33 new findings in this assessment: #327–#359. 17 resolved in this session (#327–#335, #341–#348).
-- 251 resolved items in `.claude/resolved-findings.md`.
-- Highest finding number: #359.
+- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 73 informational. **Total: 74 open items**.
+- 1 new finding in this assessment: #360 (Sidebar `user.get()` clones). 3 items archived: #126, #127, #128. Also resolved: docker-compose startup race condition (not previously tracked — `breakfast` now `depends_on: postgres-setup` and `init_dev_db.sh` updated to run V1–V6).
+- 254 resolved items in `.claude/resolved-findings.md`.
+- Highest finding number: #360.
