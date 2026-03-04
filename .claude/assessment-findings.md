@@ -34,94 +34,6 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Informational Items
 
-### Security — Rate Limiter Uses IP-Based Key Extraction
-
-- [ ] **#119 — Behind a reverse proxy, all requests share one IP**
-  - File: `src/routes.rs`
-  - Source commands: `security-audit`
-
-### Security — Auth Cache Staleness Window
-
-- [ ] **#120 — 5-minute cache TTL allows stale credentials after password change**
-  - File: `src/middleware/auth.rs`
-  - Source commands: `security-audit`
-
-### Dependencies — `native-tls` Compiled Alongside `rustls`
-
-- [ ] **#121 — `refinery` unconditionally enables `postgres-native-tls`**
-  - Source commands: `dependency-check`
-
-### Dependencies — Low-Activity `tracing-bunyan-formatter`
-
-- [ ] **#123 — `tracing-bunyan-formatter` has infrequent releases**
-  - Source commands: `dependency-check`
-
-### Deployment — `HTTP_REDIRECT_PORT` Hardcoded to 80
-
-- [ ] **#256 — HTTP→HTTPS redirect listener binds to port 80 unconditionally**
-  - File: `src/server.rs`
-  - Source commands: `review`
-
-### Dependencies — `password-hash` Direct Dependency for Feature Activation Only
-
-- [ ] **#257 — `password-hash` is a direct dependency only to enable `getrandom` feature**
-  - File: `Cargo.toml`
-  - Source commands: `dependency-check`
-
-### Security — Missing `Permissions-Policy` Header
-
-- [ ] **#258 — `DefaultHeaders` does not include `Permissions-Policy`**
-  - File: `src/server.rs`
-  - Source commands: `security-audit`
-
-### Deployment — Docker Compose `breakfast` Service Lacks Resource Limits
-
-- [ ] **#259 — No `deploy.resources.limits` for CPU or memory**
-  - File: `docker-compose.yml`
-  - Source commands: `security-audit`
-
-### Documentation — `database_seed.sql` Header Only Mentions V1
-
-- [ ] **#260 — Seed data file header references only V1 schema**
-  - File: `database_seed.sql`
-  - Source commands: `cross-ref-check`
-
-### Testing — No Test for Partial `update_team_order` (COALESCE Preservation)
-
-- [ ] **#261 — No test passes `None` for some update fields and verifies existing values are preserved**
-  - File: `tests/db_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — No Test for `create_team_order` with FK-Violating `team_id`
-
-- [ ] **#262 — No test creates a team order with non-existent `team_id` to verify FK error handling**
-  - Files: `tests/db_tests.rs`, `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — No Explicit Refresh Token Revocation → Refresh Rejection Test
-
-- [ ] **#263 — No test explicitly revokes a refresh token then verifies `/auth/refresh` returns 401**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — No Test for Empty Order Items List Response
-
-- [ ] **#264 — No test verifies `GET .../items` returns `200 []` for an order with zero items**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — `guard_admin_role_assignment` Non-Existent `role_id` Path Untested
-
-- [ ] **#265 — No test calls `add_team_member` or `update_member_role` with a non-existent `role_id`**
-  - File: `src/handlers/mod.rs`
-  - Source commands: `test-gaps`
-
-### Deployment — Docker Compose Exposes PostgreSQL on All Interfaces
-
-- [ ] **#249 — `docker-compose.yml` maps port 5432 to `0.0.0.0` by default**
-  - File: `docker-compose.yml`
-  - Source commands: `security-audit`
-
 ### Database — Text Columns Lack DB-Level Length Constraints
 
 - [ ] **#285 — Text columns have API-level max-length validation but no `VARCHAR(N)` or `CHECK` at the database layer**
@@ -617,7 +529,7 @@ See that file for the full history of resolved findings.
 
 ## Notes
 
-- All 416 tests pass: 193 backend unit (171 lib + 22 healthcheck), 87 API integration, 92 DB integration, 41 WASM, 3 doc tests. Total: **416 tests, 0 failures**.
+- All 421 tests pass: 193 backend unit (171 lib + 22 healthcheck), 90 API integration, 98 DB integration, 41 WASM. Total: **422 tests, 0 failures**.
 - Backend unit test breakdown: config: 6, db/migrate: 34, errors: 16, from_row: 10, handlers/mod: 12, middleware/auth+openapi: 32, models: 16, routes: 19, server: 17, validate: 9, healthcheck: 22 = **193 total**.
 - `cargo audit --ignore RUSTSEC-2023-0071` reports 0 vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) is intentionally ignored — **blocked on upstream**, see #132. `rsa` 0.10.0 remains at rc.16. Re-evaluate periodically.
 - All dependencies are up to date (`cargo outdated -R` shows zero outdated).
@@ -629,7 +541,7 @@ See that file for the full history of resolved findings.
 - OpenAPI spec has 41 operations; remaining annotation inaccuracies tracked (#287, #326, #384, #385).
 - All SQL queries use parameterized prepared statements — zero injection risk.
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 blocked), 3 important, 0 minor, 105 informational. **Total: 109 open items**.
+- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 93 informational. **Total: 94 open items**.
 - 36 new findings in this assessment: #361–#396. 1 regression found (#361, regresses resolved #1). 1 item archived: #301 (backend fix complete).
 - 255 resolved items in `.claude/resolved-findings.md`.
 - Highest finding number: #396.

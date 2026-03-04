@@ -11,7 +11,7 @@
 
    This script inserts test/development data into an existing schema.
    It assumes the schema has already been created via:
-     - Refinery migrations (migrations/V1__initial_schema.sql) in production, or
+     - Refinery migrations (migrations/V1__initial_schema.sql through V6) in production, or
      - database.sql (full DROP/CREATE) for manual dev database resets
 
    Used by docker-compose's postgres-setup service to populate the database

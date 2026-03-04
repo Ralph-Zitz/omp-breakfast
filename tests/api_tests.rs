@@ -4383,3 +4383,176 @@ async fn team_users_returns_empty_for_team_with_no_members() {
         .to_request();
     test::call_service(&app, req).await;
 }
+
+// ---------------------------------------------------------------------------
+// #263 — Revoked refresh token is rejected by /auth/refresh
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn revoked_refresh_token_is_rejected_by_refresh_endpoint() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    let auth: Auth = login_admin(&app).await;
+
+    // Explicitly revoke the refresh token
+    let req = test::TestRequest::post()
+        .uri("/auth/revoke")
+        .peer_addr(PEER)
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .set_json(json!({"token": auth.refresh_token}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "revoke should succeed");
+
+    // Try to use the revoked refresh token — should fail
+    let req = test::TestRequest::post()
+        .uri("/auth/refresh")
+        .peer_addr(PEER)
+        .insert_header(("Authorization", format!("Bearer {}", auth.refresh_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        401,
+        "revoked refresh token should be rejected"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// #264 — Empty order items list returns 200 with empty items array
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn empty_order_items_returns_200_with_empty_list() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    let auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let token = &auth.access_token;
+
+    // Get "League of Cool Coders" team ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a fresh order (no items)
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2026-09-01"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // List items for this empty order
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let items = paginated_items(test::read_body_json(resp).await);
+    assert!(items.is_empty(), "new order should have zero items");
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ---------------------------------------------------------------------------
+// #265 — add_team_member with non-existent role_id returns 404
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn add_team_member_with_nonexistent_role_id_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U4_F is Team Admin of "League of Cool Coders"
+    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let ta_token = &ta_auth.access_token;
+
+    // Get the team ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a temp user
+    let admin_auth: Auth = login_admin(&app).await;
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .set_json(json!({
+            "firstname": "RoleTest",
+            "lastname": "User",
+            "email": "roletest.nonexistent@test.com",
+            "password": "securepassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let new_user: Value = test::read_body_json(resp).await;
+    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
+
+    // Try to add user with a non-existent role_id
+    let fake_role_id = Uuid::now_v7().to_string();
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .set_json(json!({
+            "user_id": new_user_id,
+            "role_id": fake_role_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        404,
+        "non-existent role_id should return 404 from guard_admin_role_assignment"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", new_user_id))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .to_request();
+    test::call_service(&app, req).await;
+}

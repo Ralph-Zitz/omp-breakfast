@@ -4,10 +4,17 @@ use serde::Deserialize;
 use std::env;
 use tracing::instrument;
 
+pub fn default_http_redirect_port() -> u16 {
+    80
+}
+
 #[derive(Deserialize)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
+    /// HTTP redirect port for the HTTP→HTTPS redirect server (default: 80).
+    #[serde(default = "default_http_redirect_port")]
+    pub http_redirect_port: u16,
     /// Canary field: not used at runtime, but its production check ensures
     /// that operators have reviewed and customised the config before deploying.
     /// If this is still the default "Very Secret" in production, the server

@@ -18,6 +18,11 @@ services:
         condition: service_healthy
       postgres-setup:
         condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: "512M"
+          cpus: "1"
     environment:
       - BREAKFAST_PG_HOST=postgres
       - ENV=development
@@ -54,7 +59,7 @@ services:
       POSTGRES_USER: actix
       POSTGRES_DB: actix
     ports:
-      - 5432:5432
+      - 127.0.0.1:5432:5432
     deploy:
       resources:
         limits:

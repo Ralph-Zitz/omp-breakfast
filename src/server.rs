@@ -23,9 +23,6 @@ use tracing_log::LogTracer;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
 use utoipa_swagger_ui::Config as SwaggerConfig;
 
-/// Default HTTP port for the redirect server.
-const HTTP_REDIRECT_PORT: u16 = 80;
-
 /// Interval between token blacklist cleanup runs (1 hour).
 const TOKEN_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
 
@@ -117,11 +114,11 @@ async fn redirect_to_https(req: HttpRequest, https_port: Data<u16>) -> HttpRespo
 }
 
 /// Spawn a background HTTP server that redirects all requests to HTTPS.
-/// Binds on `host:80` (or the default HTTP_REDIRECT_PORT). If binding fails
+/// Binds on `host:{http_port}`. If binding fails
 /// (e.g., insufficient privileges for port 80), logs a warning and returns
 /// without blocking the main HTTPS server.
-fn spawn_http_redirect_server(host: String, https_port: u16) {
-    let bind_address = format!("{}:{}", host, HTTP_REDIRECT_PORT);
+fn spawn_http_redirect_server(host: String, https_port: u16, http_port: u16) {
+    let bind_address = format!("{}:{}", host, http_port);
     actix_web::rt::spawn(async move {
         let https_port_data = Data::new(https_port);
         let server = HttpServer::new(move || {
@@ -147,7 +144,7 @@ fn spawn_http_redirect_server(host: String, https_port: u16) {
                     address = %bind_address,
                     "Could not bind HTTP redirect server — HTTPS redirect is unavailable. \
                      This is expected in development or when port {} requires elevated privileges.",
-                    HTTP_REDIRECT_PORT
+                    http_port
                 );
             }
         }
@@ -414,7 +411,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Start HTTP→HTTPS redirect server as a background task
-    spawn_http_redirect_server(host.clone(), port);
+    spawn_http_redirect_server(host.clone(), port, settings.server.http_redirect_port);
 
     info!("Starting server at https://{}:{}", host, port);
 
@@ -443,7 +440,8 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
                     .add(("Strict-Transport-Security", "max-age=31536000; includeSubDomains"))
                     .add(("X-Content-Type-Options", "nosniff"))
                     .add(("X-Frame-Options", "DENY"))
-                    .add(("Referrer-Policy", "strict-origin-when-cross-origin")),
+                    .add(("Referrer-Policy", "strict-origin-when-cross-origin"))
+                    .add(("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")),
             )
             .app_data(state.clone())
             .app_data(swagger_config.clone())
@@ -483,8 +481,8 @@ mod tests {
     }
 
     #[test]
-    fn http_redirect_port_is_80() {
-        assert_eq!(HTTP_REDIRECT_PORT, 80);
+    fn default_http_redirect_port_is_80() {
+        assert_eq!(crate::config::default_http_redirect_port(), 80);
     }
 
     #[actix_web::test]
@@ -785,6 +783,7 @@ mod tests {
             server: crate::config::ServerConfig {
                 host: "0.0.0.0".to_string(),
                 port: 8080,
+                http_redirect_port: 80,
                 secret: "secret".to_string(),
                 jwtsecret: "jwtsecret".to_string(),
                 git_version: "test".to_string(),
@@ -810,6 +809,7 @@ mod tests {
             server: crate::config::ServerConfig {
                 host: "0.0.0.0".to_string(),
                 port: 8080,
+                http_redirect_port: 80,
                 secret: "secret".to_string(),
                 jwtsecret: "jwtsecret".to_string(),
                 git_version: "test".to_string(),
@@ -829,6 +829,7 @@ mod tests {
             server: crate::config::ServerConfig {
                 host: "0.0.0.0".to_string(),
                 port: 8080,
+                http_redirect_port: 80,
                 secret: "secret".to_string(),
                 jwtsecret: "jwtsecret".to_string(),
                 git_version: "test".to_string(),

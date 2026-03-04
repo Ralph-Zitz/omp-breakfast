@@ -2721,3 +2721,93 @@ async fn delete_item_with_order_reference_is_restricted() {
         .unwrap();
     db::delete_item(&client, item.item_id).await.unwrap();
 }
+
+// ===========================================================================
+// Group 10: Partial updates and FK violation tests
+// ===========================================================================
+
+/// #261 — Partial `update_team_order`: pass `None` for both fields and
+/// verify existing values are preserved (COALESCE behaviour).
+#[actix_web::test]
+#[ignore]
+async fn update_team_order_partial_preserves_existing_values() {
+    let client = test_client().await;
+    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
+
+    // Create with a duedate
+    let order = db::create_team_order(
+        &client,
+        team_id,
+        user_id,
+        CreateTeamOrderEntry {
+            duedate: Some(NaiveDate::from_ymd_opt(2026, 8, 1).unwrap()),
+        },
+    )
+    .await
+    .unwrap();
+
+    // Close the order first so we have a non-default value for `closed`
+    let _ = db::update_team_order(
+        &client,
+        team_id,
+        order.teamorders_id,
+        UpdateTeamOrderEntry {
+            duedate: None,
+            closed: Some(true),
+        },
+    )
+    .await
+    .unwrap();
+
+    // Now update with None for both fields — values should be preserved
+    let updated = db::update_team_order(
+        &client,
+        team_id,
+        order.teamorders_id,
+        UpdateTeamOrderEntry {
+            duedate: None,
+            closed: None,
+        },
+    )
+    .await
+    .expect("partial update should succeed");
+
+    assert_eq!(
+        updated.duedate,
+        Some(NaiveDate::from_ymd_opt(2026, 8, 1).unwrap()),
+        "duedate should be preserved when None is passed"
+    );
+    assert!(
+        updated.closed,
+        "closed should be preserved when None is passed"
+    );
+
+    // Cleanup
+    db::delete_team_order(&client, team_id, order.teamorders_id)
+        .await
+        .expect("cleanup");
+}
+
+/// #262 — `create_team_order` with a non-existent `team_id` should fail
+/// with a foreign key violation.
+#[actix_web::test]
+#[ignore]
+async fn create_team_order_with_nonexistent_team_id_fails() {
+    let client = test_client().await;
+    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let fake_team_id = Uuid::now_v7();
+
+    let result = db::create_team_order(
+        &client,
+        fake_team_id,
+        user_id,
+        CreateTeamOrderEntry { duedate: None },
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "creating a team order with non-existent team_id should fail (FK violation)"
+    );
+}

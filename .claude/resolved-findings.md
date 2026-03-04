@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-06
+Last updated: 2026-03-04
 
 ## Critical Items
 
@@ -1872,8 +1872,111 @@ Last updated: 2026-03-06
   - Resolution: Added `.add(("Referrer-Policy", "strict-origin-when-cross-origin"))` to the global `DefaultHeaders` chain.
   - Source commands: `security-audit`
 
+### Security — Rate Limiter IP-Based Key Extraction (Acknowledged)
+
+- [x] **#119 — Behind a reverse proxy, all requests share one IP**
+  - File: `src/routes.rs`
+  - Resolution: Acknowledged informational. `actix-governor` uses `PeerIpKeyExtractor` by default. In production behind a reverse proxy, configure the proxy to set `X-Forwarded-For` and use a custom key extractor. Deployment concern, not a code bug.
+  - Source commands: `security-audit`
+
+### Security — Auth Cache Staleness Window (Acknowledged)
+
+- [x] **#120 — 5-minute cache TTL allows stale credentials after password change**
+  - File: `src/middleware/auth.rs`
+  - Resolution: Acknowledged informational. Cache is explicitly invalidated on password change via `invalidate_cache()`. The 5-minute TTL is a design trade-off for concurrent sessions. Acceptable for an internal app.
+  - Source commands: `security-audit`
+
+### Dependencies — `native-tls` Compiled Alongside `rustls` (Acknowledged)
+
+- [x] **#121 — `refinery` unconditionally enables `postgres-native-tls`**
+  - Resolution: Acknowledged informational. Upstream issue — `refinery` has no feature flag to disable `native-tls`. Unused at runtime (we use `rustls`). No action possible without upstream changes.
+  - Source commands: `dependency-check`
+
+### Dependencies — Low-Activity `tracing-bunyan-formatter` (Acknowledged)
+
+- [x] **#123 — `tracing-bunyan-formatter` has infrequent releases**
+  - Resolution: Acknowledged informational. Stable, functional, no CVEs. Low release activity reflects feature completeness. No alternative offers the same Bunyan JSON format with tracing integration.
+  - Source commands: `dependency-check`
+
+### Deployment — Docker Compose PostgreSQL Port Binding
+
+- [x] **#249 — `docker-compose.yml` maps port 5432 to `0.0.0.0` by default**
+  - File: `docker-compose.yml`
+  - Resolution: Changed port mapping from `5432:5432` to `127.0.0.1:5432:5432` to bind only to localhost.
+  - Source commands: `security-audit`
+
+### Deployment — HTTP Redirect Port Configurable
+
+- [x] **#256 — HTTP→HTTPS redirect listener binds to port 80 unconditionally**
+  - File: `src/server.rs`, `src/config.rs`, `config/default.yml`
+  - Resolution: Made HTTP redirect port configurable via `server.http_redirect_port` in config (default: 80). Removed hardcoded const. Configurable via `BREAKFAST_SERVER_HTTP_REDIRECT_PORT` env var.
+  - Source commands: `review`
+
+### Dependencies — `password-hash` Direct Dependency (Acknowledged)
+
+- [x] **#257 — `password-hash` is a direct dependency only to enable `getrandom` feature**
+  - File: `Cargo.toml`
+  - Resolution: Acknowledged informational. Required to enable `getrandom` feature for Argon2 random salt generation. Idiomatic Cargo pattern for enabling transitive features.
+  - Source commands: `dependency-check`
+
+### Security — Permissions-Policy Header Added
+
+- [x] **#258 — `DefaultHeaders` does not include `Permissions-Policy`**
+  - File: `src/server.rs`
+  - Resolution: Added `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()` to the global `DefaultHeaders` chain.
+  - Source commands: `security-audit`
+
+### Deployment — Docker Resource Limits Added
+
+- [x] **#259 — No `deploy.resources.limits` for CPU or memory**
+  - File: `docker-compose.yml`
+  - Resolution: Added `deploy.resources.limits` (memory: "512M", cpus: "1") to the `breakfast` service.
+  - Source commands: `security-audit`
+
+### Documentation — Seed SQL Header Updated
+
+- [x] **#260 — Seed data file header references only V1 schema**
+  - File: `database_seed.sql`
+  - Resolution: Updated header to reference "V1 through V6" instead of just "V1".
+  - Source commands: `cross-ref-check`
+
+### Testing — Partial Order Update COALESCE Test Added
+
+- [x] **#261 — No test passes `None` for some update fields and verifies existing values are preserved**
+  - File: `tests/db_tests.rs`
+  - Resolution: Added `update_team_order_partial_preserves_existing_values` DB integration test.
+  - Source commands: `test-gaps`
+
+### Testing — FK-Violating team_id Test Added
+
+- [x] **#262 — No test creates a team order with non-existent `team_id` to verify FK error handling**
+  - File: `tests/db_tests.rs`
+  - Resolution: Added `create_team_order_with_nonexistent_team_id_fails` DB integration test.
+  - Source commands: `test-gaps`
+
+### Testing — Revoked Refresh Token Rejection Test Added
+
+- [x] **#263 — No test explicitly revokes a refresh token then verifies `/auth/refresh` returns 401**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `revoked_refresh_token_is_rejected_by_refresh_endpoint` API integration test.
+  - Source commands: `test-gaps`
+
+### Testing — Empty Order Items List Test Added
+
+- [x] **#264 — No test verifies `GET .../items` returns `200 []` for an order with zero items**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `empty_order_items_returns_200_with_empty_list` API integration test.
+  - Source commands: `test-gaps`
+
+### Testing — Non-Existent role_id in guard_admin_role_assignment Test Added
+
+- [x] **#265 — No test calls `add_team_member` or `update_member_role` with a non-existent `role_id`**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `add_team_member_with_nonexistent_role_id_returns_404` API integration test.
+  - Source commands: `test-gaps`
+
 ## Notes
 
-- Total resolved items: 270 (6 critical, 45 important, 72 minor, 53 informational, plus items previously counted under different categories)
+- Total resolved items: 285 (6 critical, 45 important, 72 minor, 68 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file
