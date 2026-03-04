@@ -1749,8 +1749,15 @@ Last updated: 2026-03-04
   - Note: Already resolved before fix commit — both icons already had `aria-hidden="true"` at the time of review. Confirmed and archived.
   - Source commands: `review`
 
+### API Design — `get_user_teams` Query Does Not Return `team_id`
+
+- [x] **#301 — `UserInTeams` model and query lack `team_id`, preventing frontend navigation from team list to team detail**
+  - Files: `src/db/teams.rs`, `src/models.rs` (`UserInTeams` struct)
+  - Resolution: Backend fix complete — `teams.team_id` and `teams.descr` added to SELECT clause; `team_id: Uuid` and `descr: Option<String>` added to `UserInTeams` struct. Frontend struct gap tracked separately as #365 in assessment-findings.md.
+  - Source commands: `db-review`, `api-completeness`
+
 ## Notes
 
-- Total resolved items: 254 (6 critical, 45 important, 72 minor, 37 informational, plus items previously counted under different categories)
+- Total resolved items: 255 (6 critical, 45 important, 72 minor, 38 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

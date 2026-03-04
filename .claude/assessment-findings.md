@@ -26,7 +26,29 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
-*No open important items.*
+### Frontend — REGRESSION: Sidebar Logout Token Revocation Silently Fails
+
+- [ ] **#361 — `LogoutButton` uses `authed_request()` after clearing `sessionStorage`, so token revocation requests are never sent (regression of resolved #1)**
+  - File: `frontend/src/components/sidebar.rs` (lines ~202–234)
+  - Problem: The logout handler (1) saves token values to local variables, (2) clears `sessionStorage`, (3) calls `authed_request()` to revoke. But `authed_request()` internally calls `get_valid_token()` which reads from `sessionStorage` (now empty) → returns `None` → request is never sent. The `revoke_token_server_side()` helper added to fix #1 exists in `frontend/src/api.rs` (line ~310) but is not used.
+  - Fix: Replace `authed_request(HttpMethod::Post, "/auth/revoke", Some(&body))` calls with `revoke_token_server_side(&at, &at)` / `revoke_token_server_side(&at, &rt)` — the helper takes an explicit bearer token and does not depend on `sessionStorage`.
+  - Source commands: `review`, `security-audit`
+
+### Security — Password Change Does Not Require Current Password
+
+- [ ] **#362 — `update_user` accepts a new password without verifying the current one**
+  - Files: `src/handlers/users.rs` (line ~326), `frontend/src/pages/profile.rs` (line ~201)
+  - Problem: The profile page's "New Password" field sends the new password directly in the PUT body. The `update_user` handler hashes and stores it without confirming the user knows the current password. If an attacker gains a valid session (XSS, session fixation), they can change the password without knowing it.
+  - Fix: Add a `current_password` field to `UpdateUserRequest`; verify it against the stored hash before applying the new password. Frontend should add a "Current Password" input.
+  - Source commands: `security-audit`
+
+### Accessibility — Icon-Only Buttons Lack `aria-label` in 5 Pages
+
+- [ ] **#363 — Delete/action buttons with only an icon have no accessible name**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
+  - Problem: Screen readers announce these as unlabeled buttons. WCAG 2.1 SC 4.1.2 requires all interactive elements to have an accessible name.
+  - Fix: Add `aria-label="Delete team"` (or equivalent) to each icon-only `<button>`.
+  - Source commands: `review`
 
 ## Minor Items
 
@@ -113,7 +135,7 @@ This file is **generated and maintained by the project assessment process** defi
 ### Frontend — Redundant `session_storage()` Calls in Logout Handler
 
 - [ ] **#233 — `session_storage()` called 3 times in the `on_logout` closure**
-  - File: `frontend/src/app.rs`
+  - File: `frontend/src/components/sidebar.rs` (lines ~203–214)
   - Source commands: `review`
 
 ### Code Quality — `from_row.rs` Error Classification Uses Fragile String Matching
@@ -301,14 +323,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Problem: Missing tests for: `PUT /users/{nonexistent}`, `PUT /teams/{nonexistent}`, `PUT /roles/{nonexistent}`, `PUT /items/{nonexistent}`, `PUT /teams/{tid}/orders/{nonexistent}`, `PUT /teams/{tid}/orders/{oid}/items/{nonexistent}`.
   - Source commands: `test-gaps`
 
-### API Design — `get_user_teams` Query Does Not Return `team_id`
-
-- [ ] **#301 — `UserInTeams` model and query lack `team_id`, preventing frontend navigation from team list to team detail**
-  - Files: `src/db/teams.rs` (line ~15–25), `src/models.rs` (`UserInTeams` struct)
-  - Problem: The query SELECTs `tname, title, firstname, lastname, joined, role_changed` but not `teams.team_id`. A frontend consumer cannot navigate from a user's team list to a team detail page.
-  - Fix: Add `teams.team_id` to the SELECT clause and `team_id: Uuid` to the `UserInTeams` struct.
-  - Source commands: `db-review`, `api-completeness`
-
 ### Frontend — Signal-Inside-Reactive-Closure Anti-Pattern in 5 Pages
 
 - [ ] **#317 — `teams.rs`, `orders.rs`, `items.rs`, `roles.rs`, `admin.rs` create signals inside `move || {}` closures**
@@ -335,7 +349,7 @@ This file is **generated and maintained by the project assessment process** defi
 ### Frontend — `sleep_ms` Uses `js_sys::eval` in Production Code
 
 - [ ] **#320 — `sleep_ms` helper uses `js_sys::eval` to create a Promise-based sleep**
-  - File: `frontend/src/pages/login.rs`
+  - Files: `frontend/src/api.rs` (line ~372), `frontend/src/components/toast.rs` (line ~75)
   - Problem: `eval` is a code-smell in production (CSP implications, fragility).
   - Source commands: `review`
 
@@ -494,6 +508,220 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Replace `user.get()` with `user.with(|u| ...)` at both locations (identical pattern to the #126 fix).
   - Source commands: `review`
 
+### Frontend — `authed_request` Collapses All Errors to `Option`
+
+- [ ] **#364 — `authed_request()` returns `Option<Response>`, discarding HTTP error codes and network errors**
+  - File: `frontend/src/api.rs` (lines ~266–296)
+  - Problem: Callers cannot distinguish 403 (forbidden) from 500 (server error) from network failure. All treated identically as `None`.
+  - Source commands: `review`
+
+### API Completeness — Frontend `UserInTeams` Missing `team_id` and `descr` Fields
+
+- [ ] **#365 — Frontend `UserInTeams` struct lacks `team_id` and `descr` that the backend now provides**
+  - Files: `frontend/src/api.rs` (line ~95), `src/models.rs` (line ~227)
+  - Problem: Backend #301 fix added `team_id: Uuid` and `descr: Option<String>` to the backend model and query, but the frontend struct was not updated. Extra JSON fields are silently dropped during deserialization.
+  - Fix: Add `pub team_id: String` and `pub descr: Option<String>` to the frontend `UserInTeams` struct.
+  - Source commands: `api-completeness`
+
+### API Completeness — Frontend `ItemEntry.price` Typed as `String`
+
+- [ ] **#366 — Frontend `ItemEntry` uses `pub price: String` instead of a numeric type**
+  - File: `frontend/src/api.rs`
+  - Problem: Backend returns `numeric(10,2)` as a JSON number; frontend deserializes as `String` which works but loses type safety for display and arithmetic.
+  - Source commands: `api-completeness`
+
+### Frontend — Create Dialogs Don't Reset Form State on Cancel
+
+- [ ] **#367 — Closing a create dialog without submitting leaves stale values in form fields**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
+  - Problem: When user opens "New Team" dialog, types partial data, then cancels, reopening the dialog shows the previously typed values.
+  - Fix: Reset form signals in the cancel/close handler.
+  - Source commands: `review`
+
+### Frontend — `OrderDetail` Add-Item Form Doesn't Reset on Order Change
+
+- [ ] **#368 — Selecting a different order retains the previously selected item and quantity in the add-item form**
+  - File: `frontend/src/pages/orders.rs`
+  - Source commands: `review`
+
+### Frontend — Fetch JSON Deserialization Errors Silently Swallowed in 5 Pages
+
+- [ ] **#369 — `.json::<T>().await.unwrap_or_default()` hides deserialization failures**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
+  - Problem: If the backend response schema changes, the frontend silently shows empty data instead of reporting an error.
+  - Source commands: `review`
+
+### Documentation — `db-review.md` Factually Incorrect Description of `init_dev_db.sh`
+
+- [ ] **#370 — `.claude/commands/db-review.md` describes `init_dev_db.sh` as initialising the development database; it actually initialises the Docker Postgres entrypoint**
+  - File: `.claude/commands/db-review.md`
+  - Source commands: `cross-ref-check`
+
+### Documentation — `README.md` Make Targets Table Missing 3 Targets
+
+- [ ] **#371 — README lists Make targets but omits `check`, `fmt`, and `audit-install`**
+  - File: `README.md`
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md Key Conventions Omits `BREAKFAST_` Env Var Prefix
+
+- [ ] **#372 — Config env var override prefix `BREAKFAST_` (set in `config/default.yml`) not documented in Key Conventions**
+  - File: `CLAUDE.md`
+  - Source commands: `cross-ref-check`
+
+### Database — `token_blacklist.revoked_at` Lacks NOT NULL Constraint
+
+- [ ] **#373 — `revoked_at TIMESTAMPTZ DEFAULT NOW()` has no NOT NULL; a manual INSERT could omit it**
+  - File: `migrations/V1__initial_schema.sql`
+  - Source commands: `db-review`
+
+### Database — `idx_teamorders_id_due` Index Unused by Any Query
+
+- [ ] **#374 — Covering index on `(orders_team_id, due)` is never used; all order queries filter by `team_id` alone or by primary key**
+  - File: `migrations/V6__order_constraint_and_index.sql`
+  - Source commands: `db-review`
+
+### Code Quality — Identical Create/Update Model Pairs in `models.rs`
+
+- [ ] **#375 — `CreateTeamEntry`/`UpdateTeamEntry`, `CreateRoleEntry`/`UpdateRoleEntry`, `CreateItemEntry`/`UpdateItemEntry` have identical fields**
+  - File: `src/models.rs`
+  - Problem: 3 pairs of structs are field-identical. Could be unified or type-aliased to reduce boilerplate.
+  - Source commands: `review`
+
+### Code Quality — `#[derive(Validate)]` with No Validation Attributes on 4 Structs
+
+- [ ] **#376 — `UpdateTeamEntry`, `UpdateRoleEntry`, `UpdateItemEntry`, `UpdateTeamOrderEntry` derive `Validate` but have no `#[validate(...)]` field attributes**
+  - File: `src/models.rs`
+  - Problem: The `validate()` call does nothing — it always succeeds. Either add field-level validation or remove the derive.
+  - Source commands: `review`
+
+### Code Quality — `healthcheck.rs` Builds Unused `root_store` Variable
+
+- [ ] **#377 — `root_store` is created then shadowed or never read in the healthcheck binary**
+  - File: `src/bin/healthcheck.rs`
+  - Source commands: `review`
+
+### Code Quality — `db_tls_connector` Panics Instead of Returning Result
+
+- [ ] **#378 — `db_tls_connector()` in `server.rs` uses `.expect()` on certificate loading, panicking at runtime if certs are missing**
+  - File: `src/server.rs`
+  - Problem: A missing cert file causes a panic with no structured error. Should return `Result` and let the caller handle it.
+  - Source commands: `review`
+
+### Security — Password Fields Lack `autocomplete="new-password"`
+
+- [ ] **#379 — Profile page password input missing `autocomplete` attribute**
+  - File: `frontend/src/pages/profile.rs` (line ~207)
+  - Problem: Without `autocomplete="new-password"`, password managers may not offer to save the new password.
+  - Source commands: `security-audit`
+
+### Security — Argon2id `Params::default()` Below OWASP Minimum
+
+- [ ] **#380 — Default Argon2id parameters (19 MiB, 2 iterations, 1 lane) are below OWASP recommendation (46 MiB, 1 iteration, 1 lane)**
+  - File: `src/middleware/auth.rs`
+  - Problem: The `Params::default()` values are the `argon2` crate defaults, not the OWASP-recommended profile. For an internal app this is low risk but worth noting.
+  - Source commands: `security-audit`
+
+### Security — JWT Validator Performs DB Lookup on Every Request
+
+- [ ] **#381 — `jwt_validator` calls `db::get_user_by_email` on every authenticated request after cache miss**
+  - File: `src/middleware/auth.rs`
+  - Problem: Informational. The auth cache mitigates this for warm paths. Cold requests hit the DB. Not a bug, just a performance observation.
+  - Source commands: `security-audit`
+
+### Security — No Rate Limiting on Password Change Endpoint
+
+- [ ] **#382 — `PUT /api/v1.0/users/{id}` has no rate limiter for password changes**
+  - File: `src/routes.rs`
+  - Problem: An attacker with a valid session could brute-force test many passwords via the update endpoint. Low risk because the endpoint requires authentication.
+  - Source commands: `security-audit`
+
+### Security — `delete_user_by_email` Email Existence Oracle
+
+- [ ] **#383 — DELETE endpoint returns 404 vs 204, revealing whether an email exists in the system**
+  - File: `src/handlers/users.rs`
+  - Problem: Low risk — endpoint is admin-gated. But the response difference is observable.
+  - Source commands: `security-audit`
+
+### OpenAPI — `delete_user_by_email` Missing 422 Response
+
+- [ ] **#384 — utoipa annotations for `delete_user_by_email` omit the 422 (validation error) response**
+  - File: `src/handlers/users.rs`
+  - Source commands: `openapi-sync`
+
+### OpenAPI — Auth Endpoints Missing 429 Response
+
+- [ ] **#385 — `auth_user` and `refresh_token` utoipa annotations omit 429 (rate-limited / account locked) response**
+  - File: `src/handlers/users.rs`
+  - Source commands: `openapi-sync`
+
+### Dependencies — OpenTelemetry Stack Enables Unused `logs` and `metrics` Features
+
+- [ ] **#386 — `opentelemetry` and `opentelemetry_sdk` have `logs` feature enabled; no log exporter is configured**
+  - File: `Cargo.toml`
+  - Problem: Compiles unused modules. Removing `logs` feature reduces compile time slightly.
+  - Source commands: `dependency-check`
+
+### Testing — Token Refresh After User Deletion Untested
+
+- [ ] **#387 — No test refreshes a token after the user has been deleted from the database**
+  - File: `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — Admin Assigning Admin Role Has No Positive API Test
+
+- [ ] **#388 — `guard_admin_role_assignment` allows Admin to assign Admin role, but no test exercises this success path**
+  - File: `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — `auth_user` Cache Miss Path Untested
+
+- [ ] **#389 — No test verifies the code path when the auth cache has no entry for a user (first login or after TTL expiry)**
+  - File: `src/middleware/auth.rs`
+  - Source commands: `test-gaps`
+
+### Testing — `delete_user_by_email` Invalid Email Format Not Tested
+
+- [ ] **#390 — No API test sends a malformed email string to verify 422 response**
+  - File: `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — `update_user` Email Change Dual Cache Invalidation Untested
+
+- [ ] **#391 — No test changes a user's email and verifies both old and new cache keys are invalidated**
+  - File: `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — `GET /teams/{nonexistent}/users` Behavior Untested
+
+- [ ] **#392 — No test verifies whether the endpoint returns 200 `[]` or 404 for a non-existent team**
+  - File: `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — `check_team_access` for "Team Admin" Role Missing from DB Tests
+
+- [ ] **#393 — DB tests cover Admin bypass and Member access but not Team Admin role specifically**
+  - File: `tests/db_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — Health Endpoint 503 Response Never Tested
+
+- [ ] **#394 — No integration test verifies that `/health` returns HTTP 503 when the database is unreachable**
+  - File: `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — `refresh_token` `DateTime::from_timestamp` Fallback Untested
+
+- [ ] **#395 — The `DateTime::from_timestamp(exp, 0).unwrap_or_default()` fallback in `refresh_token` handler is never tested**
+  - File: `src/handlers/users.rs`
+  - Source commands: `test-gaps`
+
+### Testing — Order Entry `amt` Range Validation Untested
+
+- [ ] **#396 — `CreateOrderEntry` and `UpdateOrderEntry` have `#[validate(range(min=1, max=10000))]` on `amt` but no test verifies boundary values**
+  - File: `src/models.rs`
+  - Source commands: `test-gaps`
+
 ## Completed Items
 
 Resolved items are maintained in [`.claude/resolved-findings.md`](.claude/resolved-findings.md), organized by original severity.
@@ -510,10 +738,10 @@ See that file for the full history of resolved findings.
 - Frontend was refactored from monolithic `app.rs` (600+ lines) into modular architecture: `api.rs` (377 lines), `pages/` (10 files, ~2,800 lines), `components/` (7 files, ~680 lines). `app.rs` is now 164 lines (routing shell only).
 - Frontend consumes 22 of 37 API endpoints (up from 4 at last assessment).
 - RBAC enforcement: no violations found. All 30 handlers enforce correct guards per CLAUDE.md policy.
-- OpenAPI spec has 41 operations; remaining annotation inaccuracies tracked (#287, #326).
+- OpenAPI spec has 41 operations; remaining annotation inaccuracies tracked (#287, #326, #384, #385).
 - All SQL queries use parameterized prepared statements — zero injection risk.
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 73 informational. **Total: 74 open items**.
-- 1 new finding in this assessment: #360 (Sidebar `user.get()` clones). 3 items archived: #126, #127, #128. Also resolved: docker-compose startup race condition (not previously tracked — `breakfast` now `depends_on: postgres-setup` and `init_dev_db.sh` updated to run V1–V6).
-- 254 resolved items in `.claude/resolved-findings.md`.
-- Highest finding number: #360.
+- Open items summary: 1 critical (#132 blocked), 3 important, 0 minor, 105 informational. **Total: 109 open items**.
+- 36 new findings in this assessment: #361–#396. 1 regression found (#361, regresses resolved #1). 1 item archived: #301 (backend fix complete).
+- 255 resolved items in `.claude/resolved-findings.md`.
+- Highest finding number: #396.
