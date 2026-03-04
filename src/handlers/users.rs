@@ -339,10 +339,10 @@ pub async fn update_user(
     let user = db::update_user(&client, uid, json.into_inner()).await?;
 
     // Invalidate both old and new email cache entries
-    if let Some(ref old) = old_email {
-        if *old != user.email {
-            let _ = invalidate_cache(state.clone(), old);
-        }
+    if let Some(ref old) = old_email
+        && old != &user.email
+    {
+        let _ = invalidate_cache(state.clone(), old);
     }
     let _ = invalidate_cache(state, &user.email);
     Ok(HttpResponse::Ok().json(user))
