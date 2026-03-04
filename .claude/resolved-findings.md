@@ -513,6 +513,30 @@ Last updated: 2026-03-04
   - Resolution: Added `validate(&json)?` call before `json.into_inner()` in `update_member_role`.
   - Source commands: `practices-audit`
 
+### Frontend — REGRESSION: Sidebar Logout Token Revocation Silently Fails
+
+- [x] **#361 — `LogoutButton` uses `authed_request()` after clearing `sessionStorage`, so token revocation requests are never sent (regression of resolved #1)**
+  - File: `frontend/src/components/sidebar.rs`
+  - Problem: The logout handler saved token values, cleared `sessionStorage`, then called `authed_request()` which reads from `sessionStorage` (now empty) — revocation requests were never sent.
+  - Resolution: Replaced `authed_request()` calls with `revoke_token_server_side()`, which takes an explicit bearer token and does not depend on `sessionStorage`.
+  - Source commands: `review`, `security-audit`
+
+### Security — Password Change Does Not Require Current Password
+
+- [x] **#362 — `update_user` accepts a new password without verifying the current one**
+  - Files: `src/handlers/users.rs`, `src/models.rs`, `src/db/users.rs`, `frontend/src/pages/profile.rs`
+  - Problem: The profile page sent a new password in the PUT body without confirming the user knows the current password.
+  - Resolution: Added `current_password` field to `UpdateUserRequest`, added `get_password_hash` DB function, and updated `update_user` handler to verify current password for self-updates. Admins resetting another user's password may omit `current_password`. Frontend profile page conditionally shows "Current Password" field when a new password is entered.
+  - Source commands: `security-audit`
+
+### Accessibility — Icon-Only Buttons Lack `aria-label` in 5 Pages
+
+- [x] **#363 — Delete/action buttons with only an icon have no accessible name**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
+  - Problem: Screen readers announced icon-only trash buttons as unlabeled buttons, violating WCAG 2.1 SC 4.1.2.
+  - Resolution: Added `aria-label` to all 6 icon-only delete buttons: "Delete team", "Delete item", "Delete order", "Remove item from order", "Delete role", "Delete user".
+  - Source commands: `review`
+
 ## Minor Items
 
 ### Security — Swagger UI Exposed in Production

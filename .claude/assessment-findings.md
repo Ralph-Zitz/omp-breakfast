@@ -26,29 +26,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
-### Frontend — REGRESSION: Sidebar Logout Token Revocation Silently Fails
-
-- [x] **#361 — `LogoutButton` uses `authed_request()` after clearing `sessionStorage`, so token revocation requests are never sent (regression of resolved #1)**
-  - File: `frontend/src/components/sidebar.rs` (lines ~202–234)
-  - Problem: The logout handler (1) saves token values to local variables, (2) clears `sessionStorage`, (3) calls `authed_request()` to revoke. But `authed_request()` internally calls `get_valid_token()` which reads from `sessionStorage` (now empty) → returns `None` → request is never sent. The `revoke_token_server_side()` helper added to fix #1 exists in `frontend/src/api.rs` (line ~310) but is not used.
-  - Fix: Replace `authed_request(HttpMethod::Post, "/auth/revoke", Some(&body))` calls with `revoke_token_server_side(&at, &at)` / `revoke_token_server_side(&at, &rt)` — the helper takes an explicit bearer token and does not depend on `sessionStorage`.
-  - Source commands: `review`, `security-audit`
-
-### Security — Password Change Does Not Require Current Password
-
-- [x] **#362 — `update_user` accepts a new password without verifying the current one**
-  - Files: `src/handlers/users.rs` (line ~326), `frontend/src/pages/profile.rs` (line ~201)
-  - Problem: The profile page's "New Password" field sends the new password directly in the PUT body. The `update_user` handler hashes and stores it without confirming the user knows the current password. If an attacker gains a valid session (XSS, session fixation), they can change the password without knowing it.
-  - Fix: Add a `current_password` field to `UpdateUserRequest`; verify it against the stored hash before applying the new password. Frontend should add a "Current Password" input.
-  - Source commands: `security-audit`
-
-### Accessibility — Icon-Only Buttons Lack `aria-label` in 5 Pages
-
-- [x] **#363 — Delete/action buttons with only an icon have no accessible name**
-  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
-  - Problem: Screen readers announce these as unlabeled buttons. WCAG 2.1 SC 4.1.2 requires all interactive elements to have an accessible name.
-  - Fix: Add `aria-label="Delete team"` (or equivalent) to each icon-only `<button>`.
-  - Source commands: `review`
+*No open important items.*
 
 ## Minor Items
 
