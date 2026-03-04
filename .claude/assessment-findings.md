@@ -30,7 +30,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Minor Items
 
-_No open items._
+*No open items.*
 
 ## Informational Items
 
