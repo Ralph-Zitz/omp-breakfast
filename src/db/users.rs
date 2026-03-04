@@ -14,10 +14,7 @@ pub async fn get_users(client: &Client) -> Result<Vec<UserEntry>, Error> {
         .await
         .map_err(Error::Db)?;
 
-    let rows = client
-        .query(&statement, &[])
-        .await
-        .map_err(Error::Db)?;
+    let rows = client.query(&statement, &[]).await.map_err(Error::Db)?;
 
     Ok(map_rows(&rows, "user"))
 }
