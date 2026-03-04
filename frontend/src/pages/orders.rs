@@ -420,6 +420,7 @@ fn OrdersList(
                                                 let on_delete = on_delete.clone();
                                                 view! {
                                                     <button
+                                                        aria-label="Delete order"
                                                         class="connect-button connect-button--negative connect-button--outline connect-button--small"
                                                         on:click=move |ev| {
                                                             ev.stop_propagation();
@@ -530,6 +531,7 @@ fn OrderDetail(
                                                     view! {
                                                         <td class="connect-table-cell connect-table-cell--actions">
                                                             <button
+                                                                aria-label="Remove item from order"
                                                                 class="connect-button connect-button--negative connect-button--outline connect-button--small"
                                                                 on:click=move |_| on_remove_item(iid.clone())
                                                             >

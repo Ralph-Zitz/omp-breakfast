@@ -69,6 +69,24 @@ pub async fn get_user_by_email(client: &Client, email: &str) -> Result<UpdateUse
         .map_err(Error::DbMapper)
 }
 
+/// Fetches the password hash for a user by ID.
+///
+/// Returns `Error::NotFound` if no user exists with the given ID.
+pub async fn get_password_hash(client: &Client, user_id: Uuid) -> Result<String, Error> {
+    let statement = client
+        .prepare("select password from users where user_id = $1 limit 1")
+        .await
+        .map_err(Error::Db)?;
+
+    let row = client
+        .query_opt(&statement, &[&user_id])
+        .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("User not found".to_string()))?;
+
+    row.try_get::<_, String>(0).map_err(Error::Db)
+}
+
 /// Creates a new user, hashing the plaintext password with Argon2id before
 /// storing it.
 ///

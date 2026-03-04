@@ -134,6 +134,7 @@ pub fn AdminPage() -> impl IntoView {
                                                 view! {
                                                     <td class="connect-table-cell connect-table-cell--actions">
                                                         <button
+                                                            aria-label="Delete user"
                                                             class="connect-button connect-button--negative connect-button--outline connect-button--small"
                                                             on:click=move |_| set_delete_target.set(Some((uid.clone(), name_del.clone())))
                                                         >

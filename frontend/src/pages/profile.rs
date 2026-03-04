@@ -15,6 +15,7 @@ pub fn ProfilePage() -> impl IntoView {
     let (lastname, set_lastname) = signal(String::new());
     let (email, set_email) = signal(String::new());
     let (password, set_password) = signal(String::new());
+    let (current_password, set_current_password) = signal(String::new());
     let (saving, set_saving) = signal(false);
 
     // Populate form fields from user context
@@ -24,6 +25,7 @@ pub fn ProfilePage() -> impl IntoView {
             set_lastname.set(u.lastname.clone());
             set_email.set(u.email.clone());
             set_password.set(String::new());
+            set_current_password.set(String::new());
         }
     };
 
@@ -35,6 +37,7 @@ pub fn ProfilePage() -> impl IntoView {
     let cancel_edit = move || {
         set_editing.set(false);
         set_password.set(String::new());
+        set_current_password.set(String::new());
     };
 
     let save_profile = move || {
@@ -48,6 +51,7 @@ pub fn ProfilePage() -> impl IntoView {
         let ln_val = lastname.get();
         let em_val = email.get();
         let pw_val = password.get();
+        let cur_pw_val = current_password.get();
         let user_id = u.user_id.clone();
 
         let mut body = serde_json::json!({
@@ -59,6 +63,7 @@ pub fn ProfilePage() -> impl IntoView {
         // Only include password if user typed one
         if !pw_val.is_empty() {
             body["password"] = serde_json::Value::String(pw_val);
+            body["current_password"] = serde_json::Value::String(cur_pw_val);
         }
 
         wasm_bindgen_futures::spawn_local(async move {
@@ -196,7 +201,7 @@ pub fn ProfilePage() -> impl IntoView {
                                 </div>
                             </div>
 
-                            <div class="connect-text-field" style="margin-bottom: var(--ds-layout-spacing-300, 16px);">
+                            <div class="connect-text-field" style="margin-bottom: var(--ds-layout-spacing-200, 12px);">
                                 <div class="connect-label">
                                     <label class="connect-label__text" for="profile-pw">"New Password (leave blank to keep current)"</label>
                                 </div>
@@ -215,6 +220,31 @@ pub fn ProfilePage() -> impl IntoView {
                                 </div>
                             </div>
 
+                            {move || {
+                                let pw = password.get();
+                                (!pw.is_empty()).then(|| view! {
+                                    <div class="connect-text-field" style="margin-bottom: var(--ds-layout-spacing-300, 16px);">
+                                        <div class="connect-label">
+                                            <label class="connect-label__text" for="profile-curpw">"Current Password"</label>
+                                        </div>
+                                        <div class="connect-text-field__input-wrapper">
+                                            <input
+                                                class="connect-text-field__input"
+                                                id="profile-curpw"
+                                                type="password"
+                                                placeholder="••••••••"
+                                                required=true
+                                                prop:value=move || current_password.get()
+                                                on:input=move |ev| {
+                                                    let Some(target) = ev.target() else { return };
+                                                    set_current_password.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                                                }
+                                            />
+                                        </div>
+                                    </div>
+                                })
+                            }}
+
                             <div style="display: flex; gap: var(--ds-layout-spacing-200, 8px); justify-content: flex-end;">
                                 <button
                                     class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
@@ -226,7 +256,7 @@ pub fn ProfilePage() -> impl IntoView {
                                 </button>
                                 <button
                                     class="connect-button connect-button--accent connect-button--medium"
-                                    disabled=move || saving.get() || firstname.get().trim().is_empty() || lastname.get().trim().is_empty() || email.get().trim().is_empty()
+                                    disabled=move || saving.get() || firstname.get().trim().is_empty() || lastname.get().trim().is_empty() || email.get().trim().is_empty() || (!password.get().is_empty() && current_password.get().is_empty())
                                     on:click=move |_| save_profile()
                                 >
                                     <span class="connect-button__content">

@@ -119,6 +119,10 @@ impl fmt::Debug for UpdateUserEntry {
 
 /// API request body for updating a user. Password is optional — if omitted,
 /// the existing password is preserved (avoids unnecessary rehashing).
+///
+/// When a non-admin user changes their own password, `current_password` must be
+/// provided and will be verified against the stored hash. Admins resetting
+/// another user's password may omit `current_password`.
 #[derive(Deserialize, Serialize, Clone, Validate, Debug, ToSchema)]
 pub struct UpdateUserRequest {
     #[validate(length(
@@ -137,6 +141,9 @@ pub struct UpdateUserRequest {
     pub email: String,
     #[validate(custom(function = "validate_optional_password"))]
     pub password: Option<String>,
+    /// Required when a user changes their own password. Admins resetting
+    /// another user's password may omit this field.
+    pub current_password: Option<String>,
 }
 
 // Signature uses `&String` because the `validator` crate passes the inner type of Option<String> by reference.

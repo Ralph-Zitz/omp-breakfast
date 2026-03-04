@@ -237,6 +237,7 @@ async fn update_user_without_password_preserves_hash() {
             lastname: "Update".to_string(),
             email: email.clone(),
             password: None,
+            current_password: None,
         },
     )
     .await
@@ -284,6 +285,7 @@ async fn update_user_with_password_changes_hash() {
             lastname: "Test".to_string(),
             email: email.clone(),
             password: Some("newpassword456".to_string()),
+            current_password: None,
         },
     )
     .await
@@ -2113,6 +2115,7 @@ async fn update_user_nonexistent_returns_error() {
             lastname: "User".to_string(),
             email: "ghost@nobody.test".to_string(),
             password: None,
+            current_password: None,
         },
     )
     .await;
@@ -2298,6 +2301,7 @@ async fn update_user_updates_changed_timestamp() {
             lastname: "Name".to_string(),
             email: email.clone(),
             password: None,
+            current_password: None,
         },
     )
     .await

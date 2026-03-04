@@ -129,6 +129,7 @@ pub fn RolesPage() -> impl IntoView {
                                                 view! {
                                                     <td class="connect-table-cell connect-table-cell--actions">
                                                         <button
+                                                            aria-label="Delete role"
                                                             class="connect-button connect-button--negative connect-button--outline connect-button--small"
                                                             on:click=move |_| set_delete_target.set(Some((rid.clone(), title_del.clone())))
                                                         >

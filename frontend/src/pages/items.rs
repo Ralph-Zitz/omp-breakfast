@@ -128,6 +128,7 @@ pub fn ItemsPage() -> impl IntoView {
                                                 view! {
                                                     <td class="connect-table-cell connect-table-cell--actions">
                                                         <button
+                                                            aria-label="Delete item"
                                                             class="connect-button connect-button--negative connect-button--outline connect-button--small"
                                                             on:click=move |_| {
                                                                 set_delete_target.set(Some((iid.clone(), descr_del.clone())));

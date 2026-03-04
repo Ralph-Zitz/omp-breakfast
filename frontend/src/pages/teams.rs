@@ -171,6 +171,7 @@ pub fn TeamsPage() -> impl IntoView {
                                                     view! {
                                                         <td class="connect-table-cell connect-table-cell--actions">
                                                             <button
+                                                                aria-label="Delete team"
                                                                 class="connect-button connect-button--negative connect-button--outline connect-button--small"
                                                                 on:click=move |ev| {
                                                                     ev.stop_propagation();

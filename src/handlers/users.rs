@@ -13,6 +13,7 @@ use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
 };
 use actix_web_httpauth::extractors::basic::BasicAuth;
+use argon2::password_hash::PasswordVerifier;
 use chrono::{DateTime, Duration, Utc};
 use tracing::instrument;
 use uuid::Uuid;
@@ -336,13 +337,38 @@ pub async fn update_user(
     // RBAC: self, global admin, or team admin of a shared team
     require_self_or_admin_or_team_admin(&client, &req, uid).await?;
 
+    let update_req = json.into_inner();
+
+    // If the user is changing their own password, verify current_password.
+    // Admins (and team admins) resetting another user's password skip this check.
+    if update_req.password.is_some() {
+        let caller_id = requesting_user_id(&req);
+        let is_self_update = caller_id == Some(uid);
+
+        if is_self_update {
+            let current_pw = update_req.current_password.as_deref().ok_or_else(|| {
+                Error::Validation(
+                    "current_password is required when changing your own password".to_string(),
+                )
+            })?;
+
+            let stored_hash = db::get_password_hash(&client, uid).await?;
+            let parsed_hash = argon2::PasswordHash::new(&stored_hash)
+                .map_err(|e| Error::Argon2(e.to_string()))?;
+
+            crate::argon2_hasher()
+                .verify_password(current_pw.as_bytes(), &parsed_hash)
+                .map_err(|_| Error::Forbidden("Current password is incorrect".to_string()))?;
+        }
+    }
+
     // Fetch old email before update so we can invalidate the correct cache key
     let old_email = db::get_user(&client, uid)
         .await
         .ok()
         .map(|u| u.email.clone());
 
-    let user = db::update_user(&client, uid, json.into_inner()).await?;
+    let user = db::update_user(&client, uid, update_req).await?;
 
     // Invalidate both old and new email cache entries
     if let Some(ref old) = old_email

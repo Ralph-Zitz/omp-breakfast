@@ -1,4 +1,4 @@
-use crate::api::{HttpMethod, UserContext, authed_request, session_storage};
+use crate::api::{UserContext, revoke_token_server_side, session_storage};
 use crate::app::Page;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::theme_toggle::ThemeToggle;
@@ -219,14 +219,16 @@ fn LogoutButton() -> impl IntoView {
         set_page.set(Page::Login);
 
         // Fire-and-forget: revoke tokens server-side using the saved values.
+        // Uses revoke_token_server_side() with an explicit bearer token — authed_request()
+        // would fail here because sessionStorage has already been cleared.
         leptos::task::spawn_local(async move {
-            if let Some(at) = access {
-                let body = serde_json::json!({"token": at});
-                let _ = authed_request(HttpMethod::Post, "/auth/revoke", Some(&body)).await;
+            if let Some(ref at) = access {
+                revoke_token_server_side(at, at).await;
             }
-            if let Some(rt) = refresh {
-                let body = serde_json::json!({"token": rt});
-                let _ = authed_request(HttpMethod::Post, "/auth/revoke", Some(&body)).await;
+            if let Some(ref rt) = refresh {
+                if let Some(ref at) = access {
+                    revoke_token_server_side(at, rt).await;
+                }
             }
         });
     };
