@@ -27,7 +27,10 @@ pub struct PaginationParams {
 impl PaginationParams {
     /// Returns sanitised (limit, offset) values clamped to valid ranges.
     pub fn sanitize(&self) -> (i64, i64) {
-        let limit = self.limit.unwrap_or(DEFAULT_PAGE_LIMIT).clamp(1, MAX_PAGE_LIMIT);
+        let limit = self
+            .limit
+            .unwrap_or(DEFAULT_PAGE_LIMIT)
+            .clamp(1, MAX_PAGE_LIMIT);
         let offset = self.offset.unwrap_or(0).max(0);
         (limit, offset)
     }

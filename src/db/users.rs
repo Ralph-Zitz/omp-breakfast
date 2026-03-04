@@ -9,7 +9,11 @@ use uuid::Uuid;
 ///
 /// Returns the page of results and the total count (for pagination metadata).
 /// Rows that fail to map are logged with `warn!()` and skipped.
-pub async fn get_users(client: &Client, limit: i64, offset: i64) -> Result<(Vec<UserEntry>, i64), Error> {
+pub async fn get_users(
+    client: &Client,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<UserEntry>, i64), Error> {
     let count: i64 = client
         .query_one("select count(*) from users", &[])
         .await
@@ -21,7 +25,10 @@ pub async fn get_users(client: &Client, limit: i64, offset: i64) -> Result<(Vec<
         .await
         .map_err(Error::Db)?;
 
-    let rows = client.query(&statement, &[&limit, &offset]).await.map_err(Error::Db)?;
+    let rows = client
+        .query(&statement, &[&limit, &offset])
+        .await
+        .map_err(Error::Db)?;
 
     Ok((map_rows(&rows, "user"), count))
 }
