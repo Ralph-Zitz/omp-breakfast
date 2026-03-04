@@ -375,7 +375,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         login_attempts: DashMap::new(),
     });
 
-    // Swagger UI config
+    // Swagger UI config (only relevant in non-production environments)
     let swagger_config = Data::new(SwaggerConfig::from("/explorer/swagger.json"));
 
     // TLS
@@ -447,6 +447,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
             .app_data(state.clone())
             .app_data(swagger_config.clone())
             .configure(routes)
+            // Note: /explorer is conditionally registered by routes() based on ENV
             .service(
                 actix_web::web::scope("")
                     .wrap(

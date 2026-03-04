@@ -501,6 +501,13 @@ Last updated: 2026-03-04
 
 ## Minor Items
 
+### Security — Swagger UI Exposed in Production
+
+- [x] **#112 — `/explorer` registered unconditionally regardless of environment**
+  - File: `src/routes.rs`
+  - Resolution: `routes()` now checks `ENV` and only registers the `/explorer` Swagger UI scope when `ENV != "production"`. In production, the endpoint is simply not mounted — no schema exposure.
+  - Source commands: `security-audit`
+
 ### Frontend — All Components in Single `app.rs` File
 
 - [x] **#71 — Frontend `app.rs` is a 600+ line monolith**

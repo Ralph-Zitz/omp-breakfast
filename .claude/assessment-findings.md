@@ -30,13 +30,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Minor Items
 
-### Security — Swagger UI Exposed in Production
-
-- [ ] **#112 — `/explorer` registered unconditionally regardless of environment**
-  - File: `src/routes.rs`
-  - Problem: In production, this exposes the complete API schema, aiding attacker reconnaissance.
-  - Fix: Conditionally register the Swagger UI scope only when `ENV != production`, or gate behind admin auth.
-  - Source commands: `security-audit`
+_No open items._
 
 ## Informational Items
 
@@ -439,6 +433,6 @@ See that file for the full history of resolved findings.
 - All SQL queries use parameterized prepared statements — zero injection risk.
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
 - 36 resolved findings archived in this session: 3 prior (#71, #116, #297) + 33 minor items (#163–#316).
-- Open items summary: 1 critical (#132 blocked), 0 important, 1 minor (#112 intentionally deferred), 61 informational. **Total: 63 open items**.
-- 230 resolved items in `.claude/resolved-findings.md`.
+- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 61 informational. **Total: 62 open items**.
+- 231 resolved items in `.claude/resolved-findings.md`.
 - Highest finding number: #326.

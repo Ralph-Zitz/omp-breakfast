@@ -8,6 +8,7 @@ use actix_web::{
     web::get, web::post, web::put, web::resource, web::scope,
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
+use std::env;
 
 pub fn routes(cfg: &mut ServiceConfig) {
     let basic_auth = HttpAuthentication::basic(basic_validator);
@@ -22,10 +23,18 @@ pub fn routes(cfg: &mut ServiceConfig) {
         .finish()
         .unwrap();
 
+    let is_production = env::var("ENV").unwrap_or_default() == "production";
+
     cfg
         /* Status Endpoint: Is server running and connected to DB? */
-        .route("/health", get().to(get_health))
-        .service(scope("/explorer").service(get_swagger))
+        .route("/health", get().to(get_health));
+
+    // Swagger UI: only available in non-production environments
+    if !is_production {
+        cfg.service(scope("/explorer").service(get_swagger));
+    }
+
+    cfg
         .service(
             resource("/auth")
                 .name("auth")
