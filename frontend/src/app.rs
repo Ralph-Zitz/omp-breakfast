@@ -117,7 +117,7 @@ async fn restore_session(set_page: WriteSignal<Page>, set_user: WriteSignal<Opti
         }
     };
 
-    let payload = match decode_jwt_payload(&token) {
+    let _payload = match decode_jwt_payload(&token) {
         Some(p) => p,
         None => {
             // Token is malformed — clear it and show login
