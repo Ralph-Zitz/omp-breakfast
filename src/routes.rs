@@ -21,7 +21,7 @@ pub fn routes(cfg: &mut ServiceConfig) {
         .seconds_per_request(6)
         .burst_size(10)
         .finish()
-        .unwrap();
+        .expect("valid rate limiter config");
 
     let is_production = env::var("ENV").unwrap_or_default() == "production";
 

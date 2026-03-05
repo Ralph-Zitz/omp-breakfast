@@ -2,6 +2,7 @@ use crate::api::{HttpMethod, PaginatedResponse, UserContext, UserInTeams, authed
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::toast::{toast_error, toast_success};
+use crate::components::role_tag_class;
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
@@ -321,7 +322,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                     <tr class="connect-table-row">
                                                         <td class="connect-table-cell">{t.tname}</td>
                                                         <td class="connect-table-cell">
-                                                            <span class=format!("connect-tag connect-tag--small {}", cls)>{t.title}</span>
+                                                            <span class=cls>{t.title}</span>
                                                         </td>
                                                     </tr>
                                                 }
@@ -342,11 +343,4 @@ pub fn ProfilePage() -> impl IntoView {
     }
 }
 
-fn role_tag_class(role: &str) -> &'static str {
-    match role {
-        "Admin" => "connect-tag--negative-emphasis",
-        "Team Admin" => "connect-tag--warning-default",
-        "Member" => "connect-tag--primary-default",
-        _ => "connect-tag--neutral-default",
-    }
-}
+

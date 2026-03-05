@@ -5721,3 +5721,29 @@ async fn last_admin_cannot_delete_own_account() {
         "last admin should not be able to delete their own account"
     );
 }
+
+// ===========================================================================
+// #351 — refresh token rejected by JWT-protected API endpoint
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn jwt_protected_endpoint_rejects_refresh_token() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    // Use the refresh token (token_type = Refresh) against a JWT-gated endpoint.
+    // jwt_validator checks token_type == Access and rejects anything else.
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", auth.refresh_token)))
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        401,
+        "refresh token should be rejected by JWT-protected endpoints"
+    );
+}

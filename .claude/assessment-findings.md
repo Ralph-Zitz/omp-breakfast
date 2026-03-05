@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-06
+Last assessed: 2026-03-13
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -277,21 +277,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Use `StoredValue` or move signal creation outside closures into component scope.
   - Source commands: `review`
 
-### Frontend — Duplicated `role_tag_class()` Function Across 4 Files
-
-- [ ] **#318 — Same role-to-CSS-class mapping repeated in 4 frontend files**
-  - Files: `frontend/src/pages/dashboard.rs`, `frontend/src/pages/teams.rs`, `frontend/src/pages/profile.rs`, `frontend/src/pages/roles.rs`
-  - Problem: `role_tag_class()` is duplicated with identical logic. `dashboard.rs`/`teams.rs` return `String`; `profile.rs`/`roles.rs` return `&'static str` — inconsistent signatures.
-  - Fix: Extract to a shared helper in `frontend/src/components/` or a `utils.rs` module; prefer `&'static str` return type.
-  - Source commands: `review`
-
-### Frontend — Duplicated `LoadingSpinner` Markup in 5 Pages
-
-- [ ] **#319 — Same loading spinner HTML pattern repeated in 5 page files**
-  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
-  - Fix: Extract to a shared `LoadingSpinner` component.
-  - Source commands: `review`
-
 ### Frontend — `sleep_ms` Uses `js_sys::eval` in Production Code
 
 - [ ] **#320 — `sleep_ms` helper uses `js_sys::eval` to create a Promise-based sleep**
@@ -318,13 +303,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Files: `tests/api_tests.rs`, `src/handlers/orders.rs`
   - Problem: The RBAC privilege escalation in #302/#303 was never caught because no negative-path test exists. HIGH PRIORITY.
   - Source commands: `test-gaps`, `rbac-rules`
-
-### Dependencies — `tokio-postgres` Unused `serde_json` Feature
-
-- [ ] **#324 — `with-serde_json-1` feature enabled but no query uses JSON columns**
-  - File: `Cargo.toml` (tokio-postgres dependency)
-  - Fix: Remove `"with-serde_json-1"` from features list.
-  - Source commands: `dependency-check`
 
 ### Database — `orders.orders_team_id` May Be Missing NOT NULL
 
@@ -388,13 +366,6 @@ This file is **generated and maintained by the project assessment process** defi
   - File: `src/middleware/auth.rs` (lines ~484–498)
   - Source commands: `test-gaps`
 
-### Testing — `jwt_validator` Rejects Refresh Token — No Explicit Test
-
-- [ ] **#351 — The `if c.claims.token_type != TokenType::Access` branch returns 401 but is never directly tested**
-  - File: `src/middleware/auth.rs` (lines ~230–248)
-  - Problem: The reverse (refresh endpoint rejects access token) is tested, but no test submits a refresh token to a JWT-protected API endpoint.
-  - Source commands: `test-gaps`
-
 ### Testing — `validate_non_negative_price` Has No Unit Tests
 
 - [ ] **#352 — Custom validator for item price never directly tested (negative, zero, positive cases)**
@@ -446,28 +417,12 @@ This file is **generated and maintained by the project assessment process** defi
   - File: `src/errors.rs` (lines ~124–140)
   - Source commands: `test-gaps`
 
-### Frontend — Sidebar Uses `user.get()` Which Clones Full `UserContext` on Each Render
-
-- [ ] **#360 — `Sidebar` calls `user.get()` inside reactive closures, cloning the entire `UserContext` (including `teams: Vec<UserInTeams>`) on every re-render**
-  - Files: `frontend/src/components/sidebar.rs` (lines ~87 and ~119)
-  - Problem: Two locations: (1) `user.get().map(|u| u.is_admin).unwrap_or(false)` clones the full struct just to read one `bool`; (2) `user.get().map(|u| { let initials = ...; ... })` clones to render the sidebar user card. This is the same pattern fixed for `dashboard.rs` in #126 but was not carried through to `sidebar.rs`.
-  - Fix: Replace `user.get()` with `user.with(|u| ...)` at both locations (identical pattern to the #126 fix).
-  - Source commands: `review`
-
 ### Frontend — `authed_request` Collapses All Errors to `Option`
 
 - [ ] **#364 — `authed_request()` returns `Option<Response>`, discarding HTTP error codes and network errors**
   - File: `frontend/src/api.rs` (lines ~266–296)
   - Problem: Callers cannot distinguish 403 (forbidden) from 500 (server error) from network failure. All treated identically as `None`.
   - Source commands: `review`
-
-### API Completeness — Frontend `UserInTeams` Missing `team_id` and `descr` Fields
-
-- [ ] **#365 — Frontend `UserInTeams` struct lacks `team_id` and `descr` that the backend now provides**
-  - Files: `frontend/src/api.rs` (line ~95), `src/models.rs` (line ~227)
-  - Problem: Backend #301 fix added `team_id: Uuid` and `descr: Option<String>` to the backend model and query, but the frontend struct was not updated. Extra JSON fields are silently dropped during deserialization.
-  - Fix: Add `pub team_id: String` and `pub descr: Option<String>` to the frontend `UserInTeams` struct.
-  - Source commands: `api-completeness`
 
 ### API Completeness — Frontend `ItemEntry.price` Typed as `String`
 
@@ -532,13 +487,6 @@ This file is **generated and maintained by the project assessment process** defi
 - [ ] **#375 — `CreateTeamEntry`/`UpdateTeamEntry`, `CreateRoleEntry`/`UpdateRoleEntry`, `CreateItemEntry`/`UpdateItemEntry` have identical fields**
   - File: `src/models.rs`
   - Problem: 3 pairs of structs are field-identical. Could be unified or type-aliased to reduce boilerplate.
-  - Source commands: `review`
-
-### Code Quality — `#[derive(Validate)]` with No Validation Attributes on 4 Structs
-
-- [ ] **#376 — `UpdateTeamEntry`, `UpdateRoleEntry`, `UpdateItemEntry`, `UpdateTeamOrderEntry` derive `Validate` but have no `#[validate(...)]` field attributes**
-  - File: `src/models.rs`
-  - Problem: The `validate()` call does nothing — it always succeeds. Either add field-level validation or remove the derive.
   - Source commands: `review`
 
 ### Code Quality — `healthcheck.rs` Builds Unused `root_store` Variable
@@ -755,28 +703,10 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Pass git version as build arg instead.
   - Source commands: `security-audit`
 
-### Frontend — Inconsistent Async Spawning API
-
-- [ ] **#452 — `LogoutButton` uses `leptos::task::spawn_local` while all others use `wasm_bindgen_futures::spawn_local`**
-  - File: `frontend/src/components/sidebar.rs` (line ~172)
-  - Source commands: `review`
-
 ### Code Quality — Auth Cache Eviction O(n)
 
 - [ ] **#453 — `evict_oldest_if_full` iterates all 1000 entries to find oldest; fine at current scale**
   - File: `src/middleware/auth.rs`
-  - Source commands: `review`
-
-### Code Quality — `GovernorConfigBuilder::finish().unwrap()` in Production Path
-
-- [ ] **#454 — Should use `.expect("valid rate limiter config")` for better panic message**
-  - File: `src/routes.rs` (lines ~22–24)
-  - Source commands: `review`
-
-### Code Quality — `format!()` on String Literals
-
-- [ ] **#455 — `format!("Delete User")` etc. allocate unnecessarily; use `.to_string()` instead**
-  - Files: `frontend/src/pages/admin.rs` (line ~169), `frontend/src/pages/roles.rs` (line ~164), `frontend/src/pages/items.rs` (line ~165)
   - Source commands: `review`
 
 ### Code Quality — OrdersPage File Exceeds 700 Lines

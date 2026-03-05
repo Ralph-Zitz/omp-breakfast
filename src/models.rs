@@ -370,12 +370,12 @@ pub struct TeamOrderEntry {
     pub changed: DateTime<Utc>,
 }
 
-#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
 pub struct CreateTeamOrderEntry {
     pub duedate: Option<chrono::NaiveDate>,
 }
 
-#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
 pub struct UpdateTeamOrderEntry {
     /// `None` = field absent (preserve existing value).
     /// `Some(None)` = explicitly set to null (clear the due date).
@@ -387,13 +387,13 @@ pub struct UpdateTeamOrderEntry {
 
 // ── Memberof models ─────────────────────────────────────────────────────────
 
-#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
 pub struct AddMemberEntry {
     pub user_id: Uuid,
     pub role_id: Uuid,
 }
 
-#[derive(Deserialize, Serialize, Validate, Clone, Debug, ToSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
 pub struct UpdateMemberRoleEntry {
     pub role_id: Uuid,
 }
@@ -551,25 +551,4 @@ mod tests {
         assert!(entry.validate().is_ok());
     }
 
-    #[test]
-    fn create_team_order_entry_validates_with_no_rules() {
-        let entry = CreateTeamOrderEntry { duedate: None };
-        assert!(entry.validate().is_ok());
-    }
-
-    #[test]
-    fn update_team_order_entry_validates_with_no_rules() {
-        let entry = UpdateTeamOrderEntry {
-            duedate: None,
-            closed: None,
-        };
-        assert!(entry.validate().is_ok());
-
-        // Also verify that duedate can be set to Some(None) (clear) and Some(Some(date))
-        let clear_entry = UpdateTeamOrderEntry {
-            duedate: Some(None),
-            closed: Some(true),
-        };
-        assert!(clear_entry.validate().is_ok());
-    }
 }

@@ -2101,8 +2101,78 @@ Last updated: 2026-03-06
   - Resolution: Added `get_orders_for_nonexistent_team_returns_empty_list` API test.
   - Source commands: `test-gaps`
 
+### Frontend — Duplicated `role_tag_class()` Function Across 4 Files
+
+- [x] **#318 — Same role-to-CSS-class mapping repeated in 4 frontend files**
+  - Files: `frontend/src/pages/dashboard.rs`, `frontend/src/pages/teams.rs`, `frontend/src/pages/profile.rs`, `frontend/src/pages/roles.rs`
+  - Resolution: Extracted shared `role_tag_class()` fn (returns `&'static str`) to `frontend/src/components/mod.rs`; removed local copies from all 4 pages.
+  - Source commands: `review`
+
+### Frontend — Duplicated `LoadingSpinner` Markup in 5 Pages
+
+- [x] **#319 — Same loading spinner HTML pattern repeated in 5 page files**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
+  - Resolution: Extracted shared `LoadingSpinner` component to `frontend/src/components/mod.rs`; removed local copies from all 5 pages.
+  - Source commands: `review`
+
+### Dependencies — `tokio-postgres` Unused `serde_json` Feature
+
+- [x] **#324 — `with-serde_json-1` feature enabled but no query uses JSON columns**
+  - File: `Cargo.toml` (tokio-postgres dependency)
+  - Resolution: Removed `"with-serde_json-1"` from tokio-postgres features list.
+  - Source commands: `dependency-check`
+
+### Testing — `jwt_validator` Rejects Refresh Token — No Explicit Test
+
+- [x] **#351 — The `if c.claims.token_type != TokenType::Access` branch returns 401 but is never directly tested**
+  - File: `src/middleware/auth.rs` (lines ~230–248)
+  - Resolution: Added `jwt_protected_endpoint_rejects_refresh_token` API integration test in `tests/api_tests.rs`.
+  - Source commands: `test-gaps`
+
+### Frontend — Sidebar Uses `user.get()` Which Clones Full `UserContext` on Each Render
+
+- [x] **#360 — `Sidebar` calls `user.get()` inside reactive closures, cloning the entire `UserContext` (including `teams: Vec<UserInTeams>`) on every re-render**
+  - Files: `frontend/src/components/sidebar.rs`
+  - Resolution: Replaced both `user.get()` calls with `user.with(|u| ...)` pattern, consistent with the #126 fix in `dashboard.rs`.
+  - Source commands: `review`
+
+### API Completeness — Frontend `UserInTeams` Missing `team_id` and `descr` Fields
+
+- [x] **#365 — Frontend `UserInTeams` struct lacks `team_id` and `descr` that the backend now provides**
+  - Files: `frontend/src/api.rs`
+  - Resolution: Added `pub descr: Option<String>` to the frontend `UserInTeams` struct (the `team_id` field was already present).
+  - Source commands: `api-completeness`
+
+### Code Quality — `#[derive(Validate)]` with No Validation Attributes on 4 Structs
+
+- [x] **#376 — `UpdateTeamEntry`, `UpdateRoleEntry`, `UpdateItemEntry`, `UpdateTeamOrderEntry` derive `Validate` but have no `#[validate(...)]` field attributes**
+  - File: `src/models.rs`
+  - Resolution: Removed `Validate` derive from `CreateTeamOrderEntry`, `UpdateTeamOrderEntry`, `AddMemberEntry`, and `UpdateMemberRoleEntry` (the structs with truly no-op validation). Removed corresponding `validate(&json)?` calls from 4 team handlers. Removed 2 obsolete unit tests that tested the no-op behavior.
+  - Source commands: `review`
+
+### Frontend — Inconsistent Async Spawning API
+
+- [x] **#452 — `LogoutButton` uses `leptos::task::spawn_local` while all others use `wasm_bindgen_futures::spawn_local`**
+  - File: `frontend/src/components/sidebar.rs`
+  - Resolution: Added `use wasm_bindgen_futures::spawn_local;` import and replaced `leptos::task::spawn_local` with the imported `spawn_local`.
+  - Source commands: `review`
+
+### Code Quality — `GovernorConfigBuilder::finish().unwrap()` in Production Path
+
+- [x] **#454 — Should use `.expect("valid rate limiter config")` for better panic message**
+  - File: `src/routes.rs`
+  - Resolution: Changed `.unwrap()` to `.expect("valid rate limiter config")`.
+  - Source commands: `review`
+
+### Code Quality — `format!()` on String Literals
+
+- [x] **#455 — `format!("Delete User")` etc. allocate unnecessarily; use `.to_string()` instead**
+  - Files: `frontend/src/pages/admin.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/items.rs`
+  - Resolution: Changed `format!("Delete X")` to `"Delete X".to_string()` in all 3 files.
+  - Source commands: `review`
+
 ## Notes
 
-- Total resolved items: 296 (6 critical, 45 important, 72 minor, 79 informational, plus items previously counted under different categories)
+- Total resolved items: 306 (6 critical, 45 important, 72 minor, 89 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

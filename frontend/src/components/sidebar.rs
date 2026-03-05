@@ -3,6 +3,7 @@ use crate::app::Page;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::theme_toggle::ThemeToggle;
 use leptos::prelude::*;
+use wasm_bindgen_futures::spawn_local;
 
 // ── Sidebar component ───────────────────────────────────────────────────────
 
@@ -84,7 +85,7 @@ pub fn Sidebar() -> impl IntoView {
 
                 // Admin-only items
                 {move || {
-                    let is_admin = user.get().map(|u| u.is_admin).unwrap_or(false);
+                    let is_admin = user.with(|u| u.as_ref().map(|u| u.is_admin).unwrap_or(false));
                     if is_admin {
                         view! {
                             <NavItem
@@ -116,10 +117,11 @@ pub fn Sidebar() -> impl IntoView {
 
                 // User info
                 {move || {
-                    user.get().map(|u| {
-                        let initials = u.initials();
-                        let name = u.display_name();
-                        let email = u.email.clone();
+                    user.with(|u| {
+                        u.as_ref().map(|u| {
+                            let initials = u.initials();
+                            let name = u.display_name();
+                            let email = u.email.clone();
                         view! {
                             <div class="sidebar__user">
                                 <div class="connect-avatar connect-avatar--small connect-avatar--initials connect-avatar--bg-yellow">
@@ -132,6 +134,7 @@ pub fn Sidebar() -> impl IntoView {
                             </div>
                         }
                     })
+                })
                 }}
 
                 <LogoutButton />
@@ -224,7 +227,7 @@ fn LogoutButton() -> impl IntoView {
         // Fire-and-forget: revoke tokens server-side using the saved values.
         // Uses revoke_token_server_side() with an explicit bearer token — authed_request()
         // would fail here because sessionStorage has already been cleared.
-        leptos::task::spawn_local(async move {
+        spawn_local(async move {
             if let Some(ref at) = access {
                 revoke_token_server_side(at, at).await;
             }

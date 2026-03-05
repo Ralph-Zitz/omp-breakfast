@@ -1,5 +1,6 @@
 use crate::api::UserContext;
 use crate::components::card::PageHeader;
+use crate::components::role_tag_class;
 use leptos::prelude::*;
 
 #[component]
@@ -88,16 +89,6 @@ pub fn DashboardPage() -> impl IntoView {
             }}
         </div>
     }
-}
-
-fn role_tag_class(role: &str) -> String {
-    let color = match role {
-        "Admin" => "negative-emphasis",
-        "Team Admin" => "warning-default",
-        "Member" => "primary-default",
-        _ => "neutral-default",
-    };
-    format!("connect-tag connect-tag--small connect-tag--{}", color)
 }
 
 #[component]

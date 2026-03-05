@@ -107,6 +107,7 @@ pub struct OrderItemEntry {
 pub struct UserInTeams {
     pub team_id: String,
     pub tname: String,
+    pub descr: Option<String>,
     pub title: String,
     #[allow(dead_code)]
     pub firstname: String,

@@ -243,7 +243,6 @@ pub async fn create_team_order(
     json: Json<CreateTeamOrderEntry>,
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
-    validate(&json)?;
     let tid = team_id.into_inner();
     let client: Client = get_client(&state.pool).await?;
     require_team_member(&client, &req, tid).await?;
@@ -343,7 +342,6 @@ pub async fn update_team_order(
     json: Json<UpdateTeamOrderEntry>,
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
-    validate(&json)?;
     let (team_id, order_id) = path.into_inner();
     let client: Client = get_client(&state.pool).await?;
     // Fetch the order to check ownership
@@ -378,7 +376,6 @@ pub async fn add_team_member(
     json: Json<AddMemberEntry>,
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
-    validate(&json)?;
     let tid = team_id.into_inner();
     let member = json.into_inner();
     let mut client: Client = get_client(&state.pool).await?;
@@ -451,7 +448,6 @@ pub async fn update_member_role(
     json: Json<UpdateMemberRoleEntry>,
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
-    validate(&json)?;
     let (team_id, user_id) = path.into_inner();
     let role_id = json.into_inner().role_id;
     let mut client: Client = get_client(&state.pool).await?;
