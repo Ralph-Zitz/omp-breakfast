@@ -204,12 +204,14 @@ fn tls_config() -> Result<ServerConfig, crate::errors::Error> {
 fn db_tls_connector(settings: &Settings) -> Result<MakeRustlsConnect, Box<dyn std::error::Error>> {
     let mut root_store = rustls::RootCertStore::empty();
     if let Some(ca_cert_path) = &settings.db_ca_cert {
-        let iter = CertificateDer::pem_file_iter(ca_cert_path.as_str()).map_err(|e| {
-            format!("Failed to open DB CA certificate '{}': {}", ca_cert_path, e)
-        })?;
+        let iter = CertificateDer::pem_file_iter(ca_cert_path.as_str())
+            .map_err(|e| format!("Failed to open DB CA certificate '{}': {}", ca_cert_path, e))?;
         for cert_result in iter {
-            let cert = cert_result.map_err(|e| format!("Invalid CA cert in '{}': {}", ca_cert_path, e))?;
-            root_store.add(cert).map_err(|e| format!("Failed to add CA cert: {}", e))?;
+            let cert =
+                cert_result.map_err(|e| format!("Invalid CA cert in '{}': {}", ca_cert_path, e))?;
+            root_store
+                .add(cert)
+                .map_err(|e| format!("Failed to add CA cert: {}", e))?;
         }
         info!(
             "Database CA certificate loaded successfully from '{}'",
@@ -293,7 +295,9 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     let port = settings.server.port;
 
     // Reject default secrets in production
-    if is_production && (settings.server.secret == "Very Secret" || settings.server.secret.is_empty()) {
+    if is_production
+        && (settings.server.secret == "Very Secret" || settings.server.secret.is_empty())
+    {
         panic!(
             "FATAL: Server secret must be changed from the default value in production. Set BREAKFAST_SERVER_SECRET environment variable."
         );
@@ -301,7 +305,9 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     if !is_production && settings.server.secret == "Very Secret" {
         warn!("Using default server secret — acceptable for development only");
     }
-    if is_production && (settings.server.jwtsecret == "Very Secret" || settings.server.jwtsecret.is_empty()) {
+    if is_production
+        && (settings.server.jwtsecret == "Very Secret" || settings.server.jwtsecret.is_empty())
+    {
         panic!(
             "FATAL: JWT secret must be changed from the default value in production. Set BREAKFAST_SERVER_JWTSECRET environment variable."
         );
@@ -313,9 +319,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     if is_production && settings.server.secret == settings.server.jwtsecret {
-        panic!(
-            "FATAL: Server secret and JWT secret must be different values in production."
-        );
+        panic!("FATAL: Server secret and JWT secret must be different values in production.");
     }
     if !is_production && settings.server.jwtsecret == "Very Secret" {
         warn!("Using default JWT secret — acceptable for development only");
@@ -850,6 +854,10 @@ mod tests {
         let result = db_tls_connector(&settings);
         assert!(result.is_err(), "expected Err for missing CA cert file");
         let err_string = result.err().map(|e| e.to_string()).unwrap_or_default();
-        assert!(err_string.contains("Failed to open DB CA certificate"), "unexpected error: {}", err_string);
+        assert!(
+            err_string.contains("Failed to open DB CA certificate"),
+            "unexpected error: {}",
+            err_string
+        );
     }
 }

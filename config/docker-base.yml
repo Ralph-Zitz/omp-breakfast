@@ -17,3 +17,6 @@ pg:
   port: 5432
   dbname: actix
   pool_max_size: 30
+  ssl_mode: Require
+
+db_ca_cert: localhost_ca.pem
