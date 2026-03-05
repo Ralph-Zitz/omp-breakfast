@@ -69,6 +69,13 @@ pub fn routes(cfg: &mut ServiceConfig) {
             )
             .route(post().to(revoke_user_token)),
     )
+    // Avatar images are served publicly (no JWT) — they are static LEGO minifig
+    // thumbnails fetched by <img> tags which cannot carry Authorization headers.
+    .service(
+        resource("/api/v1.0/avatars/{avatar_id}")
+            .name("/public/avatars/avatar_id")
+            .route(get().to(get_avatar)),
+    )
     .service(
         // All endpoints under /api/v1.0 require JWT authentication.
         //
@@ -207,13 +214,6 @@ pub fn routes(cfg: &mut ServiceConfig) {
                 resource("/avatars")
                     .name("/avatars")
                     .route(get().to(get_avatars)),
-            )
-            .service(
-                scope("/avatars").service(
-                    resource("/{avatar_id}")
-                        .name("/avatars/avatar_id")
-                        .route(get().to(get_avatar)),
-                ),
             ),
     );
 }
