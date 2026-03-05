@@ -6000,7 +6000,7 @@ async fn team_admin_can_update_order_by_another_member() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let order: Value = test::read_body_json(resp).await;
-    let order_id = order["order_id"].as_str().unwrap().to_string();
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
 
     // Team Admin updates the order created by the member
     let req = test::TestRequest::post()
@@ -6134,7 +6134,7 @@ async fn member_can_update_and_delete_own_order() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201, "member should be able to create an order");
     let order: Value = test::read_body_json(resp).await;
-    let order_id = order["order_id"].as_str().unwrap().to_string();
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
 
     // Member updates own order
     let req = test::TestRequest::put()

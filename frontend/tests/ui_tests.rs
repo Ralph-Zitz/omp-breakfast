@@ -1674,7 +1674,7 @@ fn install_mock_fetch_full() {
                 }}
 
                 // GET /api/v1.0/users (list all)
-                if (url.endsWith('/api/v1.0/users') && method === 'GET') {{
+                if (url.split('?')[0].endsWith('/api/v1.0/users') && method === 'GET') {{
                     return Promise.resolve(new Response(
                         JSON.stringify({{"items":[{{
                             user_id: "12345678-1234-1234-1234-1234567890ab",
@@ -1729,7 +1729,7 @@ fn install_mock_fetch_full() {
                 }}
 
                 // GET /api/v1.0/teams (list all)
-                if (url.endsWith('/api/v1.0/teams') && method === 'GET') {{
+                if (url.split('?')[0].endsWith('/api/v1.0/teams') && method === 'GET') {{
                     return Promise.resolve(new Response(
                         JSON.stringify({{"items":[{{
                             team_id: "bbbb2222-0000-0000-0000-000000000001",
@@ -1743,7 +1743,7 @@ fn install_mock_fetch_full() {
                 }}
 
                 // GET /api/v1.0/items
-                if (url.endsWith('/api/v1.0/items') && method === 'GET') {{
+                if (url.split('?')[0].endsWith('/api/v1.0/items') && method === 'GET') {{
                     return Promise.resolve(new Response(
                         JSON.stringify({{"items":[{{
                             item_id: "cccc3333-0000-0000-0000-000000000001",
@@ -1757,7 +1757,7 @@ fn install_mock_fetch_full() {
                 }}
 
                 // GET /api/v1.0/roles
-                if (url.endsWith('/api/v1.0/roles') && method === 'GET') {{
+                if (url.split('?')[0].endsWith('/api/v1.0/roles') && method === 'GET') {{
                     return Promise.resolve(new Response(
                         JSON.stringify({{"items":[{{
                             role_id: "dddd4444-0000-0000-0000-000000000001",
