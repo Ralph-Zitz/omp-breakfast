@@ -550,5 +550,4 @@ mod tests {
         let entry = UpdateOrderEntry { amt: 10000 };
         assert!(entry.validate().is_ok());
     }
-
 }

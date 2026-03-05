@@ -1,8 +1,10 @@
-use crate::api::{HttpMethod, PaginatedResponse, UserContext, UserInTeams, authed_get, authed_request};
+use crate::api::{
+    HttpMethod, PaginatedResponse, UserContext, UserInTeams, authed_get, authed_request,
+};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
-use crate::components::toast::{toast_error, toast_success};
 use crate::components::role_tag_class;
+use crate::components::toast::{toast_error, toast_success};
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
@@ -342,5 +344,3 @@ pub fn ProfilePage() -> impl IntoView {
         </div>
     }
 }
-
-
