@@ -29,9 +29,9 @@ pub fn AdminPage() -> impl IntoView {
             let url = format!("/api/v1.0/users?limit={}&offset={}", limit, off);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
-                    if let Ok(data) = resp.json::<PaginatedResponse<UserEntry>>().await {
-                        set_total.set(data.total as usize);
-                        set_users.set(data.items);
+                    match resp.json::<PaginatedResponse<UserEntry>>().await {
+                        Ok(data) => { set_total.set(data.total as usize); set_users.set(data.items); }
+                        Err(e) => web_sys::console::warn_1(&format!("users JSON parse error: {e}").into()),
                     }
                 }
             }
@@ -51,13 +51,16 @@ pub fn AdminPage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    if let Ok(updated) = r.json::<UserEntry>().await {
-                        set_users.update(|list| {
-                            if let Some(u) = list.iter_mut().find(|u| u.user_id == updated.user_id) {
-                                *u = updated;
-                            }
-                        });
-                        toast_success("User updated");
+                    match r.json::<UserEntry>().await {
+                        Ok(updated) => {
+                            set_users.update(|list| {
+                                if let Some(u) = list.iter_mut().find(|u| u.user_id == updated.user_id) {
+                                    *u = updated;
+                                }
+                            });
+                            toast_success("User updated");
+                        }
+                        Err(e) => web_sys::console::warn_1(&format!("user update JSON parse error: {e}").into()),
                     }
                 }
                 _ => toast_error("Failed to update user"),
@@ -77,9 +80,9 @@ pub fn AdminPage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Post, "/api/v1.0/users", Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    if let Ok(u) = r.json::<UserEntry>().await {
-                        set_users.update(|list| list.push(u));
-                        toast_success("User created");
+                    match r.json::<UserEntry>().await {
+                        Ok(u) => { set_users.update(|list| list.push(u)); toast_success("User created"); }
+                        Err(e) => web_sys::console::warn_1(&format!("user create JSON parse error: {e}").into()),
                     }
                 }
                 _ => toast_error("Failed to create user"),
@@ -216,7 +219,7 @@ pub fn AdminPage() -> impl IntoView {
             }}
 
             <CreateUserDialog
-                open=show_create
+                open=show_create.into()
                 on_create=do_create_user
                 on_cancel=move || set_show_create.set(false)
             />
@@ -240,13 +243,12 @@ pub fn AdminPage() -> impl IntoView {
             }}
 
             {move || {
-                let target = delete_target.get();
-                let (del_open, _) = signal(target.is_some());
-                let (uid, uname) = target.unwrap_or_default();
+                let open = Signal::derive(move || delete_target.get().is_some());
+                let (uid, uname) = delete_target.get().unwrap_or_default();
                 let uid_clone = uid.clone();
                 view! {
                     <ConfirmModal
-                        open=del_open
+                        open=open
                         title="Delete User".to_string()
                         message=format!("Are you sure you want to delete \"{}\"? This action cannot be undone.", uname)
                         confirm_label="Delete"
@@ -262,7 +264,7 @@ pub fn AdminPage() -> impl IntoView {
 
 #[component]
 fn CreateUserDialog(
-    open: ReadSignal<bool>,
+    open: Signal<bool>,
     on_create: impl Fn(String, String, String, String) + 'static + Clone + Send,
     on_cancel: impl Fn() + 'static + Clone + Send,
 ) -> impl IntoView {
@@ -270,6 +272,13 @@ fn CreateUserDialog(
     let (lastname, set_lastname) = signal(String::new());
     let (email, set_email) = signal(String::new());
     let (password, set_password) = signal(String::new());
+
+    let reset = move || {
+        set_firstname.set(String::new());
+        set_lastname.set(String::new());
+        set_email.set(String::new());
+        set_password.set(String::new());
+    };
 
     let form_valid = Signal::derive(move || {
         !firstname.get().trim().is_empty()
@@ -285,11 +294,13 @@ fn CreateUserDialog(
             }
 
             let on_create = on_create.clone();
+            let reset_bd = reset.clone();
+            let reset_b = reset.clone();
             let on_cancel_bd = on_cancel.clone();
             let on_cancel_b = on_cancel.clone();
 
             view! {
-                <div class="modal-overlay" on:click=move |_| on_cancel_bd()>
+                <div class="modal-overlay" on:click=move |_| { reset_bd(); on_cancel_bd(); }>
                     <div class="modal-dialog" on:click=move |ev| ev.stop_propagation()>
                         <div class="modal-header">
                             <h2 class="modal-title">"New User"</h2>
@@ -369,7 +380,8 @@ fn CreateUserDialog(
                                 class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
                                 on:click={
                                     let cancel = on_cancel_b.clone();
-                                    move |_| cancel()
+                                    let reset = reset_b.clone();
+                                    move |_| { reset(); cancel(); }
                                 }
                             >
                                 <span class="connect-button__content">

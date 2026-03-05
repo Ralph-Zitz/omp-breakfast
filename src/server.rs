@@ -201,18 +201,15 @@ fn tls_config() -> Result<ServerConfig, crate::errors::Error> {
     Ok(config)
 }
 
-fn db_tls_connector(settings: &Settings) -> MakeRustlsConnect {
+fn db_tls_connector(settings: &Settings) -> Result<MakeRustlsConnect, Box<dyn std::error::Error>> {
     let mut root_store = rustls::RootCertStore::empty();
     if let Some(ca_cert_path) = &settings.db_ca_cert {
-        let ca_certs: Vec<CertificateDer<'static>> =
-            CertificateDer::pem_file_iter(ca_cert_path.as_str())
-                .unwrap_or_else(|e| {
-                    panic!("Failed to open DB CA certificate '{}': {}", ca_cert_path, e);
-                })
-                .map(|c| c.expect("invalid CA cert"))
-                .collect();
-        for cert in ca_certs {
-            root_store.add(cert).expect("failed to add CA cert");
+        let iter = CertificateDer::pem_file_iter(ca_cert_path.as_str()).map_err(|e| {
+            format!("Failed to open DB CA certificate '{}': {}", ca_cert_path, e)
+        })?;
+        for cert_result in iter {
+            let cert = cert_result.map_err(|e| format!("Invalid CA cert in '{}': {}", ca_cert_path, e))?;
+            root_store.add(cert).map_err(|e| format!("Failed to add CA cert: {}", e))?;
         }
         info!(
             "Database CA certificate loaded successfully from '{}'",
@@ -225,7 +222,7 @@ fn db_tls_connector(settings: &Settings) -> MakeRustlsConnect {
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(root_store)
         .with_no_client_auth();
-    MakeRustlsConnect::new(tls_config)
+    Ok(MakeRustlsConnect::new(tls_config))
 }
 
 pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
@@ -352,7 +349,11 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     // Database pool
     let pool = settings
         .pg
-        .create_pool(Some(Runtime::Tokio1), db_tls_connector(&settings))?;
+        .create_pool(Some(Runtime::Tokio1), db_tls_connector(&settings)?)
+        .map_err(|e| {
+            error!(error = %e, "Failed to create database connection pool");
+            e
+        })?;
 
     // Run database migrations before accepting requests
     {
@@ -800,8 +801,8 @@ mod tests {
             db_ca_cert: None,
         };
 
-        // Should not panic — returns a valid MakeRustlsConnect
-        let _connector = db_tls_connector(&settings);
+        // Should succeed — returns a valid MakeRustlsConnect
+        let _connector = db_tls_connector(&settings).expect("should succeed with webpki roots");
     }
 
     #[test]
@@ -826,13 +827,12 @@ mod tests {
             db_ca_cert: Some(ca_path.to_string()),
         };
 
-        // Should not panic — loads the CA cert and returns a valid connector
-        let _connector = db_tls_connector(&settings);
+        // Should succeed — loads the CA cert and returns a valid connector
+        let _connector = db_tls_connector(&settings).expect("should load the CA cert");
     }
 
     #[test]
-    #[should_panic(expected = "Failed to open DB CA certificate")]
-    fn db_tls_connector_panics_on_missing_ca_file() {
+    fn db_tls_connector_returns_error_on_missing_ca_file() {
         let settings = Settings {
             server: crate::config::ServerConfig {
                 host: "0.0.0.0".to_string(),
@@ -846,7 +846,10 @@ mod tests {
             db_ca_cert: Some("/nonexistent/path/ca.pem".to_string()),
         };
 
-        // Should panic because the file does not exist
-        let _connector = db_tls_connector(&settings);
+        // Should return Err because the file does not exist
+        let result = db_tls_connector(&settings);
+        assert!(result.is_err(), "expected Err for missing CA cert file");
+        let err_string = result.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(err_string.contains("Failed to open DB CA certificate"), "unexpected error: {}", err_string);
     }
 }

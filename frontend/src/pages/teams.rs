@@ -38,9 +38,9 @@ pub fn TeamsPage() -> impl IntoView {
             let url = format!("/api/v1.0/teams?limit={}&offset={}", limit, off);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
-                    if let Ok(data) = resp.json::<PaginatedResponse<TeamEntry>>().await {
-                        set_total.set(data.total as usize);
-                        set_teams.set(data.items);
+                    match resp.json::<PaginatedResponse<TeamEntry>>().await {
+                        Ok(data) => { set_total.set(data.total as usize); set_teams.set(data.items); }
+                        Err(e) => web_sys::console::warn_1(&format!("teams JSON parse error: {e}").into()),
                     }
                 }
             }
@@ -56,8 +56,9 @@ pub fn TeamsPage() -> impl IntoView {
             let url = format!("/api/v1.0/teams/{}/users", team_id);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
-                    if let Ok(data) = resp.json::<PaginatedResponse<UsersInTeam>>().await {
-                        set_team_members.set(data.items);
+                    match resp.json::<PaginatedResponse<UsersInTeam>>().await {
+                        Ok(data) => set_team_members.set(data.items),
+                        Err(e) => web_sys::console::warn_1(&format!("team members JSON parse error: {e}").into()),
                     }
                 }
             }
@@ -72,14 +73,17 @@ pub fn TeamsPage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    if let Ok(updated) = r.json::<TeamEntry>().await {
-                        set_teams.update(|list| {
-                            if let Some(t) = list.iter_mut().find(|t| t.team_id == updated.team_id)
-                            {
-                                *t = updated;
-                            }
-                        });
-                        toast_success("Team updated");
+                    match r.json::<TeamEntry>().await {
+                        Ok(updated) => {
+                            set_teams.update(|list| {
+                                if let Some(t) = list.iter_mut().find(|t| t.team_id == updated.team_id)
+                                {
+                                    *t = updated;
+                                }
+                            });
+                            toast_success("Team updated");
+                        }
+                        Err(e) => web_sys::console::warn_1(&format!("team update JSON parse error: {e}").into()),
                     }
                 }
                 _ => toast_error("Failed to update team"),
@@ -92,15 +96,17 @@ pub fn TeamsPage() -> impl IntoView {
         wasm_bindgen_futures::spawn_local(async move {
             if let Some(r) = authed_get("/api/v1.0/users").await {
                 if r.ok() {
-                    if let Ok(data) = r.json::<PaginatedResponse<UserEntry>>().await {
-                        set_available_users.set(data.items);
+                    match r.json::<PaginatedResponse<UserEntry>>().await {
+                        Ok(data) => set_available_users.set(data.items),
+                        Err(e) => web_sys::console::warn_1(&format!("users JSON parse error: {e}").into()),
                     }
                 }
             }
             if let Some(r) = authed_get("/api/v1.0/roles").await {
                 if r.ok() {
-                    if let Ok(data) = r.json::<PaginatedResponse<RoleEntry>>().await {
-                        set_available_roles.set(data.items);
+                    match r.json::<PaginatedResponse<RoleEntry>>().await {
+                        Ok(data) => set_available_roles.set(data.items),
+                        Err(e) => web_sys::console::warn_1(&format!("roles JSON parse error: {e}").into()),
                     }
                 }
             }
@@ -123,8 +129,9 @@ pub fn TeamsPage() -> impl IntoView {
                     let members_url = format!("/api/v1.0/teams/{}/users", team_id);
                     if let Some(mr) = authed_get(&members_url).await {
                         if mr.ok() {
-                            if let Ok(data) = mr.json::<PaginatedResponse<UsersInTeam>>().await {
-                                set_team_members.set(data.items);
+                            match mr.json::<PaginatedResponse<UsersInTeam>>().await {
+                                Ok(data) => set_team_members.set(data.items),
+                                Err(e) => web_sys::console::warn_1(&format!("team members JSON parse error: {e}").into()),
                             }
                         }
                     }
@@ -173,8 +180,9 @@ pub fn TeamsPage() -> impl IntoView {
                     let members_url = format!("/api/v1.0/teams/{}/users", team_id);
                     if let Some(mr) = authed_get(&members_url).await {
                         if mr.ok() {
-                            if let Ok(data) = mr.json::<PaginatedResponse<UsersInTeam>>().await {
-                                set_team_members.set(data.items);
+                            match mr.json::<PaginatedResponse<UsersInTeam>>().await {
+                                Ok(data) => set_team_members.set(data.items),
+                                Err(e) => web_sys::console::warn_1(&format!("team members JSON parse error: {e}").into()),
                             }
                         }
                     }
@@ -191,9 +199,9 @@ pub fn TeamsPage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Post, "/api/v1.0/teams", Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    if let Ok(team) = r.json::<TeamEntry>().await {
-                        set_teams.update(|list| list.push(team));
-                        toast_success("Team created");
+                    match r.json::<TeamEntry>().await {
+                        Ok(team) => { set_teams.update(|list| list.push(team)); toast_success("Team created"); }
+                        Err(e) => web_sys::console::warn_1(&format!("team create JSON parse error: {e}").into()),
                     }
                 }
                 _ => toast_error("Failed to create team"),
@@ -487,7 +495,7 @@ pub fn TeamsPage() -> impl IntoView {
 
             // Create team dialog
             <CreateTeamDialog
-                open=show_create
+                open=show_create.into()
                 on_create=do_create_team
                 on_cancel=move || set_show_create.set(false)
             />
@@ -526,13 +534,12 @@ pub fn TeamsPage() -> impl IntoView {
 
             // Remove member confirmation
             {move || {
-                let target = remove_member_target.get();
-                let (del_open, _) = signal(target.is_some());
-                let (uid, uname) = target.unwrap_or_default();
+                let open = Signal::derive(move || remove_member_target.get().is_some());
+                let (uid, uname) = remove_member_target.get().unwrap_or_default();
                 let uid_clone = uid.clone();
                 view! {
                     <ConfirmModal
-                        open=del_open
+                        open=open
                         title="Remove Member".to_string()
                         message=format!("Remove {} from this team?", uname)
                         confirm_label="Remove"
@@ -545,13 +552,12 @@ pub fn TeamsPage() -> impl IntoView {
 
             // Delete confirmation modal
             {move || {
-                let target = delete_target.get();
-                let (del_open, _set_del_open) = signal(target.is_some());
-                let (tid, tname) = target.unwrap_or_default();
+                let open = Signal::derive(move || delete_target.get().is_some());
+                let (tid, tname) = delete_target.get().unwrap_or_default();
                 let tid_clone = tid.clone();
                 view! {
                     <ConfirmModal
-                        open=del_open
+                        open=open
                         title=format!("Delete Team")
                         message=format!("Are you sure you want to delete \"{}\"? This action cannot be undone.", tname)
                         confirm_label="Delete"
@@ -567,12 +573,17 @@ pub fn TeamsPage() -> impl IntoView {
 
 #[component]
 fn CreateTeamDialog(
-    open: ReadSignal<bool>,
+    open: Signal<bool>,
     on_create: impl Fn(String, Option<String>) + 'static + Clone + Send,
     on_cancel: impl Fn() + 'static + Clone + Send,
 ) -> impl IntoView {
     let (name, set_name) = signal(String::new());
     let (descr, set_descr) = signal(String::new());
+
+    let reset = move || {
+        set_name.set(String::new());
+        set_descr.set(String::new());
+    };
 
     view! {
         {move || {
@@ -581,11 +592,13 @@ fn CreateTeamDialog(
             }
 
             let on_create = on_create.clone();
+            let reset_bd = reset.clone();
+            let reset_b = reset.clone();
             let on_cancel_bd = on_cancel.clone();
             let on_cancel_b = on_cancel.clone();
 
             view! {
-                <div class="modal-overlay" on:click=move |_| on_cancel_bd()>
+                <div class="modal-overlay" on:click=move |_| { reset_bd(); on_cancel_bd(); }>
                     <div class="modal-dialog" on:click=move |ev| ev.stop_propagation()>
                         <div class="modal-header">
                             <h2 class="modal-title">"New Team"</h2>
@@ -633,7 +646,8 @@ fn CreateTeamDialog(
                                 class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
                                 on:click={
                                     let cancel = on_cancel_b.clone();
-                                    move |_| cancel()
+                                    let reset = reset_b.clone();
+                                    move |_| { reset(); cancel(); }
                                 }
                             >
                                 <span class="connect-button__content">

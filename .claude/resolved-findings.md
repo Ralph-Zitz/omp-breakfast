@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-06
+Last updated: 2026-03-07
 
 ## Critical Items
 
@@ -2444,8 +2444,71 @@ Last updated: 2026-03-06
   - Resolution: Changed to "Page rendering (12 tests)" and added "authed_get double-failure (2 tests): retry after 401 fails, double-failure falls back to login" section.
   - Source commands: `cross-ref-check`
 
+### Code Quality — `healthcheck.rs` Builds Unused `root_store` Variable
+
+- [x] **#377 — `root_store` is created then shadowed or never read in the healthcheck binary**
+  - File: `src/bin/healthcheck.rs`
+  - Resolution: Removed the two lines that created the unused `root_store` variable (cert store not needed when using `NoVerifier`).
+  - Source commands: `review`
+
+### Code Quality — `db_tls_connector` Panics Instead of Returning Result
+
+- [x] **#378 — `db_tls_connector()` in `server.rs` uses `.expect()` on certificate loading, panicking at runtime if certs are missing**
+  - File: `src/server.rs`
+  - Resolution: Changed `db_tls_connector()` to return `Result<MakeRustlsConnect, Box<dyn std::error::Error>>`, replacing `.expect()` with `?`. Caller uses `db_tls_connector()?`. Updated unit test to use `result.err().map(|e| e.to_string())` (not `.unwrap_err()`, which requires `T: Debug`).
+  - Source commands: `review`
+
+### Frontend — `authed_request` Collapses All Errors to `Option`
+
+- [x] **#364 — `authed_request()` returns `Option<Response>`, discarding HTTP error codes and network errors**
+  - File: `frontend/src/api.rs` (lines ~266–296)
+  - Resolution: Changed `send_once` closure from `.ok()` to an explicit `match` that calls `web_sys::console::warn_1` on network errors before returning `None`, making failures discoverable in DevTools.
+  - Source commands: `review`
+
+### Frontend — Create Dialogs Don't Reset Form State on Cancel
+
+- [x] **#367 — Closing a create dialog without submitting leaves stale values in form fields**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`, `frontend/src/pages/orders.rs`
+  - Resolution: Added `reset` closures to all 5 `Create*Dialog` components; backdrop and cancel handlers call `reset()`.
+  - Source commands: `review`
+
+### Frontend — `OrderDetail` Add-Item Form Doesn't Reset on Order Change
+
+- [x] **#368 — Selecting a different order retains the previously selected item and quantity in the add-item form**
+  - File: `frontend/src/pages/order_components.rs`
+  - Resolution: Added `Effect::new(move |_| { set_add_item_id.set("".into()); set_add_qty.set(1); })` in `OrderDetail` that fires when the `order` signal changes.
+  - Source commands: `review`
+
+### Frontend — Fetch JSON Deserialization Errors Silently Swallowed in 5 Pages
+
+- [x] **#369 — `.json::<T>().await.unwrap_or_default()` hides deserialization failures**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
+  - Resolution: Changed all JSON deserialize calls to `match` expressions that call `web_sys::console::warn_1(...)` on error before falling back to default. Added `console` feature to web-sys in `frontend/Cargo.toml`.
+  - Source commands: `review`
+
+### Frontend — Signal-Inside-Reactive-Closure Anti-Pattern in 5 Pages
+
+- [x] **#317 — `teams.rs`, `orders.rs`, `items.rs`, `roles.rs`, `admin.rs` create signals inside `move || {}` closures**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`; `frontend/src/components/modal.rs`
+  - Resolution: Moved delete-confirmation `show_*_modal` signal creation out of reactive closures. Changed `ConfirmModal.open` prop from `ReadSignal<bool>` to `Signal<bool>`; all call sites pass `Signal::derive(...)`. All `Create*Dialog` components use `open: Signal<bool>`. All call sites pass `show_*_modal.into()`.
+  - Source commands: `review`
+
+### Frontend — `sleep_ms` Uses `js_sys::eval` in Production Code
+
+- [x] **#320 — `sleep_ms` helper uses `js_sys::eval` to create a Promise-based sleep**
+  - File: `frontend/src/api.rs` (line ~372)
+  - Resolution: Replaced `js_sys::eval` with `Closure::once_into_js` + `web_sys::Window::set_timeout_with_callback_and_timeout_and_arguments_0`. CSP-safe with no `eval`.
+  - Source commands: `review`
+
+### Code Quality — OrdersPage File Exceeds 700 Lines
+
+- [x] **#456 — Contains `OrdersPage`, `OrderDetail`, `CreateOrderDialog`, `LoadingSpinner` — hard to navigate**
+  - File: `frontend/src/pages/orders.rs`
+  - Resolution: Extracted `OrderDetail` and `CreateOrderDialog` into `frontend/src/pages/order_components.rs`. Declared in `orders.rs` with `#[path = "order_components.rs"] mod order_components;`. `orders.rs` reduced from ~787 lines to ~516 lines.
+  - Source commands: `review`
+
 ## Notes
 
-- Total resolved items: 345 (6 critical, 45 important, 111 minor, 89 informational, plus items previously counted under different categories)
+- Total resolved items: 354 (6 critical, 45 important, 111 minor, 89 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

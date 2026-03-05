@@ -30,9 +30,6 @@ fn main() -> ExitCode {
         .unwrap_or(8080);
 
     // Build a TLS config that accepts any certificate (local/self-signed)
-    let mut root_store = rustls::RootCertStore::empty();
-    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
     let config = rustls::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(NoVerifier))

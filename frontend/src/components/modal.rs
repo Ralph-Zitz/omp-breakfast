@@ -7,7 +7,7 @@ use leptos::prelude::*;
 /// Controlled via the `open` signal — set to `true` to show, `false` to hide.
 #[component]
 pub fn ConfirmModal(
-    open: ReadSignal<bool>,
+    open: Signal<bool>,
     title: String,
     message: String,
     #[prop(default = "Delete")] confirm_label: &'static str,

@@ -5760,11 +5760,13 @@ async fn team_admin_can_bulk_delete_own_team_orders() {
     let admin_auth: Auth = login_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
+    let suffix = Uuid::now_v7().to_string();
+
     // Create a fresh isolated team
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .set_json(json!({"tname": "TeamAdminBulkDelete429", "descr": "temp"}))
+        .set_json(json!({"tname": format!("TeamAdminBulkDelete429-{}", suffix), "descr": "temp"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -5772,7 +5774,7 @@ async fn team_admin_can_bulk_delete_own_team_orders() {
     let team_id = team["team_id"].as_str().unwrap().to_string();
 
     // Create a temp user with known password
-    let ta_email = "ta_bulk_delete_429@test.local";
+    let ta_email = format!("ta_bulk_delete_429-{}@test.local", suffix);
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
@@ -5888,11 +5890,15 @@ async fn team_admin_can_update_order_by_another_member() {
     let admin_auth: Auth = login_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
+    let suffix = Uuid::now_v7().to_string();
+    let m430_email = format!("m430-{}@test.local", suffix);
+    let ta430_email = format!("ta430-{}@test.local", suffix);
+
     // Create isolated team
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .set_json(json!({"tname": "TeamAdminUpdateOrder430", "descr": "temp"}))
+        .set_json(json!({"tname": format!("TeamAdminUpdateOrder430-{}", suffix), "descr": "temp"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -5901,8 +5907,8 @@ async fn team_admin_can_update_order_by_another_member() {
 
     // Create a member and a team admin
     for (email, password) in &[
-        ("m430@test.local", "memberpass430"),
-        ("ta430@test.local", "teamadminpass430"),
+        (m430_email.as_str(), "memberpass430"),
+        (ta430_email.as_str(), "teamadminpass430"),
     ] {
         let req = test::TestRequest::post()
             .uri("/api/v1.0/users")
@@ -5927,14 +5933,14 @@ async fn team_admin_can_update_order_by_another_member() {
     let users = paginated_items(test::read_body_json(resp).await);
     let member_id = users
         .iter()
-        .find(|u| u["email"].as_str() == Some("m430@test.local"))
+        .find(|u| u["email"].as_str() == Some(m430_email.as_str()))
         .unwrap()["user_id"]
         .as_str()
         .unwrap()
         .to_string();
     let ta_id = users
         .iter()
-        .find(|u| u["email"].as_str() == Some("ta430@test.local"))
+        .find(|u| u["email"].as_str() == Some(ta430_email.as_str()))
         .unwrap()["user_id"]
         .as_str()
         .unwrap()
@@ -5982,7 +5988,7 @@ async fn team_admin_can_update_order_by_another_member() {
         .peer_addr(PEER)
         .insert_header((
             "Authorization",
-            format!("Basic {}", STANDARD.encode("m430@test.local:memberpass430")),
+            format!("Basic {}", STANDARD.encode(format!("{}:memberpass430", m430_email))),
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -6007,7 +6013,7 @@ async fn team_admin_can_update_order_by_another_member() {
             "Authorization",
             format!(
                 "Basic {}",
-                STANDARD.encode("ta430@test.local:teamadminpass430")
+                STANDARD.encode(format!("{}:teamadminpass430", ta430_email))
             ),
         ))
         .to_request();
@@ -6054,11 +6060,14 @@ async fn member_can_update_and_delete_own_order() {
     let admin_auth: Auth = login_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
+    let suffix = Uuid::now_v7().to_string();
+    let m431_email = format!("m431-{}@test.local", suffix);
+
     // Create isolated team
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .set_json(json!({"tname": "MemberOwnOrder431", "descr": "temp"}))
+        .set_json(json!({"tname": format!("MemberOwnOrder431-{}", suffix), "descr": "temp"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -6072,7 +6081,7 @@ async fn member_can_update_and_delete_own_order() {
         .set_json(json!({
             "firstname": "Member",
             "lastname": "OwnOrder",
-            "email": "m431@test.local",
+            "email": m431_email,
             "password": "memberpass431"
         }))
         .to_request();
@@ -6111,7 +6120,7 @@ async fn member_can_update_and_delete_own_order() {
         .peer_addr(PEER)
         .insert_header((
             "Authorization",
-            format!("Basic {}", STANDARD.encode("m431@test.local:memberpass431")),
+            format!("Basic {}", STANDARD.encode(format!("{}:memberpass431", m431_email))),
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -6307,7 +6316,7 @@ async fn user_can_delete_own_account_by_email() {
     let admin_token = &admin_auth.access_token;
 
     // Create a regular (non-admin) user
-    let email = "selfdelete435@test.local";
+    let email = format!("selfdelete435-{}@test.local", Uuid::now_v7());
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))

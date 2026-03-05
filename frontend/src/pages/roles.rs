@@ -29,9 +29,9 @@ pub fn RolesPage() -> impl IntoView {
             let url = format!("/api/v1.0/roles?limit={}&offset={}", limit, off);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
-                    if let Ok(data) = resp.json::<PaginatedResponse<RoleEntry>>().await {
-                        set_total.set(data.total as usize);
-                        set_roles.set(data.items);
+                    match resp.json::<PaginatedResponse<RoleEntry>>().await {
+                        Ok(data) => { set_total.set(data.total as usize); set_roles.set(data.items); }
+                        Err(e) => web_sys::console::warn_1(&format!("roles JSON parse error: {e}").into()),
                     }
                 }
             }
@@ -46,9 +46,9 @@ pub fn RolesPage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Post, "/api/v1.0/roles", Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    if let Ok(role) = r.json::<RoleEntry>().await {
-                        set_roles.update(|list| list.push(role));
-                        toast_success("Role created");
+                    match r.json::<RoleEntry>().await {
+                        Ok(role) => { set_roles.update(|list| list.push(role)); toast_success("Role created"); }
+                        Err(e) => web_sys::console::warn_1(&format!("role create JSON parse error: {e}").into()),
                     }
                 }
                 _ => toast_error("Failed to create role"),
@@ -64,13 +64,16 @@ pub fn RolesPage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    if let Ok(updated) = r.json::<RoleEntry>().await {
-                        set_roles.update(|list| {
-                            if let Some(r) = list.iter_mut().find(|r| r.role_id == updated.role_id) {
-                                *r = updated;
-                            }
-                        });
-                        toast_success("Role updated");
+                    match r.json::<RoleEntry>().await {
+                        Ok(updated) => {
+                            set_roles.update(|list| {
+                                if let Some(r) = list.iter_mut().find(|r| r.role_id == updated.role_id) {
+                                    *r = updated;
+                                }
+                            });
+                            toast_success("Role updated");
+                        }
+                        Err(e) => web_sys::console::warn_1(&format!("role update JSON parse error: {e}").into()),
                     }
                 }
                 _ => toast_error("Failed to update role"),
@@ -205,7 +208,7 @@ pub fn RolesPage() -> impl IntoView {
             }}
 
             <CreateRoleDialog
-                open=show_create
+                open=show_create.into()
                 on_create=do_create_role
                 on_cancel=move || set_show_create.set(false)
             />
@@ -229,13 +232,12 @@ pub fn RolesPage() -> impl IntoView {
             }}
 
             {move || {
-                let target = delete_target.get();
-                let (del_open, _) = signal(target.is_some());
-                let (rid, rname) = target.unwrap_or_default();
+                let open = Signal::derive(move || delete_target.get().is_some());
+                let (rid, rname) = delete_target.get().unwrap_or_default();
                 let rid_clone = rid.clone();
                 view! {
                     <ConfirmModal
-                        open=del_open
+                        open=open
                         title="Delete Role".to_string()
                         message=format!("Are you sure you want to delete the \"{}\" role?", rname)
                         confirm_label="Delete"
@@ -251,11 +253,15 @@ pub fn RolesPage() -> impl IntoView {
 
 #[component]
 fn CreateRoleDialog(
-    open: ReadSignal<bool>,
+    open: Signal<bool>,
     on_create: impl Fn(String) + 'static + Clone + Send,
     on_cancel: impl Fn() + 'static + Clone + Send,
 ) -> impl IntoView {
     let (title, set_title) = signal(String::new());
+
+    let reset = move || {
+        set_title.set(String::new());
+    };
 
     view! {
         {move || {
@@ -264,11 +270,13 @@ fn CreateRoleDialog(
             }
 
             let on_create = on_create.clone();
+            let reset_bd = reset.clone();
+            let reset_b = reset.clone();
             let on_cancel_bd = on_cancel.clone();
             let on_cancel_b = on_cancel.clone();
 
             view! {
-                <div class="modal-overlay" on:click=move |_| on_cancel_bd()>
+                <div class="modal-overlay" on:click=move |_| { reset_bd(); on_cancel_bd(); }>
                     <div class="modal-dialog" on:click=move |ev| ev.stop_propagation()>
                         <div class="modal-header">
                             <h2 class="modal-title">"New Role"</h2>
@@ -298,7 +306,8 @@ fn CreateRoleDialog(
                                 class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
                                 on:click={
                                     let cancel = on_cancel_b.clone();
-                                    move |_| cancel()
+                                    let reset = reset_b.clone();
+                                    move |_| { reset(); cancel(); }
                                 }
                             >
                                 <span class="connect-button__content">

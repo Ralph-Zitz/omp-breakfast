@@ -289,9 +289,16 @@ pub async fn authed_request(
 
     let send_once = |tok: String, m: HttpMethod, u: String, b: Option<serde_json::Value>| async move {
         let req = build_method_request(m, &u).header("Authorization", &format!("Bearer {}", tok));
-        match b.as_ref() {
-            Some(v) => req.json(v).ok()?.send().await.ok(),
-            None => req.send().await.ok(),
+        let result = match b.as_ref() {
+            Some(v) => req.json(v).ok()?.send().await,
+            None => req.send().await,
+        };
+        match result {
+            Ok(r) => Some(r),
+            Err(e) => {
+                web_sys::console::warn_1(&format!("network error: {e}").into());
+                None
+            }
         }
     };
 
@@ -387,9 +394,17 @@ pub async fn build_user_context(access_token: &str) -> Option<UserContext> {
 
 // ── Async sleep (for toast auto-dismiss) ────────────────────────────────────
 
-pub async fn sleep_ms(ms: u32) {
-    if let Ok(promise) = js_sys::eval(&format!("new Promise(r => setTimeout(r, {}))", ms)) {
-        let promise: js_sys::Promise = promise.unchecked_into();
-        let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
-    }
+pub async fn sleep_ms(ms: i32) {
+    use wasm_bindgen::closure::Closure;
+
+    let promise = js_sys::Promise::new(&mut move |resolve, _reject| {
+        let cb = Closure::once_into_js(move || {
+            let _ = resolve.call0(&wasm_bindgen::JsValue::UNDEFINED);
+        });
+        web_sys::window()
+            .expect("no global window")
+            .set_timeout_with_callback_and_timeout_and_arguments_0(cb.unchecked_ref(), ms)
+            .expect("set_timeout failed");
+    });
+    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
 }

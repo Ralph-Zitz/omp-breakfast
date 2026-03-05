@@ -30,9 +30,9 @@ pub fn ItemsPage() -> impl IntoView {
             let url = format!("/api/v1.0/items?limit={}&offset={}", limit, off);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
-                    if let Ok(data) = resp.json::<PaginatedResponse<ItemEntry>>().await {
-                        set_total.set(data.total as usize);
-                        set_items.set(data.items);
+                    match resp.json::<PaginatedResponse<ItemEntry>>().await {
+                        Ok(data) => { set_total.set(data.total as usize); set_items.set(data.items); }
+                        Err(e) => web_sys::console::warn_1(&format!("items JSON parse error: {e}").into()),
                     }
                 }
             }
@@ -47,9 +47,9 @@ pub fn ItemsPage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Post, "/api/v1.0/items", Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    if let Ok(item) = r.json::<ItemEntry>().await {
-                        set_items.update(|list| list.push(item));
-                        toast_success("Item created");
+                    match r.json::<ItemEntry>().await {
+                        Ok(item) => { set_items.update(|list| list.push(item)); toast_success("Item created"); }
+                        Err(e) => web_sys::console::warn_1(&format!("item create JSON parse error: {e}").into()),
                     }
                 }
                 _ => toast_error("Failed to create item"),
@@ -65,14 +65,17 @@ pub fn ItemsPage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    if let Ok(updated) = r.json::<ItemEntry>().await {
-                        set_items.update(|list| {
-                            if let Some(i) = list.iter_mut().find(|i| i.item_id == updated.item_id)
-                            {
-                                *i = updated;
-                            }
-                        });
-                        toast_success("Item updated");
+                    match r.json::<ItemEntry>().await {
+                        Ok(updated) => {
+                            set_items.update(|list| {
+                                if let Some(i) = list.iter_mut().find(|i| i.item_id == updated.item_id)
+                                {
+                                    *i = updated;
+                                }
+                            });
+                            toast_success("Item updated");
+                        }
+                        Err(e) => web_sys::console::warn_1(&format!("item update JSON parse error: {e}").into()),
                     }
                 }
                 _ => toast_error("Failed to update item"),
@@ -210,7 +213,7 @@ pub fn ItemsPage() -> impl IntoView {
 
             // Create item dialog
             <CreateItemDialog
-                open=show_create
+                open=show_create.into()
                 on_create=do_create_item
                 on_cancel=move || set_show_create.set(false)
             />
@@ -235,13 +238,12 @@ pub fn ItemsPage() -> impl IntoView {
 
             // Delete confirmation
             {move || {
-                let target = delete_target.get();
-                let (del_open, _) = signal(target.is_some());
-                let (iid, iname) = target.unwrap_or_default();
+                let open = Signal::derive(move || delete_target.get().is_some());
+                let (iid, iname) = delete_target.get().unwrap_or_default();
                 let iid_clone = iid.clone();
                 view! {
                     <ConfirmModal
-                        open=del_open
+                        open=open
                         title="Delete Item".to_string()
                         message=format!("Are you sure you want to delete \"{}\"?", iname)
                         confirm_label="Delete"
@@ -257,12 +259,17 @@ pub fn ItemsPage() -> impl IntoView {
 
 #[component]
 fn CreateItemDialog(
-    open: ReadSignal<bool>,
+    open: Signal<bool>,
     on_create: impl Fn(String, String) + 'static + Clone + Send,
     on_cancel: impl Fn() + 'static + Clone + Send,
 ) -> impl IntoView {
     let (descr, set_descr) = signal(String::new());
     let (price, set_price) = signal(String::new());
+
+    let reset = move || {
+        set_descr.set(String::new());
+        set_price.set(String::new());
+    };
 
     view! {
         {move || {
@@ -271,11 +278,13 @@ fn CreateItemDialog(
             }
 
             let on_create = on_create.clone();
+            let reset_bd = reset.clone();
+            let reset_b = reset.clone();
             let on_cancel_bd = on_cancel.clone();
             let on_cancel_b = on_cancel.clone();
 
             view! {
-                <div class="modal-overlay" on:click=move |_| on_cancel_bd()>
+                <div class="modal-overlay" on:click=move |_| { reset_bd(); on_cancel_bd(); }>
                     <div class="modal-dialog" on:click=move |ev| ev.stop_propagation()>
                         <div class="modal-header">
                             <h2 class="modal-title">"New Item"</h2>
@@ -324,7 +333,8 @@ fn CreateItemDialog(
                                 class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
                                 on:click={
                                     let cancel = on_cancel_b.clone();
-                                    move |_| cancel()
+                                    let reset = reset_b.clone();
+                                    move |_| { reset(); cancel(); }
                                 }
                             >
                                 <span class="connect-button__content">

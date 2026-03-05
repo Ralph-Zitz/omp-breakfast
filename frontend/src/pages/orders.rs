@@ -8,7 +8,10 @@ use crate::components::modal::ConfirmModal;
 use crate::components::toast::{toast_error, toast_success};
 use crate::components::LoadingSpinner;
 use leptos::prelude::*;
-use web_sys::wasm_bindgen::JsCast;
+
+#[path = "order_components.rs"]
+mod order_components;
+use order_components::{CreateOrderDialog, OrderDetail};
 
 #[component]
 pub fn OrdersPage() -> impl IntoView {
@@ -43,16 +46,18 @@ pub fn OrdersPage() -> impl IntoView {
     wasm_bindgen_futures::spawn_local(async move {
         if let Some(resp) = authed_get("/api/v1.0/teams").await {
             if resp.ok() {
-                if let Ok(data) = resp.json::<PaginatedResponse<TeamEntry>>().await {
-                    set_teams.set(data.items);
+                match resp.json::<PaginatedResponse<TeamEntry>>().await {
+                    Ok(data) => set_teams.set(data.items),
+                    Err(e) => web_sys::console::warn_1(&format!("teams JSON parse error: {e}").into()),
                 }
             }
         }
         // Also fetch catalog items for the "add item" dropdown
         if let Some(resp) = authed_get("/api/v1.0/items").await {
             if resp.ok() {
-                if let Ok(data) = resp.json::<PaginatedResponse<ItemEntry>>().await {
-                    set_catalog_items.set(data.items);
+                match resp.json::<PaginatedResponse<ItemEntry>>().await {
+                    Ok(data) => set_catalog_items.set(data.items),
+                    Err(e) => web_sys::console::warn_1(&format!("catalog JSON parse error: {e}").into()),
                 }
             }
         }
@@ -70,8 +75,9 @@ pub fn OrdersPage() -> impl IntoView {
             let url = format!("/api/v1.0/teams/{}/orders", team_id);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
-                    if let Ok(data) = resp.json::<PaginatedResponse<TeamOrderEntry>>().await {
-                        set_orders.set(data.items);
+                    match resp.json::<PaginatedResponse<TeamOrderEntry>>().await {
+                        Ok(data) => set_orders.set(data.items),
+                        Err(e) => web_sys::console::warn_1(&format!("orders JSON parse error: {e}").into()),
                     }
                 }
             }
@@ -89,8 +95,9 @@ pub fn OrdersPage() -> impl IntoView {
             let url = format!("/api/v1.0/teams/{}/orders/{}/items", team_id, order_id);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
-                    if let Ok(data) = resp.json::<PaginatedResponse<OrderItemEntry>>().await {
-                        set_order_items.set(data.items);
+                    match resp.json::<PaginatedResponse<OrderItemEntry>>().await {
+                        Ok(data) => set_order_items.set(data.items),
+                        Err(e) => web_sys::console::warn_1(&format!("order items JSON parse error: {e}").into()),
                     }
                 }
             }
@@ -112,9 +119,9 @@ pub fn OrdersPage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Post, &url, Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    if let Ok(order) = r.json::<TeamOrderEntry>().await {
-                        set_orders.update(|list| list.push(order));
-                        toast_success("Order created");
+                    match r.json::<TeamOrderEntry>().await {
+                        Ok(order) => { set_orders.update(|list| list.push(order)); toast_success("Order created"); }
+                        Err(e) => web_sys::console::warn_1(&format!("order create JSON parse error: {e}").into()),
                     }
                 }
                 _ => toast_error("Failed to create order"),
@@ -134,17 +141,20 @@ pub fn OrdersPage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    if let Ok(updated) = r.json::<TeamOrderEntry>().await {
-                        set_orders.update(|list| {
-                            if let Some(o) = list.iter_mut().find(|o| o.teamorders_id == updated.teamorders_id) {
-                                *o = updated.clone();
+                    match r.json::<TeamOrderEntry>().await {
+                        Ok(updated) => {
+                            set_orders.update(|list| {
+                                if let Some(o) = list.iter_mut().find(|o| o.teamorders_id == updated.teamorders_id) {
+                                    *o = updated.clone();
+                                }
+                            });
+                            if selected_order.get().map(|o| o.teamorders_id == updated.teamorders_id).unwrap_or(false) {
+                                set_selected_order.set(Some(updated));
                             }
-                        });
-                        if selected_order.get().map(|o| o.teamorders_id == updated.teamorders_id).unwrap_or(false) {
-                            set_selected_order.set(Some(updated));
+                            let msg = if currently_closed { "Order reopened" } else { "Order closed" };
+                            toast_success(msg);
                         }
-                        let msg = if currently_closed { "Order reopened" } else { "Order closed" };
-                        toast_success(msg);
+                        Err(e) => web_sys::console::warn_1(&format!("order toggle JSON parse error: {e}").into()),
                     }
                 }
                 _ => toast_error("Failed to update order"),
@@ -197,9 +207,9 @@ pub fn OrdersPage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Post, &url, Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    if let Ok(oi) = r.json::<OrderItemEntry>().await {
-                        set_order_items.update(|list| list.push(oi));
-                        toast_success("Item added to order");
+                    match r.json::<OrderItemEntry>().await {
+                        Ok(oi) => { set_order_items.update(|list| list.push(oi)); toast_success("Item added to order"); }
+                        Err(e) => web_sys::console::warn_1(&format!("order item JSON parse error: {e}").into()),
                     }
                 }
                 _ => toast_error("Failed to add item"),
@@ -333,19 +343,18 @@ pub fn OrdersPage() -> impl IntoView {
             }}
 
             <CreateOrderDialog
-                open=show_create_order
+                open=show_create_order.into()
                 on_create=do_create_order
                 on_cancel=move || set_show_create_order.set(false)
             />
 
             {move || {
-                let target = delete_target.get();
-                let (del_open, _) = signal(target.is_some());
-                let (oid, label) = target.unwrap_or_default();
+                let open = Signal::derive(move || delete_target.get().is_some());
+                let (oid, label) = delete_target.get().unwrap_or_default();
                 let oid_clone = oid.clone();
                 view! {
                     <ConfirmModal
-                        open=del_open
+                        open=open
                         title=format!("Delete Order")
                         message=format!("Are you sure you want to delete order {}?", label)
                         confirm_label="Delete"
@@ -500,266 +509,6 @@ fn OrdersList(
                             }).collect::<Vec<_>>()}
                         </tbody>
                     </table>
-                </div>
-            }.into_any()
-        }}
-    }
-}
-
-#[component]
-fn OrderDetail(
-    order: ReadSignal<Option<TeamOrderEntry>>,
-    items: ReadSignal<Vec<OrderItemEntry>>,
-    catalog: ReadSignal<Vec<ItemEntry>>,
-    loading: ReadSignal<bool>,
-    #[allow(unused)] is_admin: Signal<bool>,
-    on_add_item: impl Fn(String, i32) + 'static + Clone + Send,
-    on_remove_item: impl Fn(String) + 'static + Clone + Send,
-) -> impl IntoView {
-    let (add_item_id, set_add_item_id) = signal(String::new());
-    let (add_qty, set_add_qty) = signal("1".to_string());
-
-    view! {
-        {move || {
-            let ord = match order.get() {
-                Some(o) => o,
-                None => return view! {
-                    <div class="empty-state">
-                        <p class="text-muted">"Select an order to see its items."</p>
-                    </div>
-                }.into_any(),
-            };
-
-            if loading.get() {
-                return view! { <LoadingSpinner /> }.into_any();
-            }
-
-            let closed = ord.closed;
-            let item_list = items.get();
-            let cat = catalog.get();
-
-            // Resolve item names from catalog
-            let resolve_name = move |item_id: &str| -> String {
-                cat.iter()
-                    .find(|i| i.item_id == item_id)
-                    .map(|i| i.descr.clone())
-                    .unwrap_or_else(|| item_id.to_string())
-            };
-
-            view! {
-                <div class="card">
-                    <div class="section-title">
-                        "Order Items"
-                        {if closed {
-                            view! {
-                                <span class="connect-tag connect-tag--small connect-tag--neutral-default" style="margin-left: 8px;">"Closed"</span>
-                            }.into_any()
-                        } else {
-                            view! { <span /> }.into_any()
-                        }}
-                    </div>
-
-                    {if item_list.is_empty() {
-                        view! {
-                            <p class="text-muted">"No items in this order yet."</p>
-                        }.into_any()
-                    } else {
-                        view! {
-                            <table class="connect-table connect-table--small">
-                                <thead class="connect-table-header">
-                                    <tr>
-                                        <th class="connect-table-header-cell">"Item"</th>
-                                        <th class="connect-table-header-cell">"Qty"</th>
-                                        {(!closed).then(|| view! {
-                                            <th class="connect-table-header-cell connect-table-header-cell--actions">"Remove"</th>
-                                        })}
-                                    </tr>
-                                </thead>
-                                <tbody class="connect-table-body">
-                                    {item_list.into_iter().map(|oi| {
-                                        let name = resolve_name(&oi.orders_item_id);
-                                        let iid = oi.orders_item_id.clone();
-                                        let on_remove_item = on_remove_item.clone();
-                                        view! {
-                                            <tr class="connect-table-row">
-                                                <td class="connect-table-cell">{name}</td>
-                                                <td class="connect-table-cell">{oi.amt}</td>
-                                                {(!closed).then(|| {
-                                                    let iid = iid.clone();
-                                                    let on_remove_item = on_remove_item.clone();
-                                                    view! {
-                                                        <td class="connect-table-cell connect-table-cell--actions">
-                                                            <button
-                                                                aria-label="Remove item from order"
-                                                                class="connect-button connect-button--negative connect-button--outline connect-button--small"
-                                                                on:click=move |_| on_remove_item(iid.clone())
-                                                            >
-                                                                <span class="connect-button__content">
-                                                                    <span class="connect-button__icon">
-                                                                        <Icon kind=IconKind::Trash size=14 />
-                                                                    </span>
-                                                                </span>
-                                                            </button>
-                                                        </td>
-                                                    }
-                                                })}
-                                            </tr>
-                                        }
-                                    }).collect::<Vec<_>>()}
-                                </tbody>
-                            </table>
-                        }.into_any()
-                    }}
-
-                    // Add item form (only if order is open)
-                    {if !closed {
-                        let cat_for_select = catalog.get();
-                        let on_add_item = on_add_item.clone();
-                        view! {
-                            <div class="add-item-form" style="margin-top: var(--ds-layout-spacing-300, 16px); display: flex; gap: var(--ds-layout-spacing-200, 8px); align-items: flex-end;">
-                                <div class="connect-text-field" style="flex: 1;">
-                                    <div class="connect-label">
-                                        <label class="connect-label__text" for="add-item-select">"Item"</label>
-                                    </div>
-                                    <select
-                                        id="add-item-select"
-                                        class="connect-text-field__input"
-                                        prop:value=move || add_item_id.get()
-                                        on:change=move |ev| {
-                                            let Some(target) = ev.target() else { return; };
-                                            set_add_item_id.set(target.unchecked_into::<web_sys::HtmlSelectElement>().value());
-                                        }
-                                    >
-                                        <option value="">"Select an item..."</option>
-                                        {cat_for_select.into_iter().map(|item| {
-                                            let iid = item.item_id.clone();
-                                            view! {
-                                                <option value=iid>{format!("{} ({} kr)", item.descr, item.price)}</option>
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </select>
-                                </div>
-                                <div class="connect-text-field" style="width: 80px;">
-                                    <div class="connect-label">
-                                        <label class="connect-label__text" for="add-item-qty">"Qty"</label>
-                                    </div>
-                                    <div class="connect-text-field__input-wrapper">
-                                        <input
-                                            class="connect-text-field__input"
-                                            id="add-item-qty"
-                                            type="number"
-                                            min="1"
-                                            prop:value=move || add_qty.get()
-                                            on:input=move |ev| {
-                                                let Some(target) = ev.target() else { return; };
-                                                set_add_qty.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                            }
-                                        />
-                                    </div>
-                                </div>
-                                <button
-                                    class="connect-button connect-button--accent connect-button--small"
-                                    disabled=move || add_item_id.get().is_empty()
-                                    on:click={
-                                        let on_add_item = on_add_item.clone();
-                                        move |_| {
-                                            let qty: i32 = add_qty.get().parse().unwrap_or(1);
-                                            on_add_item(add_item_id.get(), qty);
-                                            set_add_item_id.set(String::new());
-                                            set_add_qty.set("1".to_string());
-                                        }
-                                    }
-                                >
-                                    <span class="connect-button__content">
-                                        <span class="connect-button__icon">
-                                            <Icon kind=IconKind::CirclePlus size=14 />
-                                        </span>
-                                        <span class="connect-button__label">"Add"</span>
-                                    </span>
-                                </button>
-                            </div>
-                        }.into_any()
-                    } else {
-                        view! { <span /> }.into_any()
-                    }}
-                </div>
-            }.into_any()
-        }}
-    }
-}
-
-#[component]
-fn CreateOrderDialog(
-    open: ReadSignal<bool>,
-    on_create: impl Fn(Option<String>) + 'static + Clone + Send,
-    on_cancel: impl Fn() + 'static + Clone + Send,
-) -> impl IntoView {
-    let (duedate, set_duedate) = signal(String::new());
-
-    view! {
-        {move || {
-            if !open.get() {
-                return view! { <div class="modal-hidden" /> }.into_any();
-            }
-
-            let on_create = on_create.clone();
-            let on_cancel_bd = on_cancel.clone();
-            let on_cancel_b = on_cancel.clone();
-
-            view! {
-                <div class="modal-overlay" on:click=move |_| on_cancel_bd()>
-                    <div class="modal-dialog" on:click=move |ev| ev.stop_propagation()>
-                        <div class="modal-header">
-                            <h2 class="modal-title">"New Order"</h2>
-                        </div>
-                        <div class="modal-body">
-                            <div class="connect-text-field">
-                                <div class="connect-label">
-                                    <label class="connect-label__text" for="order-due">"Due Date (optional)"</label>
-                                </div>
-                                <div class="connect-text-field__input-wrapper">
-                                    <input
-                                        class="connect-text-field__input"
-                                        id="order-due"
-                                        type="date"
-                                        prop:value=move || duedate.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return; };
-                                            set_duedate.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                        <div class="modal-footer">
-                            <button
-                                class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
-                                on:click={
-                                    let cancel = on_cancel_b.clone();
-                                    move |_| cancel()
-                                }
-                            >
-                                <span class="connect-button__content">
-                                    <span class="connect-button__label">"Cancel"</span>
-                                </span>
-                            </button>
-                            <button
-                                class="connect-button connect-button--accent connect-button--medium"
-                                on:click={
-                                    let create = on_create.clone();
-                                    move |_| {
-                                        let d = duedate.get();
-                                        create(if d.is_empty() { None } else { Some(d) });
-                                        set_duedate.set(String::new());
-                                    }
-                                }
-                            >
-                                <span class="connect-button__content">
-                                    <span class="connect-button__label">"Create"</span>
-                                </span>
-                            </button>
-                        </div>
-                    </div>
                 </div>
             }.into_any()
         }}

@@ -50,21 +50,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Problem: Missing tests for: `PUT /users/{nonexistent}`, `PUT /teams/{nonexistent}`, `PUT /roles/{nonexistent}`, `PUT /items/{nonexistent}`, `PUT /teams/{tid}/orders/{nonexistent}`, `PUT /teams/{tid}/orders/{oid}/items/{nonexistent}`.
   - Source commands: `test-gaps`
 
-### Frontend — Signal-Inside-Reactive-Closure Anti-Pattern in 5 Pages
-
-- [ ] **#317 — `teams.rs`, `orders.rs`, `items.rs`, `roles.rs`, `admin.rs` create signals inside `move || {}` closures**
-  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
-  - Problem: Creating `ReadSignal`/`WriteSignal` pairs inside move closures leaks reactive nodes.
-  - Fix: Use `StoredValue` or move signal creation outside closures into component scope.
-  - Source commands: `review`
-
-### Frontend — `sleep_ms` Uses `js_sys::eval` in Production Code
-
-- [ ] **#320 — `sleep_ms` helper uses `js_sys::eval` to create a Promise-based sleep**
-  - Files: `frontend/src/api.rs` (line ~372), `frontend/src/components/toast.rs` (line ~75)
-  - Problem: `eval` is a code-smell in production (CSP implications, fragility).
-  - Source commands: `review`
-
 ### Frontend — Uses `String` for UUIDs Everywhere
 
 - [ ] **#321 — No type safety for UUID fields in frontend API types**
@@ -198,40 +183,12 @@ This file is **generated and maintained by the project assessment process** defi
   - File: `src/errors.rs` (lines ~124–140)
   - Source commands: `test-gaps`
 
-### Frontend — `authed_request` Collapses All Errors to `Option`
-
-- [ ] **#364 — `authed_request()` returns `Option<Response>`, discarding HTTP error codes and network errors**
-  - File: `frontend/src/api.rs` (lines ~266–296)
-  - Problem: Callers cannot distinguish 403 (forbidden) from 500 (server error) from network failure. All treated identically as `None`.
-  - Source commands: `review`
-
 ### API Completeness — Frontend `ItemEntry.price` Typed as `String`
 
 - [ ] **#366 — Frontend `ItemEntry` uses `pub price: String` instead of a numeric type**
   - File: `frontend/src/api.rs`
   - Problem: Backend returns `numeric(10,2)` as a JSON number; frontend deserializes as `String` which works but loses type safety for display and arithmetic.
   - Source commands: `api-completeness`
-
-### Frontend — Create Dialogs Don't Reset Form State on Cancel
-
-- [ ] **#367 — Closing a create dialog without submitting leaves stale values in form fields**
-  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
-  - Problem: When user opens "New Team" dialog, types partial data, then cancels, reopening the dialog shows the previously typed values.
-  - Fix: Reset form signals in the cancel/close handler.
-  - Source commands: `review`
-
-### Frontend — `OrderDetail` Add-Item Form Doesn't Reset on Order Change
-
-- [ ] **#368 — Selecting a different order retains the previously selected item and quantity in the add-item form**
-  - File: `frontend/src/pages/orders.rs`
-  - Source commands: `review`
-
-### Frontend — Fetch JSON Deserialization Errors Silently Swallowed in 5 Pages
-
-- [ ] **#369 — `.json::<T>().await.unwrap_or_default()` hides deserialization failures**
-  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
-  - Problem: If the backend response schema changes, the frontend silently shows empty data instead of reporting an error.
-  - Source commands: `review`
 
 ### Documentation — `db-review.md` Factually Incorrect Description of `init_dev_db.sh`
 
@@ -268,19 +225,6 @@ This file is **generated and maintained by the project assessment process** defi
 - [ ] **#375 — `CreateTeamEntry`/`UpdateTeamEntry`, `CreateRoleEntry`/`UpdateRoleEntry`, `CreateItemEntry`/`UpdateItemEntry` have identical fields**
   - File: `src/models.rs`
   - Problem: 3 pairs of structs are field-identical. Could be unified or type-aliased to reduce boilerplate.
-  - Source commands: `review`
-
-### Code Quality — `healthcheck.rs` Builds Unused `root_store` Variable
-
-- [ ] **#377 — `root_store` is created then shadowed or never read in the healthcheck binary**
-  - File: `src/bin/healthcheck.rs`
-  - Source commands: `review`
-
-### Code Quality — `db_tls_connector` Panics Instead of Returning Result
-
-- [ ] **#378 — `db_tls_connector()` in `server.rs` uses `.expect()` on certificate loading, panicking at runtime if certs are missing**
-  - File: `src/server.rs`
-  - Problem: A missing cert file causes a panic with no structured error. Should return `Result` and let the caller handle it.
   - Source commands: `review`
 
 ### Security — Password Fields Lack `autocomplete="new-password"`
@@ -490,13 +434,6 @@ This file is **generated and maintained by the project assessment process** defi
   - File: `src/middleware/auth.rs`
   - Source commands: `review`
 
-### Code Quality — OrdersPage File Exceeds 700 Lines
-
-- [ ] **#456 — Contains `OrdersPage`, `OrderDetail`, `CreateOrderDialog`, `LoadingSpinner` — hard to navigate**
-  - File: `frontend/src/pages/orders.rs`
-  - Fix: Extract `OrderDetail` and `CreateOrderDialog` into components or submodule.
-  - Source commands: `review`
-
 ### API Completeness — `OrderItemEntry` vs Backend `OrderEntry` Naming Inconsistency
 
 - [ ] **#457 — Frontend renames the struct for clarity but creates naming mismatch with backend**
@@ -558,4 +495,4 @@ See that file for the full history of resolved findings.
 - Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 90+ informational.
 - 5 new findings in this assessment: #500–#504 (all documentation, all fixed). 0 regressions found.
 - Highest finding number: #504.
-- 345 resolved items in `.claude/resolved-findings.md`.
+- 354 resolved items in `.claude/resolved-findings.md`.
