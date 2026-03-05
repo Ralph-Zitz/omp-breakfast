@@ -410,10 +410,13 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 Before committing any changes, **all** applicable test suites must pass:
 
-1. Run `cargo test` (unit tests — must show 0 failures)
-2. Run `make test-integration` (integration tests — must show 0 failures)
-3. Run `make test-frontend` (frontend WASM tests — must show 0 failures)
+1. Run `cargo fmt --all` to format all Rust source files (backend + frontend) before staging
+2. Run `cargo test` (unit tests — must show 0 failures)
+3. Run `make test-integration` (integration tests — must show 0 failures)
+4. Run `make test-frontend` (frontend WASM tests — must show 0 failures)
 
-Do not commit if any test suite fails. If only frontend code changed, step 2 may be skipped. If only backend code changed, step 3 may be skipped.
+Do not commit if any test suite fails. If only frontend code changed, step 3 may be skipped. If only backend code changed, step 4 may be skipped.
+
+Always run `cargo fmt --all` regardless of which files changed — the formatter must run before `git add`.
 
 When asked to "run all tests", run all three suites (or equivalently `make test-all`).
