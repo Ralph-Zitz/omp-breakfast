@@ -37,32 +37,30 @@ COPY rds-ca-rsa2048-g1.pem /usr/local/share/ca-certificates/
 COPY localhost_ca.pem /usr/local/share/ca-certificates/
 RUN update-ca-certificates
 COPY . /app
-COPY .git/ ./.git/
+COPY .git/ /app/.git/
 WORKDIR /app
 # Install build OS dependencies
 # Copy in dependencies
 COPY --from=cacher /app/target target
 COPY --from=cacher /usr/local/cargo /usr/local/cargo
 # Build for release
-RUN cargo build --release
-RUN strip -s /app/target/release/breakfast
-RUN strip -s /app/target/release/healthcheck
+RUN cargo build --release \
+    && strip -s /app/target/release/breakfast \
+    && strip -s /app/target/release/healthcheck
 
 # Stage 4 - build frontend (WASM via Trunk)
 FROM rust:1.93.1 AS frontend-builder
-RUN rustup target add wasm32-unknown-unknown
-RUN cargo install trunk
+RUN rustup target add wasm32-unknown-unknown && cargo install trunk
 WORKDIR /frontend
 # Copy only the frontend crate for better layer caching
 COPY frontend/ .
 # Copy design system CSS sources (needed by bundle-css.sh to inline @import chains)
 COPY connect-design-system/ /connect-design-system
 # Bundle CSS: resolves all @import statements into a single flat file
-RUN ./bundle-css.sh
-RUN trunk build --release
+RUN ./bundle-css.sh && trunk build --release
 
 # Stage 5 - Copy binary, frontend, and settings to final container
-FROM gcr.io/distroless/cc-debian13
+FROM gcr.io/distroless/cc-debian13@sha256:8c1a496b055d36c222e95ebd5c53bdd1fee447689a97ad889febca8380d578ec
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
@@ -70,17 +68,17 @@ COPY --from=builder /etc/ssl/certs /etc/ssl/certs
 # PRODUCTION: Replace these COPY lines with runtime volume/secret mounts:
 #   docker run -v /path/to/certs:/certs:ro ...
 #   or use Docker/Kubernetes secrets
-COPY --chown=web:web localhost.pem localhost.pem
-COPY --chown=web:web localhost_key.pem localhost_key.pem
-COPY --chown=web:web localhost_ca.pem localhost_ca.pem
+COPY --chown=web:web localhost.pem /localhost.pem
+COPY --chown=web:web localhost_key.pem /localhost_key.pem
+COPY --chown=web:web localhost_ca.pem /localhost_ca.pem
 COPY localhost_ca.pem /etc/ssl/certs/
-COPY --chown=web:web rds-ca-rsa2048-g1.pem rds-ca-rsa2048-g1.pem
+COPY --chown=web:web rds-ca-rsa2048-g1.pem /rds-ca-rsa2048-g1.pem
 COPY rds-ca-rsa2048-g1.pem /etc/ssl/certs/
 COPY --from=builder --chown=web:web /app/target/release/breakfast /breakfast
 COPY --from=builder --chown=web:web /app/target/release/healthcheck /healthcheck
 # Use the sanitized base config without plaintext secrets (secrets come from env vars)
 COPY --chown=web:web config/docker-base.yml /config/default.yml
-COPY --chown=web:web config/production.yml config/production.yml
+COPY --chown=web:web config/production.yml /config/production.yml
 # Copy built frontend assets
 COPY --from=frontend-builder --chown=web:web /frontend/dist /frontend/dist
 USER web:web
