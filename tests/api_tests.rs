@@ -1068,7 +1068,7 @@ async fn create_duplicate_item_returns_409() {
     let req = test::TestRequest::post()
         .uri("/api/v1.0/items")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"descr": "duplicate-test-item", "price": "1.00"}))
+        .set_json(json!({"descr": "zzz-duplicate-test-item", "price": "1.00"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -1077,7 +1077,7 @@ async fn create_duplicate_item_returns_409() {
     let req = test::TestRequest::post()
         .uri("/api/v1.0/items")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"descr": "duplicate-test-item", "price": "2.00"}))
+        .set_json(json!({"descr": "zzz-duplicate-test-item", "price": "2.00"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -1095,7 +1095,7 @@ async fn create_duplicate_item_returns_409() {
     let items = paginated_items(test::read_body_json(resp).await);
     if let Some(item) = items
         .iter()
-        .find(|i| i["descr"].as_str() == Some("duplicate-test-item"))
+        .find(|i| i["descr"].as_str() == Some("zzz-duplicate-test-item"))
     {
         let item_id = item["item_id"].as_str().unwrap();
         let req = test::TestRequest::delete()

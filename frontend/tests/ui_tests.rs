@@ -2203,3 +2203,883 @@ async fn test_server_error_login_shows_500_message() {
     remove_test_container(id);
     restore_fetch();
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 13 · Table alignment & spacing guideline tests
+//
+// These tests enforce the two design rules from CLAUDE.md:
+//   - Every <th> must carry .connect-table-header-cell so the global
+//     `text-align: left; vertical-align: middle` rules in main.css apply.
+//   - Actions columns must carry .connect-table-header-cell--actions /
+//     .connect-table-cell--actions so `width: auto` and `gap` are applied,
+//     preventing buttons from being clipped or wrapping to a new line.
+//   - No inline `width` style ≤ 100 px on actions cells (regression guard
+//     against re-introducing the old `width: 80px` that broke row separators).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Returns `true` when every `<th>` inside any `<table>` in the container
+/// carries the `.connect-table-header-cell` class.
+fn all_th_have_connect_class(container_id: &str) -> bool {
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const ths = document.getElementById("{id}").querySelectorAll("table th");
+            if (ths.length === 0) return false;
+            for (const th of ths) {{
+                if (!th.classList.contains("connect-table-header-cell")) return false;
+            }}
+            return true;
+        }})()"#,
+        id = container_id
+    ))
+    .ok()
+    .and_then(|v| v.as_bool())
+    .unwrap_or(false)
+}
+
+/// Returns `true` when no element matching `selector` carries an inline
+/// `width` style with a narrow hard-coded pixel value (≤ 100 px).
+fn no_narrow_inline_width(container_id: &str, selector: &str) -> bool {
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const els = document.getElementById("{id}").querySelectorAll("{sel}");
+            for (const el of els) {{
+                const s = el.getAttribute("style") || "";
+                const m = s.match(/width\s*:\s*(\d+)px/i);
+                if (m && parseInt(m[1]) <= 100) return false;
+            }}
+            return true;
+        }})()"#,
+        id = container_id,
+        sel = selector
+    ))
+    .ok()
+    .and_then(|v| v.as_bool())
+    .unwrap_or(true)
+}
+
+/// Returns the number of `<button>` elements inside the first element
+/// matching `selector` in the container.
+fn button_count_in(container_id: &str, selector: &str) -> u32 {
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const cell = document.getElementById("{id}").querySelector("{sel}");
+            return cell ? cell.querySelectorAll("button").length : 0;
+        }})()"#,
+        id = container_id,
+        sel = selector
+    ))
+    .ok()
+    .and_then(|v| v.as_f64())
+    .map(|n| n as u32)
+    .unwrap_or(0)
+}
+
+// ── 13a · Header-cell class coverage ────────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_admin_table_th_have_connect_header_class() {
+    let id = "t-align-admin-th";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    assert!(
+        has_element(id, "table.connect-table"),
+        "admin table must be present"
+    );
+    assert!(
+        all_th_have_connect_class(id),
+        "every <th> in the admin table must carry .connect-table-header-cell \
+         so the global text-align:left rule is applied"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_items_table_th_have_connect_header_class() {
+    let id = "t-align-items-th";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Items");
+    flush(500).await;
+
+    assert!(
+        has_element(id, "table.connect-table"),
+        "items table must be present"
+    );
+    assert!(
+        all_th_have_connect_class(id),
+        "every <th> in the items table must carry .connect-table-header-cell"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_roles_table_th_have_connect_header_class() {
+    let id = "t-align-roles-th";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Roles");
+    flush(500).await;
+
+    assert!(
+        has_element(id, "table.connect-table"),
+        "roles table must be present"
+    );
+    assert!(
+        all_th_have_connect_class(id),
+        "every <th> in the roles table must carry .connect-table-header-cell"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_teams_table_th_have_connect_header_class() {
+    let id = "t-align-teams-th";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Teams");
+    flush(500).await;
+
+    assert!(
+        has_element(id, "table.connect-table"),
+        "teams table must be present"
+    );
+    assert!(
+        all_th_have_connect_class(id),
+        "every <th> in the teams table must carry .connect-table-header-cell"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 13b · Actions-column modifier class coverage ────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_admin_actions_column_has_actions_modifier() {
+    let id = "t-align-admin-actions";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    assert!(
+        has_element(id, "th.connect-table-header-cell--actions"),
+        "admin actions <th> must carry .connect-table-header-cell--actions \
+         so width:auto and gap are applied to prevent button clipping"
+    );
+    assert!(
+        has_element(id, "td.connect-table-cell--actions"),
+        "admin actions <td> must carry .connect-table-cell--actions"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_items_actions_column_has_actions_modifier() {
+    let id = "t-align-items-actions";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Items");
+    flush(500).await;
+
+    assert!(
+        has_element(id, "th.connect-table-header-cell--actions"),
+        "items actions <th> must carry .connect-table-header-cell--actions"
+    );
+    assert!(
+        has_element(id, "td.connect-table-cell--actions"),
+        "items actions <td> must carry .connect-table-cell--actions"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_roles_actions_column_has_actions_modifier() {
+    let id = "t-align-roles-actions";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Roles");
+    flush(500).await;
+
+    assert!(
+        has_element(id, "th.connect-table-header-cell--actions"),
+        "roles actions <th> must carry .connect-table-header-cell--actions"
+    );
+    assert!(
+        has_element(id, "td.connect-table-cell--actions"),
+        "roles actions <td> must carry .connect-table-cell--actions"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 13c · No narrow inline width on actions cells (regression guard) ─────────
+
+#[wasm_bindgen_test]
+async fn test_admin_actions_cell_has_no_narrow_inline_width() {
+    let id = "t-align-admin-width";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    assert!(
+        no_narrow_inline_width(id, "td.connect-table-cell--actions"),
+        "admin actions cells must not carry a narrow inline width (≤ 100 px) \
+         — this would clip buttons and break the row-separator line"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_items_actions_cell_has_no_narrow_inline_width() {
+    let id = "t-align-items-width";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Items");
+    flush(500).await;
+
+    assert!(
+        no_narrow_inline_width(id, "td.connect-table-cell--actions"),
+        "items actions cells must not carry a narrow inline width (≤ 100 px)"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 13d · Actions cells contain multiple sibling buttons ────────────────────
+
+#[wasm_bindgen_test]
+async fn test_admin_actions_cell_contains_multiple_buttons() {
+    let id = "t-align-admin-btns";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    // Admin row renders Edit + Reset-password + Delete (≥ 3 buttons in one cell).
+    // Having ≥ 2 confirms multiple buttons coexist in the same actions cell,
+    // which is the scenario that required the width:auto + gap fix.
+    let count = button_count_in(id, "td.connect-table-cell--actions");
+    assert!(
+        count >= 2,
+        "admin actions cell must contain at least 2 action buttons, found {}",
+        count
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_items_actions_cell_contains_multiple_buttons() {
+    let id = "t-align-items-btns";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Items");
+    flush(500).await;
+
+    let count = button_count_in(id, "td.connect-table-cell--actions");
+    assert!(
+        count >= 2,
+        "items actions cell must contain at least 2 action buttons (edit + delete), found {}",
+        count
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 14 · Admin password reset tests
+//
+// Tests for the ResetPasswordDialog component and the reset-password workflow
+// in AdminPage:
+//   - Key-icon button present for non-self rows, absent for the logged-in
+//     admin's own row
+//   - Clicking the button opens ResetPasswordDialog with the correct title
+//     and the target user's name in the body text
+//   - New-password and confirm fields are rendered (#reset-pw-new /
+//     #reset-pw-confirm)
+//   - Save ("Reset Password") is disabled until: both fields are filled,
+//     the new password is ≥ 8 characters, and the two values match
+//   - "Passwords do not match" error message appears on a mismatch and
+//     disappears once they match
+//   - Cancel dismisses the dialog without submitting
+//   - A successful PUT response triggers a "Password reset successfully" toast
+//     and closes the dialog automatically
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Install a fetch mock based on `install_mock_fetch_full` with two changes:
+///   1. The user list contains a **second** user ("Jane Smith") in addition to
+///      the logged-in admin (John). Without a second user the action buttons
+///      are never rendered because `!is_self()` is false for John's own row.
+///   2. A PUT handler for `/api/v1.0/users/*` returns HTTP 200 so the
+///      password-reset submission path can be tested end-to-end.
+fn install_mock_fetch_full_with_second_user() {
+    let token = mock_token("12345678-1234-1234-1234-1234567890ab");
+    let js = format!(
+        r#"(() => {{
+            window.__original_fetch = window.fetch;
+            window.fetch = function(input, init) {{
+                var url = (typeof input === 'string') ? input : input.url;
+                var method = 'GET';
+                if (init && init.method) {{ method = init.method; }}
+                else if (typeof input !== 'string' && input.method) {{ method = input.method; }}
+
+                // POST /auth (login)
+                if (url.endsWith('/auth') && method === 'POST' && !url.includes('/refresh')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{access_token:"{token}",refresh_token:"mock_refresh",token_type:"Bearer",expires_in:900}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                // POST /auth/revoke
+                if (url.includes('/auth/revoke')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                // GET /api/v1.0/users/*/teams
+                if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[{{"team_id":"aaaaaaaa-1234-1234-1234-1234567890ab","tname":"Core Team","title":"Admin","firstname":"John","lastname":"Doe","joined":"2025-01-01T00:00:00Z","role_changed":"2025-01-01T00:00:00Z"}}],"total":1,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                // PUT /api/v1.0/users/* — password / profile update (returns 200)
+                if (url.match(/\/api\/v1\.0\/users\/[^/]+$/) && method === 'PUT') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"user_id":"eeee5555-0000-0000-0000-000000000001","firstname":"Jane","lastname":"Smith","email":"jane@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                // GET /api/v1.0/users/* (single user)
+                if (url.match(/\/api\/v1\.0\/users\/[^/]+$/) && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"user_id":"12345678-1234-1234-1234-1234567890ab","firstname":"John","lastname":"Doe","email":"john@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                // GET /api/v1.0/users (list) — John + Jane so Jane's row gets action buttons
+                if (url.split('?')[0].endsWith('/api/v1.0/users') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[
+                            {{"user_id":"12345678-1234-1234-1234-1234567890ab","firstname":"John","lastname":"Doe","email":"john@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}},
+                            {{"user_id":"eeee5555-0000-0000-0000-000000000001","firstname":"Jane","lastname":"Smith","email":"jane@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}
+                        ],"total":2,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.match(/\/api\/v1\.0\/teams\/[^/]+\/users/) && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.split('?')[0].endsWith('/api/v1.0/teams') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[{{"team_id":"bbbb2222-0000-0000-0000-000000000001","tname":"Core Team","descr":"The core breakfast team","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}],"total":1,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.split('?')[0].endsWith('/api/v1.0/items') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.split('?')[0].endsWith('/api/v1.0/roles') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[{{"role_id":"dddd4444-0000-0000-0000-000000000001","title":"Admin","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}],"total":1,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                return Promise.resolve(new Response("Not Found", {{status:404}}));
+            }};
+        }})()"#,
+        token = token
+    );
+    js_sys::eval(&js).expect("install_mock_fetch_full_with_second_user failed");
+}
+
+/// Returns `true` if the button whose inner text contains `label_text`
+/// inside `.modal-footer` has its `disabled` property set to `true`.
+fn is_modal_button_disabled(container_id: &str, label_text: &str) -> bool {
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const footer = document.getElementById("{id}").querySelector(".modal-footer");
+            if (!footer) return true;
+            for (const btn of footer.querySelectorAll("button")) {{
+                if (btn.textContent.includes("{lbl}")) return btn.disabled;
+            }}
+            return true;
+        }})()"#,
+        id = container_id,
+        lbl = label_text
+    ))
+    .ok()
+    .and_then(|v| v.as_bool())
+    .unwrap_or(true)
+}
+
+// ── 14a · Button presence ────────────────────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_reset_password_button_present_for_other_users() {
+    let id = "t-rpw-btn-present";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    assert!(
+        has_element(id, "button[aria-label='Reset password']"),
+        "a 'Reset password' button must be present for non-self rows"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_reset_password_button_absent_for_self() {
+    let id = "t-rpw-btn-self";
+    clear_tokens();
+    // install_mock_fetch_full returns only John (the logged-in admin) in the
+    // user list, so is_self() is true — no action buttons should be rendered.
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    assert!(
+        !has_element(id, "button[aria-label='Reset password']"),
+        "the 'Reset password' button must NOT appear for the logged-in admin's own row"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 14b · Dialog opens with correct structure ────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_reset_password_dialog_opens_on_click() {
+    let id = "t-rpw-dialog-open";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    assert!(
+        !has_element(id, ".modal-overlay"),
+        "no modal should be open before clicking the reset button"
+    );
+
+    click_button(id, "button[aria-label='Reset password']");
+    flush(200).await;
+
+    assert!(
+        has_element(id, ".modal-overlay"),
+        "the reset-password dialog must appear after clicking the key button"
+    );
+    let html = inner_html(id);
+    assert!(
+        html.contains("Reset Password"),
+        "dialog title must contain 'Reset Password', got: {}",
+        html
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_reset_password_dialog_shows_target_user_name() {
+    let id = "t-rpw-dialog-name";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+    click_button(id, "button[aria-label='Reset password']");
+    flush(200).await;
+
+    let html = inner_html(id);
+    // The dialog body contains "Set a new password for <strong>{name}</strong>"
+    assert!(
+        html.contains("Jane") || html.contains("Smith"),
+        "the dialog body must mention the target user's name, got: {}",
+        html
+    );
+    assert!(
+        has_element(id, "#reset-pw-new"),
+        "new-password input (#reset-pw-new) must be present"
+    );
+    assert!(
+        has_element(id, "#reset-pw-confirm"),
+        "confirm-password input (#reset-pw-confirm) must be present"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 14c · Save-button disabled states ───────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_reset_password_save_disabled_when_fields_empty() {
+    let id = "t-rpw-disabled-empty";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+    click_button(id, "button[aria-label='Reset password']");
+    flush(200).await;
+
+    assert!(
+        is_modal_button_disabled(id, "Reset Password"),
+        "Save button must be disabled when both password fields are empty"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_reset_password_save_disabled_when_password_too_short() {
+    let id = "t-rpw-disabled-short";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+    click_button(id, "button[aria-label='Reset password']");
+    flush(200).await;
+
+    // "short" is only 5 characters — below the 8-character minimum
+    set_input(id, "#reset-pw-new", "short");
+    set_input(id, "#reset-pw-confirm", "short");
+    flush(100).await;
+
+    assert!(
+        is_modal_button_disabled(id, "Reset Password"),
+        "Save button must be disabled when the password is shorter than 8 characters"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_reset_password_save_disabled_when_passwords_mismatch() {
+    let id = "t-rpw-disabled-mismatch";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+    click_button(id, "button[aria-label='Reset password']");
+    flush(200).await;
+
+    set_input(id, "#reset-pw-new", "password123");
+    set_input(id, "#reset-pw-confirm", "different999");
+    flush(100).await;
+
+    assert!(
+        is_modal_button_disabled(id, "Reset Password"),
+        "Save button must be disabled when new and confirm passwords do not match"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_reset_password_save_enabled_when_valid() {
+    let id = "t-rpw-enabled";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+    click_button(id, "button[aria-label='Reset password']");
+    flush(200).await;
+
+    set_input(id, "#reset-pw-new", "newpassword1");
+    set_input(id, "#reset-pw-confirm", "newpassword1");
+    flush(100).await;
+
+    assert!(
+        !is_modal_button_disabled(id, "Reset Password"),
+        "Save button must be enabled when both fields match and are ≥ 8 characters"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 14d · Mismatch error message ────────────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_reset_password_mismatch_error_shown() {
+    let id = "t-rpw-mismatch-msg";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+    click_button(id, "button[aria-label='Reset password']");
+    flush(200).await;
+
+    set_input(id, "#reset-pw-new", "password123");
+    set_input(id, "#reset-pw-confirm", "wrongpass1");
+    flush(100).await;
+
+    let html = inner_html(id);
+    assert!(
+        html.contains("Passwords do not match"),
+        "mismatch error message must appear when confirm ≠ new password, got: {}",
+        html
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_reset_password_mismatch_error_hidden_when_matching() {
+    let id = "t-rpw-no-mismatch";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+    click_button(id, "button[aria-label='Reset password']");
+    flush(200).await;
+
+    set_input(id, "#reset-pw-new", "matchingpw1");
+    set_input(id, "#reset-pw-confirm", "matchingpw1");
+    flush(100).await;
+
+    let html = inner_html(id);
+    assert!(
+        !html.contains("Passwords do not match"),
+        "mismatch error must be hidden when both passwords are equal"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 14e · Cancel dismisses the dialog ───────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_reset_password_cancel_closes_dialog() {
+    let id = "t-rpw-cancel";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+    click_button(id, "button[aria-label='Reset password']");
+    flush(200).await;
+
+    assert!(
+        has_element(id, ".modal-overlay"),
+        "dialog should be open before cancel"
+    );
+
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const footer = document.getElementById("{}").querySelector(".modal-footer");
+            if (!footer) return;
+            for (const btn of footer.querySelectorAll("button")) {{
+                if (btn.textContent.includes("Cancel")) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("cancel click failed");
+    flush(200).await;
+
+    assert!(
+        !has_element(id, ".modal-overlay"),
+        "the reset-password dialog must be closed after clicking Cancel"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 14f · Successful submission ──────────────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_reset_password_success_shows_toast_and_closes_dialog() {
+    let id = "t-rpw-success";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    click_button(id, "button[aria-label='Reset password']");
+    flush(200).await;
+
+    set_input(id, "#reset-pw-new", "newpassword1");
+    set_input(id, "#reset-pw-confirm", "newpassword1");
+    flush(100).await;
+
+    // Click the enabled "Reset Password" save button
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const footer = document.getElementById("{}").querySelector(".modal-footer");
+            if (!footer) return;
+            for (const btn of footer.querySelectorAll("button")) {{
+                if (btn.textContent.includes("Reset Password") && !btn.disabled) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("save click failed");
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(
+        html.contains("Password reset successfully"),
+        "a success toast must appear after the PUT succeeds, got: {}",
+        html
+    );
+    assert!(
+        !has_element(id, ".modal-overlay"),
+        "the dialog must be closed automatically after a successful reset"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}

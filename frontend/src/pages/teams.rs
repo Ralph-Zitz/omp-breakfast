@@ -34,7 +34,7 @@ pub fn TeamsPage() -> impl IntoView {
     // Fetch teams on mount
     let fetch_teams = move |off: usize| {
         set_loading.set(true);
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams?limit={}&offset={}", limit, off);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
@@ -52,7 +52,7 @@ pub fn TeamsPage() -> impl IntoView {
     let load_members = move |team_id: String| {
         set_selected_team.set(Some(team_id.clone()));
         set_members_loading.set(true);
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/users", team_id);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
@@ -68,7 +68,7 @@ pub fn TeamsPage() -> impl IntoView {
 
     let do_update_team = move |team_id: String, name: String, descr: Option<String>| {
         let body = serde_json::json!({ "tname": name, "descr": descr });
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}", team_id);
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
@@ -93,7 +93,7 @@ pub fn TeamsPage() -> impl IntoView {
     };
 
     let open_add_member = move |_team_id: String| {
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             if let Some(r) = authed_get("/api/v1.0/users").await {
                 if r.ok() {
                     match r.json::<PaginatedResponse<UserEntry>>().await {
@@ -120,7 +120,7 @@ pub fn TeamsPage() -> impl IntoView {
             None => return,
         };
         let body = serde_json::json!({ "user_id": user_id, "role_id": role_id });
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/users", team_id);
             let resp = authed_request(HttpMethod::Post, &url, Some(&body)).await;
             match resp {
@@ -151,7 +151,7 @@ pub fn TeamsPage() -> impl IntoView {
             Some(id) => id,
             None => return,
         };
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/users/{}", team_id, user_id);
             let resp = authed_request(HttpMethod::Delete, &url, None).await;
             match resp {
@@ -171,7 +171,7 @@ pub fn TeamsPage() -> impl IntoView {
             None => return,
         };
         let body = serde_json::json!({ "role_id": role_id });
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/users/{}", team_id, user_id);
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
@@ -195,7 +195,7 @@ pub fn TeamsPage() -> impl IntoView {
 
     let do_create_team = move |name: String, descr: Option<String>| {
         let body = serde_json::json!({ "tname": name, "descr": descr });
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let resp = authed_request(HttpMethod::Post, "/api/v1.0/teams", Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
@@ -211,7 +211,7 @@ pub fn TeamsPage() -> impl IntoView {
     };
 
     let do_delete_team = move |team_id: String| {
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}", team_id);
             let resp = authed_request(HttpMethod::Delete, &url, None).await;
             match resp {

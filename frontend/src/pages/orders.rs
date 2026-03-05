@@ -43,7 +43,7 @@ pub fn OrdersPage() -> impl IntoView {
     let is_admin = Signal::derive(move || user.get().map(|u| u.is_admin).unwrap_or(false));
 
     // Fetch user's teams on mount
-    wasm_bindgen_futures::spawn_local(async move {
+    leptos::task::spawn_local_scoped(async move {
         if let Some(resp) = authed_get("/api/v1.0/teams").await {
             if resp.ok() {
                 match resp.json::<PaginatedResponse<TeamEntry>>().await {
@@ -71,7 +71,7 @@ pub fn OrdersPage() -> impl IntoView {
         set_order_items.set(Vec::new());
         set_loading_orders.set(true);
 
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/orders", team_id);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
@@ -91,7 +91,7 @@ pub fn OrdersPage() -> impl IntoView {
         set_selected_order.set(Some(order.clone()));
         set_loading_items.set(true);
 
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/orders/{}/items", team_id, order_id);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
@@ -114,7 +114,7 @@ pub fn OrdersPage() -> impl IntoView {
             Some(d) if !d.is_empty() => serde_json::json!({ "duedate": d }),
             _ => serde_json::json!({}),
         };
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/orders", team_id);
             let resp = authed_request(HttpMethod::Post, &url, Some(&body)).await;
             match resp {
@@ -136,7 +136,7 @@ pub fn OrdersPage() -> impl IntoView {
             None => return,
         };
         let body = serde_json::json!({ "closed": !currently_closed });
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id);
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
@@ -167,7 +167,7 @@ pub fn OrdersPage() -> impl IntoView {
             Some(id) => id,
             None => return,
         };
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id);
             let resp = authed_request(HttpMethod::Delete, &url, None).await;
             match resp {
@@ -202,7 +202,7 @@ pub fn OrdersPage() -> impl IntoView {
         let order_id = order.teamorders_id.clone();
         let body = serde_json::json!({ "orders_item_id": item_id, "amt": amt });
 
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/orders/{}/items", team_id, order_id);
             let resp = authed_request(HttpMethod::Post, &url, Some(&body)).await;
             match resp {
@@ -228,7 +228,7 @@ pub fn OrdersPage() -> impl IntoView {
         };
         let order_id = order.teamorders_id.clone();
 
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!(
                 "/api/v1.0/teams/{}/orders/{}/items/{}",
                 team_id, order_id, item_id

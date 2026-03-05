@@ -26,7 +26,7 @@ pub fn ItemsPage() -> impl IntoView {
     // Fetch items on mount
     let fetch_items = move |off: usize| {
         set_loading.set(true);
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/items?limit={}&offset={}", limit, off);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
@@ -43,7 +43,7 @@ pub fn ItemsPage() -> impl IntoView {
 
     let do_create_item = move |descr: String, price: String| {
         let body = serde_json::json!({ "descr": descr, "price": price });
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let resp = authed_request(HttpMethod::Post, "/api/v1.0/items", Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
@@ -60,7 +60,7 @@ pub fn ItemsPage() -> impl IntoView {
 
     let do_update_item = move |item_id: String, descr: String, price: String| {
         let body = serde_json::json!({ "descr": descr, "price": price });
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/items/{}", item_id);
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
@@ -85,7 +85,7 @@ pub fn ItemsPage() -> impl IntoView {
     };
 
     let do_delete_item = move |item_id: String| {
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/items/{}", item_id);
             let resp = authed_request(HttpMethod::Delete, &url, None).await;
             match resp {

@@ -67,7 +67,7 @@ pub fn ProfilePage() -> impl IntoView {
             body["current_password"] = serde_json::Value::String(cur_pw_val);
         }
 
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/users/{}", user_id);
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {

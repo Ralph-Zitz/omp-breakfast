@@ -16,6 +16,7 @@ pub fn AdminPage() -> impl IntoView {
     let (show_create, set_show_create) = signal(false);
     let (delete_target, set_delete_target) = signal(Option::<(String, String)>::None);
     let (edit_target, set_edit_target) = signal(Option::<UserEntry>::None);
+    let (reset_pw_target, set_reset_pw_target) = signal(Option::<(String, String)>::None); // (user_id, name)
     let (offset, set_offset) = signal(0usize);
     let (total, set_total) = signal(0usize);
     let limit = 50usize;
@@ -25,7 +26,7 @@ pub fn AdminPage() -> impl IntoView {
     // Fetch all users on mount
     let fetch_users = move |off: usize| {
         set_loading.set(true);
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/users?limit={}&offset={}", limit, off);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
@@ -46,7 +47,7 @@ pub fn AdminPage() -> impl IntoView {
             "lastname": ln,
             "email": em,
         });
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/users/{}", user_id);
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
@@ -76,7 +77,7 @@ pub fn AdminPage() -> impl IntoView {
             "email": em,
             "password": pw,
         });
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let resp = authed_request(HttpMethod::Post, "/api/v1.0/users", Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
@@ -91,8 +92,21 @@ pub fn AdminPage() -> impl IntoView {
         });
     };
 
+    let do_reset_password = move |user_id: String, new_password: String| {
+        let body = serde_json::json!({ "password": new_password });
+        leptos::task::spawn_local_scoped(async move {
+            let url = format!("/api/v1.0/users/{}", user_id);
+            let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
+            match resp {
+                Some(r) if r.ok() => toast_success("Password reset successfully"),
+                _ => toast_error("Failed to reset password"),
+            }
+            set_reset_pw_target.set(None);
+        });
+    };
+
     let do_delete_user = move |user_id: String| {
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/users/{}", user_id);
             let resp = authed_request(HttpMethod::Delete, &url, None).await;
             match resp {
@@ -173,7 +187,9 @@ pub fn AdminPage() -> impl IntoView {
                                             <td class="connect-table-cell">{email}</td>
                                             {move || (is_admin.get() && !is_self()).then(|| {
                                                 let uid = uid.clone();
+                                                let uid_pw = uid.clone();
                                                 let name_del = name_del.clone();
+                                                let name_pw = name_del.clone();
                                                 let ufe = user_for_edit.clone();
                                                 view! {
                                                     <td class="connect-table-cell connect-table-cell--actions">
@@ -185,6 +201,17 @@ pub fn AdminPage() -> impl IntoView {
                                                             <span class="connect-button__content">
                                                                 <span class="connect-button__icon">
                                                                     <Icon kind=IconKind::PenToSquare size=14 />
+                                                                </span>
+                                                            </span>
+                                                        </button>
+                                                        <button
+                                                            aria-label="Reset password"
+                                                            class="connect-button connect-button--neutral connect-button--outline connect-button--small"
+                                                            on:click=move |_| set_reset_pw_target.set(Some((uid_pw.clone(), name_pw.clone())))
+                                                        >
+                                                            <span class="connect-button__content">
+                                                                <span class="connect-button__icon">
+                                                                    <Icon kind=IconKind::Key size=14 />
                                                                 </span>
                                                             </span>
                                                         </button>
@@ -235,6 +262,24 @@ pub fn AdminPage() -> impl IntoView {
                             user=u
                             on_save=do_update_user
                             on_cancel=move || set_edit_target.set(None)
+                        />
+                    }.into_any()
+                } else {
+                    view! { <span /> }.into_any()
+                }
+            }}
+
+            // Reset password dialog
+            {move || {
+                let target = reset_pw_target.get();
+                let open = Signal::derive(move || reset_pw_target.get().is_some());
+                if let Some((uid, uname)) = target {
+                    view! {
+                        <ResetPasswordDialog
+                            open=open
+                            user_name=uname
+                            on_save=move |new_pw| do_reset_password(uid.clone(), new_pw)
+                            on_cancel=move || set_reset_pw_target.set(None)
                         />
                     }.into_any()
                 } else {
@@ -527,6 +572,127 @@ fn EditUserDialog(
                             >
                                 <span class="connect-button__content">
                                     <span class="connect-button__label">"Save"</span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }.into_any()
+        }}
+    }
+}
+
+#[component]
+fn ResetPasswordDialog(
+    open: Signal<bool>,
+    user_name: String,
+    on_save: impl Fn(String) + 'static + Clone + Send,
+    on_cancel: impl Fn() + 'static + Clone + Send,
+) -> impl IntoView {
+    let (new_password, set_new_password) = signal(String::new());
+    let (confirm_password, set_confirm_password) = signal(String::new());
+
+    let form_valid = Signal::derive(move || {
+        let pw = new_password.get();
+        pw.len() >= 8 && pw == confirm_password.get()
+    });
+
+    let passwords_mismatch = Signal::derive(move || {
+        let confirm = confirm_password.get();
+        !confirm.is_empty() && confirm != new_password.get()
+    });
+
+    view! {
+        {move || {
+            if !open.get() {
+                return view! { <div class="modal-hidden" /> }.into_any();
+            }
+
+            let on_save = on_save.clone();
+            let on_cancel_bd = on_cancel.clone();
+            let on_cancel_b = on_cancel.clone();
+            let uname = user_name.clone();
+
+            view! {
+                <div class="modal-overlay" on:click=move |_| { set_new_password.set(String::new()); set_confirm_password.set(String::new()); on_cancel_bd(); }>
+                    <div class="modal-dialog" on:click=move |ev| ev.stop_propagation()>
+                        <div class="modal-header">
+                            <h2 class="modal-title">"Reset Password"</h2>
+                        </div>
+                        <div class="modal-body">
+                            <p style="margin-bottom: var(--ds-layout-spacing-200, 12px); color: var(--ds-color-content-muted);">
+                                "Set a new password for " <strong>{uname}</strong> ". The user will be able to change it again from their profile."
+                            </p>
+                            <div class="connect-text-field" style="margin-bottom: var(--ds-layout-spacing-200, 12px);">
+                                <div class="connect-label">
+                                    <label class="connect-label__text" for="reset-pw-new">"New Password (min 8 characters)"</label>
+                                </div>
+                                <div class="connect-text-field__input-wrapper">
+                                    <input
+                                        class="connect-text-field__input"
+                                        id="reset-pw-new"
+                                        type="password"
+                                        prop:value=move || new_password.get()
+                                        on:input=move |ev| {
+                                            let Some(target) = ev.target() else { return };
+                                            set_new_password.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                                        }
+                                    />
+                                </div>
+                            </div>
+                            <div class="connect-text-field">
+                                <div class="connect-label">
+                                    <label class="connect-label__text" for="reset-pw-confirm">"Confirm New Password"</label>
+                                </div>
+                                <div class="connect-text-field__input-wrapper">
+                                    <input
+                                        class=move || if passwords_mismatch.get() {
+                                            "connect-text-field__input connect-text-field__input--error"
+                                        } else {
+                                            "connect-text-field__input"
+                                        }
+                                        id="reset-pw-confirm"
+                                        type="password"
+                                        prop:value=move || confirm_password.get()
+                                        on:input=move |ev| {
+                                            let Some(target) = ev.target() else { return };
+                                            set_confirm_password.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                                        }
+                                    />
+                                </div>
+                                {move || passwords_mismatch.get().then(|| view! {
+                                    <p style="color: var(--ds-color-support-negative-default); font-size: var(--ds-screen-text-body-xs-font-size, 0.75rem); margin-top: var(--ds-layout-spacing-50, 4px);">
+                                        "Passwords do not match"
+                                    </p>
+                                })}
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button
+                                class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
+                                on:click={
+                                    let cancel = on_cancel_b.clone();
+                                    move |_| { set_new_password.set(String::new()); set_confirm_password.set(String::new()); cancel(); }
+                                }
+                            >
+                                <span class="connect-button__content">
+                                    <span class="connect-button__label">"Cancel"</span>
+                                </span>
+                            </button>
+                            <button
+                                class="connect-button connect-button--accent connect-button--medium"
+                                disabled=move || !form_valid.get()
+                                on:click={
+                                    let save = on_save.clone();
+                                    move |_| {
+                                        save(new_password.get());
+                                        set_new_password.set(String::new());
+                                        set_confirm_password.set(String::new());
+                                    }
+                                }
+                            >
+                                <span class="connect-button__content">
+                                    <span class="connect-button__label">"Reset Password"</span>
                                 </span>
                             </button>
                         </div>

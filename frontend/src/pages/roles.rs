@@ -25,7 +25,7 @@ pub fn RolesPage() -> impl IntoView {
     // Fetch all roles on mount
     let fetch_roles = move |off: usize| {
         set_loading.set(true);
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/roles?limit={}&offset={}", limit, off);
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
@@ -42,7 +42,7 @@ pub fn RolesPage() -> impl IntoView {
 
     let do_create_role = move |title: String| {
         let body = serde_json::json!({ "title": title });
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let resp = authed_request(HttpMethod::Post, "/api/v1.0/roles", Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
@@ -59,7 +59,7 @@ pub fn RolesPage() -> impl IntoView {
 
     let do_update_role = move |role_id: String, title: String| {
         let body = serde_json::json!({ "title": title });
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/roles/{}", role_id);
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
@@ -83,7 +83,7 @@ pub fn RolesPage() -> impl IntoView {
     };
 
     let do_delete_role = move |role_id: String| {
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/roles/{}", role_id);
             let resp = authed_request(HttpMethod::Delete, &url, None).await;
             match resp {

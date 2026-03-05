@@ -516,10 +516,28 @@ form {
 
 /* ── Table tweaks ─────────────────────────────────────────────────────────── */
 
+/* Left-align header cells to match data cells, and center content vertically */
+.connect-table-header-cell {
+    text-align: left;
+    vertical-align: middle;
+}
+
+.connect-table-cell {
+    vertical-align: middle;
+}
+
+/*
+ * Actions column: let width adapt to button content so buttons are never
+ * clipped or pushed to a second line.  The design system already sets
+ * display:flex / justify-content:flex-end on these cells, so we only need
+ * to add a gap between buttons and ensure the column does not have a
+ * hard-coded width that is too narrow.
+ */
 .connect-table-header-cell--actions,
 .connect-table-cell--actions {
-    width: 80px;
-    text-align: right;
+    width: auto;
+    white-space: nowrap;
+    gap: var(--ds-layout-spacing-100, 8px);
 }
 
 .connect-table-row {

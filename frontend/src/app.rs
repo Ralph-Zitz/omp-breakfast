@@ -52,7 +52,7 @@ pub fn App() -> impl IntoView {
     provide_context(toast_ctx);
 
     // Attempt to restore session from stored JWT on mount
-    leptos::task::spawn_local(async move {
+    leptos::task::spawn_local_scoped(async move {
         restore_session(set_page, set_user).await;
     });
 

@@ -31,7 +31,7 @@ pub fn LoginPage() -> impl IntoView {
         set_error.set(None);
         set_loading.set(true);
 
-        wasm_bindgen_futures::spawn_local(async move {
+        leptos::task::spawn_local_scoped(async move {
             let credentials = base64::engine::general_purpose::STANDARD
                 .encode(format!("{}:{}", username_val, password_val));
 
