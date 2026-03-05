@@ -32,3 +32,57 @@ pub fn LoadingSpinner() -> impl IntoView {
         </div>
     }
 }
+
+/// Pagination bar: shows "Showing X-Y of N" + prev/next buttons.
+/// `offset` and `limit` are the current slice parameters.
+/// `total` is the total item count from the API response.
+/// `on_prev` / `on_next` receive the new offset value.
+#[component]
+pub fn PaginationBar(
+    offset: ReadSignal<usize>,
+    limit: usize,
+    total: ReadSignal<usize>,
+    on_prev: impl Fn(usize) + 'static + Clone + Send,
+    on_next: impl Fn(usize) + 'static + Clone + Send,
+) -> impl IntoView {
+    view! {
+        {move || {
+            let off = offset.get();
+            let tot = total.get();
+            if tot <= limit {
+                return view! { <span /> }.into_any();
+            }
+            let start = off + 1;
+            let end = (off + limit).min(tot);
+            let has_prev = off > 0;
+            let has_next = off + limit < tot;
+            let on_prev2 = on_prev.clone();
+            let on_next2 = on_next.clone();
+            view! {
+                <div class="pagination-bar" style="display: flex; align-items: center; gap: var(--ds-layout-spacing-200, 8px); margin-top: var(--ds-layout-spacing-200, 12px);">
+                    <button
+                        class="connect-button connect-button--neutral connect-button--outline connect-button--small"
+                        disabled=!has_prev
+                        on:click=move |_| on_prev2(off.saturating_sub(limit))
+                    >
+                        <span class="connect-button__content">
+                            <span class="connect-button__label">"← Prev"</span>
+                        </span>
+                    </button>
+                    <span class="text-muted" style="font-size: var(--ds-typo-font-size-075, 12px);">
+                        {format!("{start}–{end} of {tot}")}
+                    </span>
+                    <button
+                        class="connect-button connect-button--neutral connect-button--outline connect-button--small"
+                        disabled=!has_next
+                        on:click=move |_| on_next2(off + limit)
+                    >
+                        <span class="connect-button__content">
+                            <span class="connect-button__label">"Next →"</span>
+                        </span>
+                    </button>
+                </div>
+            }.into_any()
+        }}
+    }
+}

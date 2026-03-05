@@ -2892,3 +2892,73 @@ async fn count_admins_returns_at_least_one() {
         .expect("count_admins should succeed");
     assert!(count >= 1, "seed data should have at least one admin");
 }
+
+// ===========================================================================
+// #436 — create_team with a duplicate name fails with a DB error
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn create_team_with_duplicate_name_fails() {
+    let client = test_client().await;
+
+    let entry = CreateTeamEntry {
+        tname: "DuplicateTeamDB436".to_string(),
+        descr: Some("first".to_string()),
+    };
+
+    // First insert should succeed
+    let team = db::create_team(&client, entry)
+        .await
+        .expect("first create_team should succeed");
+
+    // Second insert with the same name should fail (unique constraint violation)
+    let duplicate = CreateTeamEntry {
+        tname: "DuplicateTeamDB436".to_string(),
+        descr: Some("duplicate".to_string()),
+    };
+    let result = db::create_team(&client, duplicate).await;
+    assert!(
+        result.is_err(),
+        "create_team with a duplicate name should return an error"
+    );
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup: delete_team should succeed");
+}
+
+// ===========================================================================
+// #437 — create_role with a duplicate title fails with a DB error
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn create_role_with_duplicate_title_fails() {
+    let client = test_client().await;
+
+    let entry = CreateRoleEntry {
+        title: "DuplicateRoleDB437".to_string(),
+    };
+
+    // First insert should succeed
+    let role = db::create_role(&client, entry)
+        .await
+        .expect("first create_role should succeed");
+
+    // Second insert with the same title should fail (unique constraint violation)
+    let duplicate = CreateRoleEntry {
+        title: "DuplicateRoleDB437".to_string(),
+    };
+    let result = db::create_role(&client, duplicate).await;
+    assert!(
+        result.is_err(),
+        "create_role with a duplicate title should return an error"
+    );
+
+    // Cleanup
+    db::delete_role(&client, role.role_id)
+        .await
+        .expect("cleanup: delete_role should succeed");
+}

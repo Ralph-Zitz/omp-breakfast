@@ -230,6 +230,7 @@ pub async fn get_team_order(
         (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
         (status = 409, description = "Conflict", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team")
@@ -360,7 +361,7 @@ pub async fn update_team_order(
     responses(
         (status = 201, description = "Member added to team", body = UsersInTeam),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - team admin role required", body = ErrorResponse),
+        (status = 403, description = "Forbidden - team admin role required, or only global admins can assign the Admin role", body = ErrorResponse),
         (status = 404, description = "User or role not found", body = ErrorResponse),
         (status = 409, description = "Member already in team", body = ErrorResponse),
     ),
@@ -432,7 +433,7 @@ pub async fn remove_team_member(
     responses(
         (status = 200, description = "Member role updated", body = UsersInTeam),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
-        (status = 403, description = "Forbidden - team admin role required", body = ErrorResponse),
+        (status = 403, description = "Forbidden - team admin role required, or only global admins can assign the Admin role", body = ErrorResponse),
         (status = 404, description = "Member not found in team", body = ErrorResponse),
     ),
     params(

@@ -3,7 +3,7 @@ use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
 use crate::components::toast::{toast_error, toast_success};
-use crate::components::LoadingSpinner;
+use crate::components::{LoadingSpinner, PaginationBar};
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
@@ -15,20 +15,56 @@ pub fn AdminPage() -> impl IntoView {
     let (loading, set_loading) = signal(true);
     let (show_create, set_show_create) = signal(false);
     let (delete_target, set_delete_target) = signal(Option::<(String, String)>::None);
+    let (edit_target, set_edit_target) = signal(Option::<UserEntry>::None);
+    let (offset, set_offset) = signal(0usize);
+    let (total, set_total) = signal(0usize);
+    let limit = 50usize;
 
     let is_admin = Signal::derive(move || user.get().map(|u| u.is_admin).unwrap_or(false));
 
     // Fetch all users on mount
-    wasm_bindgen_futures::spawn_local(async move {
-        if let Some(resp) = authed_get("/api/v1.0/users").await {
-            if resp.ok() {
-                if let Ok(data) = resp.json::<PaginatedResponse<UserEntry>>().await {
-                    set_users.set(data.items);
+    let fetch_users = move |off: usize| {
+        set_loading.set(true);
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = format!("/api/v1.0/users?limit={}&offset={}", limit, off);
+            if let Some(resp) = authed_get(&url).await {
+                if resp.ok() {
+                    if let Ok(data) = resp.json::<PaginatedResponse<UserEntry>>().await {
+                        set_total.set(data.total as usize);
+                        set_users.set(data.items);
+                    }
                 }
             }
-        }
-        set_loading.set(false);
-    });
+            set_loading.set(false);
+        });
+    };
+    fetch_users(0);
+
+    let do_update_user = move |user_id: String, fn_: String, ln: String, em: String| {
+        let body = serde_json::json!({
+            "firstname": fn_,
+            "lastname": ln,
+            "email": em,
+        });
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = format!("/api/v1.0/users/{}", user_id);
+            let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
+            match resp {
+                Some(r) if r.ok() => {
+                    if let Ok(updated) = r.json::<UserEntry>().await {
+                        set_users.update(|list| {
+                            if let Some(u) = list.iter_mut().find(|u| u.user_id == updated.user_id) {
+                                *u = updated;
+                            }
+                        });
+                        toast_success("User updated");
+                    }
+                }
+                _ => toast_error("Failed to update user"),
+            }
+            set_edit_target.set(None);
+        });
+    };
 
     let do_create_user = move |fn_: String, ln: String, em: String, pw: String| {
         let body = serde_json::json!({
@@ -126,6 +162,7 @@ pub fn AdminPage() -> impl IntoView {
                                     let email = u.email.clone();
                                     let uid_for_self = uid.clone();
                                     let is_self = move || user.get().map(|ctx| ctx.user_id == uid_for_self).unwrap_or(false);
+                                    let user_for_edit = u.clone();
 
                                     view! {
                                         <tr class="connect-table-row">
@@ -134,8 +171,20 @@ pub fn AdminPage() -> impl IntoView {
                                             {move || (is_admin.get() && !is_self()).then(|| {
                                                 let uid = uid.clone();
                                                 let name_del = name_del.clone();
+                                                let ufe = user_for_edit.clone();
                                                 view! {
                                                     <td class="connect-table-cell connect-table-cell--actions">
+                                                        <button
+                                                            aria-label="Edit user"
+                                                            class="connect-button connect-button--neutral connect-button--outline connect-button--small"
+                                                            on:click=move |_| set_edit_target.set(Some(ufe.clone()))
+                                                        >
+                                                            <span class="connect-button__content">
+                                                                <span class="connect-button__icon">
+                                                                    <Icon kind=IconKind::PenToSquare size=14 />
+                                                                </span>
+                                                            </span>
+                                                        </button>
                                                         <button
                                                             aria-label="Delete user"
                                                             class="connect-button connect-button--negative connect-button--outline connect-button--small"
@@ -155,6 +204,13 @@ pub fn AdminPage() -> impl IntoView {
                                 }).collect::<Vec<_>>()}
                             </tbody>
                         </table>
+                        <PaginationBar
+                            offset=offset
+                            limit=limit
+                            total=total
+                            on_prev=move |off| { set_offset.set(off); fetch_users(off); }
+                            on_next=move |off| { set_offset.set(off); fetch_users(off); }
+                        />
                     </div>
                 }.into_any()
             }}
@@ -164,6 +220,24 @@ pub fn AdminPage() -> impl IntoView {
                 on_create=do_create_user
                 on_cancel=move || set_show_create.set(false)
             />
+
+            // Edit user dialog
+            {move || {
+                let target = edit_target.get();
+                let open = Signal::derive(move || edit_target.get().is_some());
+                if let Some(u) = target {
+                    view! {
+                        <EditUserDialog
+                            open=open
+                            user=u
+                            on_save=do_update_user
+                            on_cancel=move || set_edit_target.set(None)
+                        />
+                    }.into_any()
+                } else {
+                    view! { <span /> }.into_any()
+                }
+            }}
 
             {move || {
                 let target = delete_target.get();
@@ -318,6 +392,129 @@ fn CreateUserDialog(
                             >
                                 <span class="connect-button__content">
                                     <span class="connect-button__label">"Create"</span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }.into_any()
+        }}
+    }
+}
+
+#[component]
+fn EditUserDialog(
+    open: Signal<bool>,
+    user: UserEntry,
+    on_save: impl Fn(String, String, String, String) + 'static + Clone + Send,
+    on_cancel: impl Fn() + 'static + Clone + Send,
+) -> impl IntoView {
+    let (firstname, set_firstname) = signal(user.firstname.clone());
+    let (lastname, set_lastname) = signal(user.lastname.clone());
+    let (email, set_email) = signal(user.email.clone());
+    let user_id = user.user_id.clone();
+
+    let form_valid = Signal::derive(move || {
+        let em = email.get();
+        !firstname.get().trim().is_empty()
+            && !lastname.get().trim().is_empty()
+            && em.contains('@')
+            && em.split('@').nth(1).map(|d| d.contains('.')).unwrap_or(false)
+    });
+
+    view! {
+        {move || {
+            if !open.get() {
+                return view! { <div class="modal-hidden" /> }.into_any();
+            }
+
+            let on_save = on_save.clone();
+            let on_cancel_bd = on_cancel.clone();
+            let on_cancel_b = on_cancel.clone();
+            let uid = user_id.clone();
+
+            view! {
+                <div class="modal-overlay" on:click=move |_| on_cancel_bd()>
+                    <div class="modal-dialog" on:click=move |ev| ev.stop_propagation()>
+                        <div class="modal-header">
+                            <h2 class="modal-title">"Edit User"</h2>
+                        </div>
+                        <div class="modal-body">
+                            <div class="connect-text-field" style="margin-bottom: var(--ds-layout-spacing-200, 12px);">
+                                <div class="connect-label">
+                                    <label class="connect-label__text" for="edit-user-fn">"First Name"</label>
+                                </div>
+                                <div class="connect-text-field__input-wrapper">
+                                    <input
+                                        class="connect-text-field__input"
+                                        id="edit-user-fn"
+                                        type="text"
+                                        prop:value=move || firstname.get()
+                                        on:input=move |ev| {
+                                            let Some(target) = ev.target() else { return };
+                                            set_firstname.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                                        }
+                                    />
+                                </div>
+                            </div>
+                            <div class="connect-text-field" style="margin-bottom: var(--ds-layout-spacing-200, 12px);">
+                                <div class="connect-label">
+                                    <label class="connect-label__text" for="edit-user-ln">"Last Name"</label>
+                                </div>
+                                <div class="connect-text-field__input-wrapper">
+                                    <input
+                                        class="connect-text-field__input"
+                                        id="edit-user-ln"
+                                        type="text"
+                                        prop:value=move || lastname.get()
+                                        on:input=move |ev| {
+                                            let Some(target) = ev.target() else { return };
+                                            set_lastname.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                                        }
+                                    />
+                                </div>
+                            </div>
+                            <div class="connect-text-field">
+                                <div class="connect-label">
+                                    <label class="connect-label__text" for="edit-user-email">"Email"</label>
+                                </div>
+                                <div class="connect-text-field__input-wrapper">
+                                    <input
+                                        class="connect-text-field__input"
+                                        id="edit-user-email"
+                                        type="email"
+                                        prop:value=move || email.get()
+                                        on:input=move |ev| {
+                                            let Some(target) = ev.target() else { return };
+                                            set_email.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                                        }
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button
+                                class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
+                                on:click={
+                                    let cancel = on_cancel_b.clone();
+                                    move |_| cancel()
+                                }
+                            >
+                                <span class="connect-button__content">
+                                    <span class="connect-button__label">"Cancel"</span>
+                                </span>
+                            </button>
+                            <button
+                                class="connect-button connect-button--accent connect-button--medium"
+                                disabled=move || !form_valid.get()
+                                on:click={
+                                    let save = on_save.clone();
+                                    let uid = uid.clone();
+                                    move |_| save(uid.clone(), firstname.get(), lastname.get(), email.get())
+                                }
+                            >
+                                <span class="connect-button__content">
+                                    <span class="connect-button__label">"Save"</span>
                                 </span>
                             </button>
                         </div>

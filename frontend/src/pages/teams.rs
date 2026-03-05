@@ -1,9 +1,9 @@
-use crate::api::{HttpMethod, PaginatedResponse, TeamEntry, UserContext, UsersInTeam, authed_get, authed_request};
+use crate::api::{HttpMethod, PaginatedResponse, RoleEntry, TeamEntry, UserContext, UserEntry, UsersInTeam, authed_get, authed_request};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
 use crate::components::toast::{toast_error, toast_success};
-use crate::components::{LoadingSpinner, role_tag_class};
+use crate::components::{LoadingSpinner, PaginationBar, role_tag_class};
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
@@ -16,23 +16,35 @@ pub fn TeamsPage() -> impl IntoView {
     let (members_loading, set_members_loading) = signal(false);
     let (show_create, set_show_create) = signal(false);
     let (delete_target, set_delete_target) = signal(Option::<(String, String)>::None);
+    let (edit_target, set_edit_target) = signal(Option::<TeamEntry>::None);
+    let (show_add_member, set_show_add_member) = signal(false);
+    let (available_users, set_available_users) = signal(Vec::<UserEntry>::new());
+    let (available_roles, set_available_roles) = signal(Vec::<RoleEntry>::new());
+    let (remove_member_target, set_remove_member_target) = signal(Option::<(String, String)>::None); // (user_id, name)
+    let (offset, set_offset) = signal(0usize);
+    let (total, set_total) = signal(0usize);
+    let limit = 50usize;
 
     let user = expect_context::<ReadSignal<Option<UserContext>>>();
     let is_admin = Signal::derive(move || user.get().map(|u| u.is_admin).unwrap_or(false));
 
     // Fetch teams on mount
-    let set_teams_load = set_teams;
-    let set_loading_load = set_loading;
-    wasm_bindgen_futures::spawn_local(async move {
-        if let Some(resp) = authed_get("/api/v1.0/teams").await {
-            if resp.ok() {
-                if let Ok(data) = resp.json::<PaginatedResponse<TeamEntry>>().await {
-                    set_teams_load.set(data.items);
+    let fetch_teams = move |off: usize| {
+        set_loading.set(true);
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = format!("/api/v1.0/teams?limit={}&offset={}", limit, off);
+            if let Some(resp) = authed_get(&url).await {
+                if resp.ok() {
+                    if let Ok(data) = resp.json::<PaginatedResponse<TeamEntry>>().await {
+                        set_total.set(data.total as usize);
+                        set_teams.set(data.items);
+                    }
                 }
             }
-        }
-        set_loading_load.set(false);
-    });
+            set_loading.set(false);
+        });
+    };
+    fetch_teams(0);
 
     let load_members = move |team_id: String| {
         set_selected_team.set(Some(team_id.clone()));
@@ -47,6 +59,123 @@ pub fn TeamsPage() -> impl IntoView {
                 }
             }
             set_members_loading.set(false);
+        });
+    };
+
+    let do_update_team = move |team_id: String, name: String, descr: Option<String>| {
+        let body = serde_json::json!({ "tname": name, "descr": descr });
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = format!("/api/v1.0/teams/{}", team_id);
+            let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
+            match resp {
+                Some(r) if r.ok() => {
+                    if let Ok(updated) = r.json::<TeamEntry>().await {
+                        set_teams.update(|list| {
+                            if let Some(t) = list.iter_mut().find(|t| t.team_id == updated.team_id) {
+                                *t = updated;
+                            }
+                        });
+                        toast_success("Team updated");
+                    }
+                }
+                _ => toast_error("Failed to update team"),
+            }
+            set_edit_target.set(None);
+        });
+    };
+
+    let open_add_member = move |_team_id: String| {
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Some(r) = authed_get("/api/v1.0/users").await {
+                if r.ok() {
+                    if let Ok(data) = r.json::<PaginatedResponse<UserEntry>>().await {
+                        set_available_users.set(data.items);
+                    }
+                }
+            }
+            if let Some(r) = authed_get("/api/v1.0/roles").await {
+                if r.ok() {
+                    if let Ok(data) = r.json::<PaginatedResponse<RoleEntry>>().await {
+                        set_available_roles.set(data.items);
+                    }
+                }
+            }
+            set_show_add_member.set(true);
+        });
+    };
+
+    let do_add_member = move |user_id: String, role_id: String| {
+        let team_id = match selected_team.get() {
+            Some(id) => id,
+            None => return,
+        };
+        let body = serde_json::json!({ "user_id": user_id, "role_id": role_id });
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = format!("/api/v1.0/teams/{}/users", team_id);
+            let resp = authed_request(HttpMethod::Post, &url, Some(&body)).await;
+            match resp {
+                Some(r) if r.ok() => {
+                    // Reload members
+                    let members_url = format!("/api/v1.0/teams/{}/users", team_id);
+                    if let Some(mr) = authed_get(&members_url).await {
+                        if mr.ok() {
+                            if let Ok(data) = mr.json::<PaginatedResponse<UsersInTeam>>().await {
+                                set_team_members.set(data.items);
+                            }
+                        }
+                    }
+                    toast_success("Member added");
+                }
+                Some(r) if r.status() == 409 => toast_error("User is already a member of this team"),
+                _ => toast_error("Failed to add member"),
+            }
+            set_show_add_member.set(false);
+        });
+    };
+
+    let do_remove_member = move |user_id: String| {
+        let team_id = match selected_team.get() {
+            Some(id) => id,
+            None => return,
+        };
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = format!("/api/v1.0/teams/{}/users/{}", team_id, user_id);
+            let resp = authed_request(HttpMethod::Delete, &url, None).await;
+            match resp {
+                Some(r) if r.ok() => {
+                    set_team_members.update(|list| list.retain(|m| m.user_id != user_id));
+                    toast_success("Member removed");
+                }
+                _ => toast_error("Failed to remove member"),
+            }
+            set_remove_member_target.set(None);
+        });
+    };
+
+    let do_update_member_role = move |user_id: String, role_id: String| {
+        let team_id = match selected_team.get() {
+            Some(id) => id,
+            None => return,
+        };
+        let body = serde_json::json!({ "role_id": role_id });
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = format!("/api/v1.0/teams/{}/users/{}", team_id, user_id);
+            let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
+            match resp {
+                Some(r) if r.ok() => {
+                    // Reload members to get fresh role titles
+                    let members_url = format!("/api/v1.0/teams/{}/users", team_id);
+                    if let Some(mr) = authed_get(&members_url).await {
+                        if mr.ok() {
+                            if let Ok(data) = mr.json::<PaginatedResponse<UsersInTeam>>().await {
+                                set_team_members.set(data.items);
+                            }
+                        }
+                    }
+                    toast_success("Role updated");
+                }
+                _ => toast_error("Failed to update role"),
+            }
         });
     };
 
@@ -145,6 +274,7 @@ pub fn TeamsPage() -> impl IntoView {
                                         let tname = team.tname.clone();
                                         let tname_del = team.tname.clone();
                                         let descr = team.descr.clone().unwrap_or_default();
+                                        let team_entry = team.clone();
                                         let is_selected = {
                                             let tid = tid.clone();
                                             move || selected_team.get().as_deref() == Some(&tid)
@@ -169,8 +299,23 @@ pub fn TeamsPage() -> impl IntoView {
                                                 {move || is_admin.get().then(|| {
                                                     let tid_del = tid_del.clone();
                                                     let tname_del = tname_del.clone();
+                                                    let team_for_edit = team_entry.clone();
                                                     view! {
                                                         <td class="connect-table-cell connect-table-cell--actions">
+                                                            <button
+                                                                aria-label="Edit team"
+                                                                class="connect-button connect-button--neutral connect-button--outline connect-button--small"
+                                                                on:click=move |ev| {
+                                                                    ev.stop_propagation();
+                                                                    set_edit_target.set(Some(team_for_edit.clone()));
+                                                                }
+                                                            >
+                                                                <span class="connect-button__content">
+                                                                    <span class="connect-button__icon">
+                                                                        <Icon kind=IconKind::PenToSquare size=14 />
+                                                                    </span>
+                                                                </span>
+                                                            </button>
                                                             <button
                                                                 aria-label="Delete team"
                                                                 class="connect-button connect-button--negative connect-button--outline connect-button--small"
@@ -193,21 +338,51 @@ pub fn TeamsPage() -> impl IntoView {
                                     }).collect::<Vec<_>>()}
                                 </tbody>
                             </table>
+                            <PaginationBar
+                                offset=offset
+                                limit=limit
+                                total=total
+                                on_prev=move |off| { set_offset.set(off); fetch_teams(off); }
+                                on_next=move |off| { set_offset.set(off); fetch_teams(off); }
+                            />
                         </div>
 
                         // Team members panel
                         {move || {
-                            selected_team.get().map(|_tid| {
+                            selected_team.get().map(|tid| {
                                 if members_loading.get() {
                                     return view! { <div class="card"><LoadingSpinner /></div> }.into_any();
                                 }
                                 let members = team_members.get();
+                                let roles_for_panel = available_roles.get();
+                                let can_manage = is_admin.get()
+                                    || user.get().map(|u| u.teams.iter().any(|t| t.team_id == tid && t.title == "Team Admin")).unwrap_or(false);
                                 view! {
                                     <div class="card">
-                                        <h3 class="section-title">"Team Members"</h3>
+                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--ds-layout-spacing-200, 12px);">
+                                            <h3 class="section-title" style="margin: 0;">"Team Members"</h3>
+                                            {can_manage.then(|| {
+                                                let oam = open_add_member.clone();
+                                                let tid2 = tid.clone();
+                                                view! {
+                                                    <button
+                                                        class="connect-button connect-button--accent connect-button--small"
+                                                        on:click=move |_| oam(tid2.clone())
+                                                    >
+                                                        <span class="connect-button__content">
+                                                            <span class="connect-button__icon">
+                                                                <Icon kind=IconKind::CirclePlus size=14 />
+                                                            </span>
+                                                            <span class="connect-button__label">"Add"</span>
+                                                        </span>
+                                                    </button>
+                                                }
+                                            })}
+                                        </div>
                                         {if members.is_empty() {
                                             view! { <p class="text-muted">"No members in this team."</p> }.into_any()
                                         } else {
+                                            let roles_for_rows = roles_for_panel.clone();
                                             view! {
                                                 <table class="connect-table connect-table--small">
                                                     <thead class="connect-table-header">
@@ -215,25 +390,80 @@ pub fn TeamsPage() -> impl IntoView {
                                                             <th class="connect-table-header-cell">"Name"</th>
                                                             <th class="connect-table-header-cell">"Email"</th>
                                                             <th class="connect-table-header-cell">"Role"</th>
+                                                            {can_manage.then(|| view! {
+                                                                <th class="connect-table-header-cell connect-table-header-cell--actions">"Actions"</th>
+                                                            })}
                                                         </tr>
                                                     </thead>
                                                     <tbody class="connect-table-body">
                                                         {members.into_iter().map(|m| {
                                                             let name = format!("{} {}", m.firstname, m.lastname);
                                                             let email = m.email.clone();
-                                                            let role = m.title.clone();
-                                                            let tag_class = role_tag_class(&role);
+                                                            let uid = m.user_id.clone();
+                                                            let uid_del = m.user_id.clone();
+                                                            let name_del = name.clone();
+                                                            let tag_class = role_tag_class(&m.title);
+                                                            let current_role_title = m.title.clone();
+                                                            let roles_for_select = roles_for_rows.clone();
+                                                            let _tid_update = tid.clone();
                                                             view! {
                                                                 <tr class="connect-table-row">
                                                                     <td class="connect-table-cell">{name}</td>
                                                                     <td class="connect-table-cell">{email}</td>
                                                                     <td class="connect-table-cell">
-                                                                        <span class=tag_class>
-                                                                            <span class="connect-tag__text-wrapper">
-                                                                                <span class="connect-tag__text">{role}</span>
-                                                                            </span>
-                                                                        </span>
+                                                                        {if can_manage && !roles_for_select.is_empty() {
+                                                                            let dam = do_update_member_role.clone();
+                                                                            let uid2 = uid.clone();
+                                                                            view! {
+                                                                                <select
+                                                                                    class="connect-text-field__input"
+                                                                                    style="width: auto; min-width: 120px;"
+                                                                                    prop:value=current_role_title.clone()
+                                                                                    on:change=move |ev| {
+                                                                                        let Some(target) = ev.target() else { return; };
+                                                                                        let new_role_id = target.unchecked_into::<web_sys::HtmlSelectElement>().value();
+                                                                                        dam(uid2.clone(), new_role_id);
+                                                                                    }
+                                                                                >
+                                                                                    {roles_for_select.into_iter().map(|r| {
+                                                                                        let rid = r.role_id.clone();
+                                                                                        let rtitle = r.title.clone();
+                                                                                        let selected = rtitle == current_role_title;
+                                                                                        view! {
+                                                                                            <option value=rid selected=selected>{rtitle}</option>
+                                                                                        }
+                                                                                    }).collect::<Vec<_>>()}
+                                                                                </select>
+                                                                            }.into_any()
+                                                                        } else {
+                                                                            view! {
+                                                                                <span class=tag_class>
+                                                                                    <span class="connect-tag__text-wrapper">
+                                                                                        <span class="connect-tag__text">{current_role_title}</span>
+                                                                                    </span>
+                                                                                </span>
+                                                                            }.into_any()
+                                                                        }}
                                                                     </td>
+                                                                    {can_manage.then(|| {
+                                                                        let uid_del = uid_del.clone();
+                                                                        let name_del = name_del.clone();
+                                                                        view! {
+                                                                            <td class="connect-table-cell connect-table-cell--actions">
+                                                                                <button
+                                                                                    aria-label="Remove member"
+                                                                                    class="connect-button connect-button--negative connect-button--outline connect-button--small"
+                                                                                    on:click=move |_| set_remove_member_target.set(Some((uid_del.clone(), name_del.clone())))
+                                                                                >
+                                                                                    <span class="connect-button__content">
+                                                                                        <span class="connect-button__icon">
+                                                                                            <Icon kind=IconKind::Trash size=14 />
+                                                                                        </span>
+                                                                                    </span>
+                                                                                </button>
+                                                                            </td>
+                                                                        }
+                                                                    })}
                                                                 </tr>
                                                             }
                                                         }).collect::<Vec<_>>()}
@@ -255,6 +485,57 @@ pub fn TeamsPage() -> impl IntoView {
                 on_create=do_create_team
                 on_cancel=move || set_show_create.set(false)
             />
+
+            // Edit team dialog
+            {move || {
+                let target = edit_target.get();
+                let open = Signal::derive(move || edit_target.get().is_some());
+                if let Some(team) = target {
+                    view! {
+                        <EditTeamDialog
+                            open=open
+                            team=team
+                            on_save=do_update_team
+                            on_cancel=move || set_edit_target.set(None)
+                        />
+                    }.into_any()
+                } else {
+                    view! { <span /> }.into_any()
+                }
+            }}
+
+            // Add member dialog
+            {move || {
+                let open = Signal::derive(move || show_add_member.get());
+                view! {
+                    <AddMemberDialog
+                        open=open
+                        users=available_users
+                        roles=available_roles
+                        on_add=do_add_member
+                        on_cancel=move || set_show_add_member.set(false)
+                    />
+                }
+            }}
+
+            // Remove member confirmation
+            {move || {
+                let target = remove_member_target.get();
+                let (del_open, _) = signal(target.is_some());
+                let (uid, uname) = target.unwrap_or_default();
+                let uid_clone = uid.clone();
+                view! {
+                    <ConfirmModal
+                        open=del_open
+                        title="Remove Member".to_string()
+                        message=format!("Remove {} from this team?", uname)
+                        confirm_label="Remove"
+                        destructive=true
+                        on_confirm=move || do_remove_member(uid_clone.clone())
+                        on_cancel=move || set_remove_member_target.set(None)
+                    />
+                }
+            }}
 
             // Delete confirmation modal
             {move || {
@@ -370,6 +651,226 @@ fn CreateTeamDialog(
                             >
                                 <span class="connect-button__content">
                                     <span class="connect-button__label">"Create"</span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }.into_any()
+        }}
+    }
+}
+
+#[component]
+fn EditTeamDialog(
+    open: Signal<bool>,
+    team: TeamEntry,
+    on_save: impl Fn(String, String, Option<String>) + 'static + Clone + Send,
+    on_cancel: impl Fn() + 'static + Clone + Send,
+) -> impl IntoView {
+    let (name, set_name) = signal(team.tname.clone());
+    let (descr, set_descr) = signal(team.descr.clone().unwrap_or_default());
+    let team_id = team.team_id.clone();
+
+    view! {
+        {move || {
+            if !open.get() {
+                return view! { <div class="modal-hidden" /> }.into_any();
+            }
+
+            let on_save = on_save.clone();
+            let on_cancel_bd = on_cancel.clone();
+            let on_cancel_b = on_cancel.clone();
+            let tid = team_id.clone();
+
+            view! {
+                <div class="modal-overlay" on:click=move |_| on_cancel_bd()>
+                    <div class="modal-dialog" on:click=move |ev| ev.stop_propagation()>
+                        <div class="modal-header">
+                            <h2 class="modal-title">"Edit Team"</h2>
+                        </div>
+                        <div class="modal-body">
+                            <div class="connect-text-field">
+                                <div class="connect-label">
+                                    <label class="connect-label__text" for="edit-team-name">"Team Name"</label>
+                                </div>
+                                <div class="connect-text-field__input-wrapper">
+                                    <input
+                                        class="connect-text-field__input"
+                                        id="edit-team-name"
+                                        type="text"
+                                        prop:value=move || name.get()
+                                        on:input=move |ev| {
+                                            let Some(target) = ev.target() else { return; };
+                                            set_name.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                                        }
+                                    />
+                                </div>
+                            </div>
+                            <div class="connect-text-field" style="margin-top: var(--ds-layout-spacing-200, 12px);">
+                                <div class="connect-label">
+                                    <label class="connect-label__text" for="edit-team-descr">"Description (optional)"</label>
+                                </div>
+                                <div class="connect-text-field__input-wrapper">
+                                    <input
+                                        class="connect-text-field__input"
+                                        id="edit-team-descr"
+                                        type="text"
+                                        prop:value=move || descr.get()
+                                        on:input=move |ev| {
+                                            let Some(target) = ev.target() else { return; };
+                                            set_descr.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                                        }
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button
+                                class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
+                                on:click={
+                                    let cancel = on_cancel_b.clone();
+                                    move |_| cancel()
+                                }
+                            >
+                                <span class="connect-button__content">
+                                    <span class="connect-button__label">"Cancel"</span>
+                                </span>
+                            </button>
+                            <button
+                                class="connect-button connect-button--accent connect-button--medium"
+                                disabled=move || name.get().trim().is_empty()
+                                on:click={
+                                    let save = on_save.clone();
+                                    let tid = tid.clone();
+                                    move |_| {
+                                        let d = descr.get();
+                                        let d = if d.trim().is_empty() { None } else { Some(d) };
+                                        save(tid.clone(), name.get(), d);
+                                    }
+                                }
+                            >
+                                <span class="connect-button__content">
+                                    <span class="connect-button__label">"Save"</span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }.into_any()
+        }}
+    }
+}
+
+#[component]
+fn AddMemberDialog(
+    open: Signal<bool>,
+    users: ReadSignal<Vec<UserEntry>>,
+    roles: ReadSignal<Vec<RoleEntry>>,
+    on_add: impl Fn(String, String) + 'static + Clone + Send,
+    on_cancel: impl Fn() + 'static + Clone + Send,
+) -> impl IntoView {
+    let (sel_user, set_sel_user) = signal(String::new());
+    let (sel_role, set_sel_role) = signal(String::new());
+
+    view! {
+        {move || {
+            if !open.get() {
+                return view! { <div class="modal-hidden" /> }.into_any();
+            }
+
+            let on_add = on_add.clone();
+            let on_cancel_bd = on_cancel.clone();
+            let on_cancel_b = on_cancel.clone();
+            let user_list = users.get();
+            let role_list = roles.get();
+
+            // Pre-select first role if none selected
+            if sel_role.get().is_empty() {
+                if let Some(r) = role_list.first() {
+                    set_sel_role.set(r.role_id.clone());
+                }
+            }
+
+            view! {
+                <div class="modal-overlay" on:click=move |_| on_cancel_bd()>
+                    <div class="modal-dialog" on:click=move |ev| ev.stop_propagation()>
+                        <div class="modal-header">
+                            <h2 class="modal-title">"Add Team Member"</h2>
+                        </div>
+                        <div class="modal-body">
+                            <div class="connect-text-field" style="margin-bottom: var(--ds-layout-spacing-200, 12px);">
+                                <div class="connect-label">
+                                    <label class="connect-label__text" for="add-member-user">"User"</label>
+                                </div>
+                                <select
+                                    id="add-member-user"
+                                    class="connect-text-field__input"
+                                    prop:value=move || sel_user.get()
+                                    on:change=move |ev| {
+                                        let Some(target) = ev.target() else { return; };
+                                        set_sel_user.set(target.unchecked_into::<web_sys::HtmlSelectElement>().value());
+                                    }
+                                >
+                                    <option value="">"Select user..."</option>
+                                    {user_list.into_iter().map(|u| {
+                                        let uid = u.user_id.clone();
+                                        let label = format!("{} {} ({})", u.firstname, u.lastname, u.email);
+                                        view! { <option value=uid>{label}</option> }
+                                    }).collect::<Vec<_>>()}
+                                </select>
+                            </div>
+                            <div class="connect-text-field">
+                                <div class="connect-label">
+                                    <label class="connect-label__text" for="add-member-role">"Role"</label>
+                                </div>
+                                <select
+                                    id="add-member-role"
+                                    class="connect-text-field__input"
+                                    prop:value=move || sel_role.get()
+                                    on:change=move |ev| {
+                                        let Some(target) = ev.target() else { return; };
+                                        set_sel_role.set(target.unchecked_into::<web_sys::HtmlSelectElement>().value());
+                                    }
+                                >
+                                    {role_list.into_iter().map(|r| {
+                                        let rid = r.role_id.clone();
+                                        let rtitle = r.title.clone();
+                                        view! { <option value=rid>{rtitle}</option> }
+                                    }).collect::<Vec<_>>()}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button
+                                class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
+                                on:click={
+                                    let cancel = on_cancel_b.clone();
+                                    move |_| {
+                                        set_sel_user.set(String::new());
+                                        set_sel_role.set(String::new());
+                                        cancel();
+                                    }
+                                }
+                            >
+                                <span class="connect-button__content">
+                                    <span class="connect-button__label">"Cancel"</span>
+                                </span>
+                            </button>
+                            <button
+                                class="connect-button connect-button--accent connect-button--medium"
+                                disabled=move || sel_user.get().is_empty() || sel_role.get().is_empty()
+                                on:click={
+                                    let add = on_add.clone();
+                                    move |_| {
+                                        add(sel_user.get(), sel_role.get());
+                                        set_sel_user.set(String::new());
+                                        set_sel_role.set(String::new());
+                                    }
+                                }
+                            >
+                                <span class="connect-button__content">
+                                    <span class="connect-button__label">"Add Member"</span>
                                 </span>
                             </button>
                         </div>

@@ -1,0 +1,19 @@
+# Sanitized base configuration for production Docker images.
+# Secrets are intentionally empty — they MUST be supplied via environment
+# variables (BREAKFAST_SERVER_SECRET, BREAKFAST_SERVER_JWTSECRET,
+# BREAKFAST_PG_USER, BREAKFAST_PG_PASSWORD, BREAKFAST_PG_HOST).
+# The server will panic at startup if any required secret is still empty or
+# still the development default in a production environment.
+server:
+  host: 0.0.0.0
+  port: 8080
+  secret: ""
+  jwtsecret: ""
+  git_version: ""
+
+pg:
+  user: ""
+  password: ""
+  port: 5432
+  dbname: actix
+  pool_max_size: 30

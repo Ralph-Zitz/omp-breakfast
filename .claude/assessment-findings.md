@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-13
+Last assessed: 2026-03-14
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -30,37 +30,37 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Documentation — CLAUDE.md Backend Test Counts Stale
 
-- [ ] **#404 — CLAUDE.md states 193 unit, 87 API, 96 DB tests; actual counts are 195 unit, 109 API, 101 DB**
+- [x] **#404 — CLAUDE.md states 193 unit, 87 API, 96 DB tests; actual counts are 195 unit, 109 API, 101 DB**
   - File: `CLAUDE.md` (Testing section)
   - Source commands: `cross-ref-check`
 
 ### Documentation — README Test Counts Stale
 
-- [ ] **#405 — README.md states 193 unit, 87 API, 92 DB; actual counts are 195, 109, 101**
+- [x] **#405 — README.md states 193 unit, 87 API, 92 DB; actual counts are 195, 109, 101**
   - File: `README.md`
   - Source commands: `cross-ref-check`
 
 ### Documentation — CLAUDE.md `db/users.rs` Function List Incomplete
 
-- [ ] **#406 — `get_password_hash` missing from the parenthetical function list**
+- [x] **#406 — `get_password_hash` missing from the parenthetical function list**
   - File: `CLAUDE.md` (Project Structure → `db/users.rs`)
   - Source commands: `cross-ref-check`
 
 ### Documentation — CLAUDE.md Structure Tree Missing Root Files
 
-- [ ] **#407 — `NEW-UI-COMPONENTS.md` and `LICENSE` exist on disk but not in project structure tree**
+- [x] **#407 — `NEW-UI-COMPONENTS.md` and `LICENSE` exist on disk but not in project structure tree**
   - File: `CLAUDE.md` (Project Structure)
   - Source commands: `cross-ref-check`
 
 ### Documentation — CLAUDE.md Security Headers Omits `Permissions-Policy`
 
-- [ ] **#415 — `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()` is set in `DefaultHeaders` but not documented**
+- [x] **#415 — `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()` is set in `DefaultHeaders` but not documented**
   - File: `CLAUDE.md` (Security headers bullet), `src/server.rs` (line ~444)
   - Source commands: `practices-audit`
 
 ### Database — Redundant Indexes Duplicate UNIQUE Constraint Auto-Indexes
 
-- [ ] **#408 — `idx_users_email` and `idx_teams_name` duplicate the implicit unique indexes from UNIQUE constraints**
+- [x] **#408 — `idx_users_email` and `idx_teams_name` duplicate the implicit unique indexes from UNIQUE constraints**
   - File: `migrations/V1__initial_schema.sql` (lines ~25, ~38)
   - Fix: Add migration to `DROP INDEX IF EXISTS idx_users_email; DROP INDEX IF EXISTS idx_teams_name;`
   - Source commands: `db-review`
@@ -74,176 +74,176 @@ This file is **generated and maintained by the project assessment process** defi
 
 ### Database — `get_order_items` ORDER BY UUID Gives Non-Meaningful Sort
 
-- [ ] **#410 — `ORDER BY orders_item_id` sorts by item UUID primary key, not by when the item was added or by name**
+- [x] **#410 — `ORDER BY orders_item_id` sorts by item UUID primary key, not by when the item was added or by name**
   - File: `src/db/order_items.rs` (line ~84)
   - Fix: Change to `ORDER BY created` or `ORDER BY items.descr` via JOIN.
   - Source commands: `db-review`
 
 ### Dependencies — `tracing-bunyan-formatter` Effectively Unmaintained
 
-- [ ] **#411 — v0.3.10 (last release Feb 2024) causes `tracing-log` v0.1/v0.2 duplication and pulls stale transitive deps**
+- [x] **#411 — v0.3.10 (last release Feb 2024) causes `tracing-log` v0.1/v0.2 duplication and pulls stale transitive deps**
   - File: `Cargo.toml`
   - Fix: Replace with custom JSON layer via `tracing-subscriber::fmt::layer().json()`.
   - Source commands: `dependency-check`
 
 ### OpenAPI — `create_order_item` Missing 404 Response
 
-- [ ] **#412 — `guard_open_order` returns 404 when team order doesn't exist, but utoipa annotation omits 404**
+- [x] **#412 — `guard_open_order` returns 404 when team order doesn't exist, but utoipa annotation omits 404**
   - File: `src/handlers/orders.rs` (lines ~68–82)
   - Fix: Add `(status = 404, description = "Team order or item not found", body = ErrorResponse)`.
   - Source commands: `openapi-sync`
 
 ### OpenAPI — Member Management 403 Descriptions Omit Admin-Role Guard
 
-- [ ] **#413 — `add_team_member` and `update_member_role` 403 descriptions say only "team admin role required" but omit `guard_admin_role_assignment` scenario**
+- [x] **#413 — `add_team_member` and `update_member_role` 403 descriptions say only "team admin role required" but omit `guard_admin_role_assignment` scenario**
   - File: `src/handlers/teams.rs` (lines ~358–372, ~431–445)
   - Fix: Update to "Forbidden — team admin role required, or only global admins can assign the Admin role".
   - Source commands: `openapi-sync`
 
 ### OpenAPI — `create_team_order` Missing 422 Response
 
-- [ ] **#414 — Handler calls `validate(&json)?` but utoipa annotation omits 422**
+- [x] **#414 — Handler calls `validate(&json)?` but utoipa annotation omits 422**
   - File: `src/handlers/teams.rs` (line ~228)
   - Fix: Add `(status = 422, description = "Validation error", body = ErrorResponse)`.
   - Source commands: `rbac-rules`
 
 ### Security — `Error::ActixAuth` Leaks Raw Actix Error Messages
 
-- [ ] **#416 — `ActixAuth` variant returns `e.to_string()` directly in 401 response body, potentially exposing internal framework details**
+- [x] **#416 — `ActixAuth` variant returns `e.to_string()` directly in 401 response body, potentially exposing internal framework details**
   - File: `src/errors.rs` (lines ~131–134)
   - Fix: Return generic `"Authentication failed"` instead of raw actix error string.
   - Source commands: `security-audit`
 
 ### Security — No `Cache-Control` on Authenticated GET Endpoints
 
-- [ ] **#417 — Authenticated GET responses lack `Cache-Control: no-store` — browsers/proxies may cache sensitive data**
+- [x] **#417 — Authenticated GET responses lack `Cache-Control: no-store` — browsers/proxies may cache sensitive data**
   - Files: `src/handlers/users.rs`, `src/handlers/teams.rs`, `src/handlers/roles.rs`, `src/handlers/items.rs`, `src/handlers/orders.rs`
   - Fix: Add `Cache-Control: no-store, private` via `DefaultHeaders` for the `/api/v1.0` scope.
   - Source commands: `security-audit`
 
 ### Security — No Guard That `jwtsecret` ≠ `secret`
 
-- [ ] **#418 — Production startup guards reject default values individually but don't check if both are set to the same custom value**
+- [x] **#418 — Production startup guards reject default values individually but don't check if both are set to the same custom value**
   - File: `src/server.rs` (lines ~297–316)
   - Fix: Add `if settings.server.secret == settings.server.jwtsecret { panic!("...") }`.
   - Source commands: `security-audit`
 
 ### Security — Default Config Plaintext Secrets in Docker Image
 
-- [ ] **#419 — `default.yml` with `secret: "Very Secret"` and `password: actix` is copied into the final Docker image**
+- [x] **#419 — `default.yml` with `secret: "Very Secret"` and `password: actix` is copied into the final Docker image**
   - File: `Dockerfile.breakfast` (line ~81), `config/default.yml`
   - Fix: Copy only `production.yml` into final image, or strip secrets from baked `default.yml`.
   - Source commands: `security-audit`
 
 ### Frontend — Missing Edit UI for Teams, Items, and Roles
 
-- [ ] **#420 — `PUT /teams/{id}`, `PUT /items/{id}`, `PUT /roles/{id}` exist but no frontend edit forms**
+- [x] **#420 — `PUT /teams/{id}`, `PUT /items/{id}`, `PUT /roles/{id}` exist but no frontend edit forms**
   - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`
   - Source commands: `api-completeness`
 
 ### Frontend — No Team Member Management UI
 
-- [ ] **#421 — Backend POST/DELETE/PUT on team members fully implemented; frontend shows read-only member table only**
+- [x] **#421 — Backend POST/DELETE/PUT on team members fully implemented; frontend shows read-only member table only**
   - File: `frontend/src/pages/teams.rs`
   - Source commands: `api-completeness`
 
 ### Frontend — No Order Update/Close UI or Order Item Quantity Edit
 
-- [ ] **#422 — `PUT /teams/{id}/orders/{oid}` (close/reopen, due date) and `PUT .../items/{iid}` (quantity) exist but no frontend UI**
+- [x] **#422 — `PUT /teams/{id}/orders/{oid}` (close/reopen, due date) and `PUT .../items/{iid}` (quantity) exist but no frontend UI**
   - File: `frontend/src/pages/orders.rs`
   - Source commands: `api-completeness`
 
 ### Frontend — No Pagination Controls
 
-- [ ] **#423 — All list endpoints return paginated responses but no page has next/previous/page controls; lists truncated at 50**
+- [x] **#423 — All list endpoints return paginated responses but no page has next/previous/page controls; lists truncated at 50**
   - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
   - Source commands: `api-completeness`
 
 ### Frontend — No Admin Edit-User UI
 
-- [ ] **#424 — AdminPage shows user list with create/delete but no edit form; only ProfilePage supports self-edit**
+- [x] **#424 — AdminPage shows user list with create/delete but no edit form; only ProfilePage supports self-edit**
   - File: `frontend/src/pages/admin.rs`
   - Source commands: `api-completeness`
 
 ### Frontend — Create User Gated Admin-Only in UI but Backend Allows Team Admin
 
-- [ ] **#425 — `require_admin_or_team_admin` allows team admins to create users, but Admin page is only visible to global admins**
+- [x] **#425 — `require_admin_or_team_admin` allows team admins to create users, but Admin page is only visible to global admins**
   - File: `frontend/src/pages/admin.rs`
   - Problem: Team admins have no UI path to create users.
   - Source commands: `api-completeness`
 
 ### Frontend — Profile Save Duplicates `build_user_context()` Logic
 
-- [ ] **#426 — After PUT, profile page manually fetches user + teams + checks admin, duplicating `build_user_context()` from api.rs**
+- [x] **#426 — After PUT, profile page manually fetches user + teams + checks admin, duplicating `build_user_context()` from api.rs**
   - File: `frontend/src/pages/profile.rs` (lines ~69–101)
   - Fix: Call `build_user_context()` instead.
   - Source commands: `review`
 
 ### Frontend — Profile Save Discards PUT Response, Makes 2 Extra GETs
 
-- [ ] **#427 — Successful PUT response body is not read; code makes separate GET for user and GET for teams**
+- [x] **#427 — Successful PUT response body is not read; code makes separate GET for user and GET for teams**
   - File: `frontend/src/pages/profile.rs` (lines ~76–78)
   - Fix: Deserialize PUT response for user data; only teams fetch needed.
   - Source commands: `review`
 
 ### Frontend — No Client-Side Email Validation on Profile Edit
 
-- [ ] **#428 — Invalid email accepted client-side, rejected server-side with generic toast**
+- [x] **#428 — Invalid email accepted client-side, rejected server-side with generic toast**
   - File: `frontend/src/pages/profile.rs` (lines ~239–253)
   - Fix: Add basic email format check to disabled expression.
   - Source commands: `review`
 
 ### Testing — Team Admin Bulk-Delete Orders Positive Path Untested
 
-- [ ] **#429 — Admin bypass tested, member denied tested, but no test where Team Admin bulk-deletes orders on own team**
+- [x] **#429 — Admin bypass tested, member denied tested, but no test where Team Admin bulk-deletes orders on own team**
   - File: `tests/api_tests.rs`
   - Source commands: `rbac-rules`
 
 ### Testing — Team Admin Update/Delete Another Member's Order Untested
 
-- [ ] **#430 — No test where Team Admin (non-owner) updates or deletes an order created by a regular member**
+- [x] **#430 — No test where Team Admin (non-owner) updates or deletes an order created by a regular member**
   - File: `tests/api_tests.rs`
   - Source commands: `rbac-rules`
 
 ### Testing — Order Owner Update/Delete Own Order Positive Path Untested
 
-- [ ] **#431 — No test where a regular member (order creator) updates or deletes their own order and gets 200**
+- [x] **#431 — No test where a regular member (order creator) updates or deletes their own order and gets 200**
   - File: `tests/api_tests.rs`
   - Source commands: `rbac-rules`
 
 ### Testing — Duplicate Team Name Conflict Not Tested via API
 
-- [ ] **#432 — No API test creates a team with an existing name and asserts 409**
+- [x] **#432 — No API test creates a team with an existing name and asserts 409**
   - File: `tests/api_tests.rs`
   - Source commands: `test-gaps`
 
 ### Testing — Negative Price Rejection Not Tested via API
 
-- [ ] **#433 — No API test sends a negative price to `POST /items` and asserts 422**
+- [x] **#433 — No API test sends a negative price to `POST /items` and asserts 422**
   - File: `tests/api_tests.rs`
   - Source commands: `test-gaps`
 
 ### Testing — `PaginationParams::sanitize()` Clamping Untested
 
-- [ ] **#434 — No test sends `limit=200` or `offset=-5` and verifies clamped pagination metadata**
+- [x] **#434 — No test sends `limit=200` or `offset=-5` and verifies clamped pagination metadata**
   - File: `src/models.rs` (lines ~31–38), `tests/api_tests.rs`
   - Source commands: `test-gaps`
 
 ### Testing — Self-Delete User by Email Untested
 
-- [ ] **#435 — No API test verifies a non-admin user can delete their own account by email**
+- [x] **#435 — No API test verifies a non-admin user can delete their own account by email**
   - File: `tests/api_tests.rs`
   - Source commands: `test-gaps`
 
 ### Testing — `create_team` Duplicate Name Not Tested at DB Level
 
-- [ ] **#436 — No DB test attempts to create a team with an existing name (UNIQUE constraint)**
+- [x] **#436 — No DB test attempts to create a team with an existing name (UNIQUE constraint)**
   - File: `tests/db_tests.rs`
   - Source commands: `test-gaps`
 
 ### Testing — `create_role` Duplicate Title Not Tested at DB Level
 
-- [ ] **#437 — No DB test for creating a role with a duplicate title**
+- [x] **#437 — No DB test for creating a role with a duplicate title**
   - File: `tests/db_tests.rs`
   - Source commands: `test-gaps`
 

@@ -3,7 +3,7 @@ use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
 use crate::components::toast::{toast_error, toast_success};
-use crate::components::LoadingSpinner;
+use crate::components::{LoadingSpinner, PaginationBar};
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
@@ -13,21 +13,31 @@ pub fn ItemsPage() -> impl IntoView {
     let (loading, set_loading) = signal(true);
     let (show_create, set_show_create) = signal(false);
     let (delete_target, set_delete_target) = signal(Option::<(String, String)>::None);
+    let (edit_target, set_edit_target) = signal(Option::<ItemEntry>::None);
+    let (offset, set_offset) = signal(0usize);
+    let (total, set_total) = signal(0usize);
+    let limit = 50usize;
 
     let user = expect_context::<ReadSignal<Option<UserContext>>>();
     let is_admin = Signal::derive(move || user.get().map(|u| u.is_admin).unwrap_or(false));
 
     // Fetch items on mount
-    wasm_bindgen_futures::spawn_local(async move {
-        if let Some(resp) = authed_get("/api/v1.0/items").await {
-            if resp.ok() {
-                if let Ok(data) = resp.json::<PaginatedResponse<ItemEntry>>().await {
-                    set_items.set(data.items);
+    let fetch_items = move |off: usize| {
+        set_loading.set(true);
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = format!("/api/v1.0/items?limit={}&offset={}", limit, off);
+            if let Some(resp) = authed_get(&url).await {
+                if resp.ok() {
+                    if let Ok(data) = resp.json::<PaginatedResponse<ItemEntry>>().await {
+                        set_total.set(data.total as usize);
+                        set_items.set(data.items);
+                    }
                 }
             }
-        }
-        set_loading.set(false);
-    });
+            set_loading.set(false);
+        });
+    };
+    fetch_items(0);
 
     let do_create_item = move |descr: String, price: String| {
         let body = serde_json::json!({ "descr": descr, "price": price });
@@ -43,6 +53,28 @@ pub fn ItemsPage() -> impl IntoView {
                 _ => toast_error("Failed to create item"),
             }
             set_show_create.set(false);
+        });
+    };
+
+    let do_update_item = move |item_id: String, descr: String, price: String| {
+        let body = serde_json::json!({ "descr": descr, "price": price });
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = format!("/api/v1.0/items/{}", item_id);
+            let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
+            match resp {
+                Some(r) if r.ok() => {
+                    if let Ok(updated) = r.json::<ItemEntry>().await {
+                        set_items.update(|list| {
+                            if let Some(i) = list.iter_mut().find(|i| i.item_id == updated.item_id) {
+                                *i = updated;
+                            }
+                        });
+                        toast_success("Item updated");
+                    }
+                }
+                _ => toast_error("Failed to update item"),
+            }
+            set_edit_target.set(None);
         });
     };
 
@@ -118,6 +150,7 @@ pub fn ItemsPage() -> impl IntoView {
                                     let descr = item.descr.clone();
                                     let descr_del = item.descr.clone();
                                     let price = item.price.clone();
+                                    let item = item.clone();
 
                                     view! {
                                         <tr class="connect-table-row">
@@ -126,8 +159,20 @@ pub fn ItemsPage() -> impl IntoView {
                                             {move || is_admin.get().then(|| {
                                                 let iid = iid.clone();
                                                 let descr_del = descr_del.clone();
+                                                let item_for_edit = item.clone();
                                                 view! {
                                                     <td class="connect-table-cell connect-table-cell--actions">
+                                                        <button
+                                                            aria-label="Edit item"
+                                                            class="connect-button connect-button--neutral connect-button--outline connect-button--small"
+                                                            on:click=move |_| set_edit_target.set(Some(item_for_edit.clone()))
+                                                        >
+                                                            <span class="connect-button__content">
+                                                                <span class="connect-button__icon">
+                                                                    <Icon kind=IconKind::PenToSquare size=14 />
+                                                                </span>
+                                                            </span>
+                                                        </button>
                                                         <button
                                                             aria-label="Delete item"
                                                             class="connect-button connect-button--negative connect-button--outline connect-button--small"
@@ -149,6 +194,13 @@ pub fn ItemsPage() -> impl IntoView {
                                 }).collect::<Vec<_>>()}
                             </tbody>
                         </table>
+                        <PaginationBar
+                            offset=offset
+                            limit=limit
+                            total=total
+                            on_prev=move |off| { set_offset.set(off); fetch_items(off); }
+                            on_next=move |off| { set_offset.set(off); fetch_items(off); }
+                        />
                     </div>
                 }.into_any()
             }}
@@ -159,6 +211,24 @@ pub fn ItemsPage() -> impl IntoView {
                 on_create=do_create_item
                 on_cancel=move || set_show_create.set(false)
             />
+
+            // Edit item dialog
+            {move || {
+                let target = edit_target.get();
+                let open = Signal::derive(move || edit_target.get().is_some());
+                if let Some(item) = target {
+                    view! {
+                        <EditItemDialog
+                            open=open
+                            item=item
+                            on_save=do_update_item
+                            on_cancel=move || set_edit_target.set(None)
+                        />
+                    }.into_any()
+                } else {
+                    view! { <span /> }.into_any()
+                }
+            }}
 
             // Delete confirmation
             {move || {
@@ -272,6 +342,104 @@ fn CreateItemDialog(
                             >
                                 <span class="connect-button__content">
                                     <span class="connect-button__label">"Create"</span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }.into_any()
+        }}
+    }
+}
+
+#[component]
+fn EditItemDialog(
+    open: Signal<bool>,
+    item: ItemEntry,
+    on_save: impl Fn(String, String, String) + 'static + Clone + Send,
+    on_cancel: impl Fn() + 'static + Clone + Send,
+) -> impl IntoView {
+    let (descr, set_descr) = signal(item.descr.clone());
+    let (price, set_price) = signal(item.price.clone());
+    let item_id = item.item_id.clone();
+
+    view! {
+        {move || {
+            if !open.get() {
+                return view! { <div class="modal-hidden" /> }.into_any();
+            }
+
+            let on_save = on_save.clone();
+            let on_cancel_bd = on_cancel.clone();
+            let on_cancel_b = on_cancel.clone();
+            let iid = item_id.clone();
+
+            view! {
+                <div class="modal-overlay" on:click=move |_| on_cancel_bd()>
+                    <div class="modal-dialog" on:click=move |ev| ev.stop_propagation()>
+                        <div class="modal-header">
+                            <h2 class="modal-title">"Edit Item"</h2>
+                        </div>
+                        <div class="modal-body">
+                            <div class="connect-text-field">
+                                <div class="connect-label">
+                                    <label class="connect-label__text" for="edit-item-descr">"Description"</label>
+                                </div>
+                                <div class="connect-text-field__input-wrapper">
+                                    <input
+                                        class="connect-text-field__input"
+                                        id="edit-item-descr"
+                                        type="text"
+                                        prop:value=move || descr.get()
+                                        on:input=move |ev| {
+                                            let Some(target) = ev.target() else { return; };
+                                            set_descr.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                                        }
+                                    />
+                                </div>
+                            </div>
+                            <div class="connect-text-field" style="margin-top: var(--ds-layout-spacing-200, 12px);">
+                                <div class="connect-label">
+                                    <label class="connect-label__text" for="edit-item-price">"Price"</label>
+                                </div>
+                                <div class="connect-text-field__input-wrapper">
+                                    <input
+                                        class="connect-text-field__input"
+                                        id="edit-item-price"
+                                        type="text"
+                                        inputmode="decimal"
+                                        prop:value=move || price.get()
+                                        on:input=move |ev| {
+                                            let Some(target) = ev.target() else { return; };
+                                            set_price.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                                        }
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button
+                                class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
+                                on:click={
+                                    let cancel = on_cancel_b.clone();
+                                    move |_| cancel()
+                                }
+                            >
+                                <span class="connect-button__content">
+                                    <span class="connect-button__label">"Cancel"</span>
+                                </span>
+                            </button>
+                            <button
+                                class="connect-button connect-button--accent connect-button--medium"
+                                disabled=move || descr.get().trim().is_empty() || price.get().trim().is_empty()
+                                on:click={
+                                    let save = on_save.clone();
+                                    let iid = iid.clone();
+                                    move |_| save(iid.clone(), descr.get(), price.get())
+                                }
+                            >
+                                <span class="connect-button__content">
+                                    <span class="connect-button__label">"Save"</span>
                                 </span>
                             </button>
                         </div>

@@ -123,6 +123,35 @@ pub fn OrdersPage() -> impl IntoView {
         });
     };
 
+    let do_toggle_order_closed = move |order_id: String, currently_closed: bool| {
+        let team_id = match selected_team.get() {
+            Some(id) => id,
+            None => return,
+        };
+        let body = serde_json::json!({ "closed": !currently_closed });
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id);
+            let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
+            match resp {
+                Some(r) if r.ok() => {
+                    if let Ok(updated) = r.json::<TeamOrderEntry>().await {
+                        set_orders.update(|list| {
+                            if let Some(o) = list.iter_mut().find(|o| o.teamorders_id == updated.teamorders_id) {
+                                *o = updated.clone();
+                            }
+                        });
+                        if selected_order.get().map(|o| o.teamorders_id == updated.teamorders_id).unwrap_or(false) {
+                            set_selected_order.set(Some(updated));
+                        }
+                        let msg = if currently_closed { "Order reopened" } else { "Order closed" };
+                        toast_success(msg);
+                    }
+                }
+                _ => toast_error("Failed to update order"),
+            }
+        });
+    };
+
     let do_delete_order = move |order_id: String| {
         let team_id = match selected_team.get() {
             Some(id) => id,
@@ -285,6 +314,7 @@ pub fn OrdersPage() -> impl IntoView {
                                 selected_team=selected_team
                                 on_select=load_order_items.clone()
                                 on_delete=move |oid: String, label: String| set_delete_target.set(Some((oid, label)))
+                                on_toggle_closed=do_toggle_order_closed
                             />
                         </div>
                         <div class="content-split__secondary">
@@ -337,6 +367,7 @@ fn OrdersList(
     selected_team: ReadSignal<Option<String>>,
     on_select: impl Fn(String, TeamOrderEntry) + 'static + Clone + Send,
     on_delete: impl Fn(String, String) + 'static + Clone + Send,
+    on_toggle_closed: impl Fn(String, bool) + 'static + Clone + Send,
 ) -> impl IntoView {
     let user = expect_context::<ReadSignal<Option<UserContext>>>();
     view! {
@@ -400,6 +431,7 @@ fn OrdersList(
                                 let order_click = order.clone();
                                 let on_select = on_select.clone();
                                 let on_delete = on_delete.clone();
+                                let on_toggle = on_toggle_closed.clone();
 
                                 view! {
                                     <tr
@@ -426,16 +458,32 @@ fn OrdersList(
                                         </td>
                                         <td class="connect-table-cell connect-table-cell--actions">
                                             {move || can_delete().then(|| {
-                                                let oid_del = oid_del.clone();
+                                                let oid_toggle = oid_del.clone();
+                                                let oid_del2 = oid_del.clone();
                                                 let due_label = due_label.clone();
                                                 let on_delete = on_delete.clone();
+                                                let on_toggle = on_toggle.clone();
                                                 view! {
+                                                    <button
+                                                        aria-label=if closed { "Reopen order" } else { "Close order" }
+                                                        class="connect-button connect-button--neutral connect-button--outline connect-button--small"
+                                                        on:click=move |ev| {
+                                                            ev.stop_propagation();
+                                                            on_toggle(oid_toggle.clone(), closed);
+                                                        }
+                                                    >
+                                                        <span class="connect-button__content">
+                                                            <span class="connect-button__label">
+                                                                {if closed { "Reopen" } else { "Close" }}
+                                                            </span>
+                                                        </span>
+                                                    </button>
                                                     <button
                                                         aria-label="Delete order"
                                                         class="connect-button connect-button--negative connect-button--outline connect-button--small"
                                                         on:click=move |ev| {
                                                             ev.stop_propagation();
-                                                            on_delete(oid_del.clone(), due_label.clone());
+                                                            on_delete(oid_del2.clone(), due_label.clone());
                                                         }
                                                     >
                                                         <span class="connect-button__content">

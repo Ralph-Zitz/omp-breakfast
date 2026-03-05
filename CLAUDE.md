@@ -14,7 +14,7 @@ A breakfast ordering application for teams, built in Rust with an actix-web REST
 - **Rate limiting:** `actix-governor` on auth endpoints (6s per request, burst size 10)
 - **Validation:** `validator` crate with derive macros
 - **Error handling:** `thiserror` for typed error enum, `color-eyre` for colorized panic/error reports
-- **Observability:** `tracing` + `tracing-subscriber` (Bunyan JSON in prod, colorized ANSI in dev), OpenTelemetry spans, `color-eyre` SpanTrace via `tracing-error`
+- **Observability:** `tracing` + `tracing-subscriber` (structured JSON in prod via `fmt::layer().json()`, colorized ANSI in dev), OpenTelemetry spans, `color-eyre` SpanTrace via `tracing-error`
 - **API docs:** `utoipa` + `utoipa-swagger-ui` (Swagger UI at `/explorer`)
 - **TLS:** rustls with local certs (mkcert) for both the web server and DB connections
 - **Decimal:** `rust_decimal` for monetary/price values (numeric(10,2) in DB)
@@ -58,7 +58,7 @@ src/
     mod.rs         – Module declarations + re-exports of all public DB functions
     migrate.rs     – Refinery migration runner (embed_migrations! + run_migrations)
     health.rs      – Database health check (check_db)
-    users.rs       – User CRUD (get_users, get_user, get_user_by_email, create_user, update_user, delete_user, delete_user_by_email)
+    users.rs       – User CRUD (get_users, get_user, get_user_by_email, get_password_hash, create_user, update_user, delete_user, delete_user_by_email)
     teams.rs       – Team CRUD + user-team queries (get_teams, get_team, create_team, update_team, delete_team, get_user_teams, get_team_users)
     roles.rs       – Role CRUD (get_roles, get_role, create_role, update_role, delete_role)
     items.rs       – Item CRUD (get_items, get_item, create_item, update_item, delete_item)
@@ -130,7 +130,9 @@ Dockerfile.breakfast – Multi-stage Docker build for the application
 Dockerfile.postgres  – Custom Postgres image with init scripts
 docker-compose.yml   – Development stack (app + Postgres)
 docker-compose.test.yml – Test stack overlay (port 5433)
+LICENSE            – MIT license
 Makefile           – Build, test, and dev convenience targets
+NEW-UI-COMPONENTS.md – Registry of custom UI components not available in the CONNECT design system
 README.md          – Project readme
 migrations/
   V1__initial_schema.sql – Refinery migration for the database schema
@@ -177,7 +179,7 @@ tests/
 - Health endpoint (`/health`) returns HTTP 503 with `{"up": false}` when the database is unreachable, and HTTP 200 with `{"up": true}` when healthy
 - Backend serves `frontend/dist/` as static files via `actix-files`, with `index_file("index.html")`
 - Static files are served with a `Content-Security-Policy` header: `default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://assets.lego.com; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'`. The `'unsafe-inline'` directive in `script-src` is required because Trunk generates an inline `<script type="module">` to initialize the WASM module; removing it causes a white-screen failure in Chrome. The `font-src` directive includes `https://assets.lego.com` to allow loading the LEGO Typewell proprietary font from the LEGO CDN.
-- Security headers: `Strict-Transport-Security` (HSTS), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin` are set globally via `DefaultHeaders`
+- Security headers: `Strict-Transport-Security` (HSTS), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()` are set globally via `DefaultHeaders`
 - Password hashing uses explicit Argon2id parameters (`Algorithm::Argon2id`, `Version::V0x13`, `Params::default()`) rather than `Argon2::default()` to prevent silent weakening via crate updates
 
 ## Frontend Architecture
@@ -368,8 +370,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### Backend
 
 - 193 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 87 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
-- 96 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 117 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 103 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
 - Test DB uses `docker-compose.test.yml` overlay to expose port 5433 (avoids conflicts with dev DB on 5432)

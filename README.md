@@ -61,13 +61,13 @@ The project has three test suites:
 make test-unit     # or: cargo test
 ```
 
-**Integration tests** (179 tests: 87 API + 92 DB) — require PostgreSQL:
+**Integration tests** (220 tests: 117 API + 103 DB) — require PostgreSQL:
 
 ```bash
 make test-integration
 ```
 
-This automatically starts an isolated Postgres container on port 5433, runs all six migrations (V1–V6), seeds test data, executes all integration tests, and tears down the container.
+This automatically starts an isolated Postgres container on port 5433, runs all seven migrations (V1–V7), seeds test data, executes all integration tests, and tears down the container.
 
 **Frontend WASM tests** (41 tests) — require Chrome:
 

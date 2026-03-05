@@ -1,6 +1,4 @@
-use crate::api::{
-    HttpMethod, PaginatedResponse, UserContext, UserInTeams, authed_get, authed_request,
-};
+use crate::api::{HttpMethod, UserContext, authed_request};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::role_tag_class;
@@ -74,36 +72,17 @@ pub fn ProfilePage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    // Refresh user context with updated data
-                    if let Some(resp) = authed_get(&format!("/api/v1.0/users/{}", user_id)).await {
-                        if resp.ok() {
-                            if let Ok(updated) = resp.json::<crate::api::UserEntry>().await {
-                                // Fetch fresh teams too
-                                let teams_url = format!("/api/v1.0/users/{}/teams", user_id);
-                                let teams = if let Some(tr) = authed_get(&teams_url).await {
-                                    if tr.ok() {
-                                        tr.json::<PaginatedResponse<UserInTeams>>()
-                                            .await
-                                            .map(|p| p.items)
-                                            .unwrap_or_default()
-                                    } else {
-                                        Vec::new()
-                                    }
-                                } else {
-                                    Vec::new()
-                                };
-
-                                let is_admin = teams.iter().any(|t| t.title == "Admin");
-                                set_user.set(Some(UserContext {
-                                    user_id: updated.user_id.clone(),
-                                    firstname: updated.firstname,
-                                    lastname: updated.lastname,
-                                    email: updated.email,
-                                    is_admin,
-                                    teams,
-                                }));
-                            }
-                        }
+                    if let Ok(updated) = r.json::<crate::api::UserEntry>().await {
+                        let teams = crate::api::fetch_user_teams(&user_id).await;
+                        let is_admin = teams.iter().any(|t| t.title == "Admin");
+                        set_user.set(Some(UserContext {
+                            user_id: updated.user_id.clone(),
+                            firstname: updated.firstname,
+                            lastname: updated.lastname,
+                            email: updated.email,
+                            is_admin,
+                            teams,
+                        }));
                     }
                     toast_success("Profile updated");
                     set_editing.set(false);
@@ -262,7 +241,13 @@ pub fn ProfilePage() -> impl IntoView {
                                 </button>
                                 <button
                                     class="connect-button connect-button--accent connect-button--medium"
-                                    disabled=move || saving.get() || firstname.get().trim().is_empty() || lastname.get().trim().is_empty() || email.get().trim().is_empty() || (!password.get().is_empty() && current_password.get().is_empty())
+                                    disabled=move || {
+                                        let em = email.get();
+                                        let email_invalid = em.trim().is_empty()
+                                            || !em.contains('@')
+                                            || em.split('@').nth(1).map(|d| !d.contains('.')).unwrap_or(true);
+                                        saving.get() || firstname.get().trim().is_empty() || lastname.get().trim().is_empty() || email_invalid || (!password.get().is_empty() && current_password.get().is_empty())
+                                    }
                                     on:click=move |_| save_profile()
                                 >
                                     <span class="connect-button__content">

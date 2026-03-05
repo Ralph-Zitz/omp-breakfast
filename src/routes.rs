@@ -4,7 +4,8 @@ use crate::middleware::auth::{basic_validator, jwt_validator, refresh_validator}
 use crate::middleware::openapi::*;
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{
-    middleware::Compat, web::JsonConfig, web::PathConfig, web::PayloadConfig, web::ServiceConfig,
+    middleware::{Compat, DefaultHeaders},
+    web::JsonConfig, web::PathConfig, web::PayloadConfig, web::ServiceConfig,
     web::delete, web::get, web::post, web::put, web::resource, web::scope,
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
@@ -69,6 +70,7 @@ pub fn routes(cfg: &mut ServiceConfig) {
             // data isolation. Team-scoped RBAC is enforced only on mutations (POST/PUT/DELETE)
             // within individual handlers via require_admin, require_team_admin, etc.
             scope("/api/v1.0")
+                .wrap(DefaultHeaders::new().add(("Cache-Control", "no-store, private")))
                 .wrap(Compat::new(jwt_auth))
                 .app_data(
                     JsonConfig::default()

@@ -17,7 +17,6 @@ use std::{env, path::Path, time::Duration};
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{error, info, warn};
 use tracing_actix_web::TracingLogger;
-use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
@@ -258,12 +257,16 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         // Production: structured JSON output for log aggregators (no color)
         let (non_blocking_writer, guard) = tracing_appender::non_blocking(std::io::stdout());
         _non_blocking_guard = Some(guard);
-        let bunyan_formatting_layer = BunyanFormattingLayer::new(app_name, non_blocking_writer);
         let subscriber = Registry::default()
             .with(env_filter)
             .with(telemetry)
-            .with(JsonStorageLayer)
-            .with(bunyan_formatting_layer)
+            .with(
+                fmt::layer()
+                    .json()
+                    .with_writer(non_blocking_writer)
+                    .with_current_span(true)
+                    .with_span_list(true),
+            )
             .with(ErrorLayer::default());
         tracing::subscriber::set_global_default(subscriber)
             .expect("Failed to install `tracing` subscriber.");
@@ -293,7 +296,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     let port = settings.server.port;
 
     // Reject default secrets in production
-    if is_production && settings.server.secret == "Very Secret" {
+    if is_production && (settings.server.secret == "Very Secret" || settings.server.secret.is_empty()) {
         panic!(
             "FATAL: Server secret must be changed from the default value in production. Set BREAKFAST_SERVER_SECRET environment variable."
         );
@@ -301,7 +304,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     if !is_production && settings.server.secret == "Very Secret" {
         warn!("Using default server secret — acceptable for development only");
     }
-    if is_production && settings.server.jwtsecret == "Very Secret" {
+    if is_production && (settings.server.jwtsecret == "Very Secret" || settings.server.jwtsecret.is_empty()) {
         panic!(
             "FATAL: JWT secret must be changed from the default value in production. Set BREAKFAST_SERVER_JWTSECRET environment variable."
         );
@@ -312,6 +315,11 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
             settings.server.jwtsecret.len()
         );
     }
+    if is_production && settings.server.secret == settings.server.jwtsecret {
+        panic!(
+            "FATAL: Server secret and JWT secret must be different values in production."
+        );
+    }
     if !is_production && settings.server.jwtsecret == "Very Secret" {
         warn!("Using default JWT secret — acceptable for development only");
     }
@@ -319,12 +327,12 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     // Reject default database credentials in production
     let pg_user = settings.pg.user.as_deref().unwrap_or("actix");
     let pg_password = settings.pg.password.as_deref().unwrap_or("actix");
-    if is_production && pg_user == "actix" {
+    if is_production && (pg_user == "actix" || pg_user.is_empty()) {
         panic!(
             "FATAL: Database user must be changed from the default value in production. Set BREAKFAST_PG_USER environment variable."
         );
     }
-    if is_production && pg_password == "actix" {
+    if is_production && (pg_password == "actix" || pg_password.is_empty()) {
         panic!(
             "FATAL: Database password must be changed from the default value in production. Set BREAKFAST_PG_PASSWORD environment variable."
         );

@@ -144,7 +144,7 @@ impl ResponseError for Error {
             Error::ActixAuth(e) => {
                 warn!(error = %e, "Authentication failure");
                 HttpResponse::Unauthorized().json(ErrorResponse {
-                    error: e.to_string(),
+                    error: "Authentication failed".to_string(),
                 })
             }
             Error::Config(e) => {

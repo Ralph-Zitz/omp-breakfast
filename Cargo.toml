@@ -35,10 +35,9 @@ color-eyre = "0.6.5"
 tracing = "0.1.44"
 tracing-error = "0.2.1"
 tracing-log = "0.2.0"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry", "json"] }
 tracing-appender = "0.2.4"
 tracing-actix-web = { version = "0.7.21", features = ["opentelemetry_0_31", "uuid_v7"] }
-tracing-bunyan-formatter = "0.3.10"
 opentelemetry = "0.31.0"
 opentelemetry-stdout = { version = "0.31.0", features = ["trace"] }
 opentelemetry_sdk = { version = "0.31.0", features = ["default", "rt-tokio-current-thread"] }

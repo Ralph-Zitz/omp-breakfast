@@ -83,10 +83,11 @@ pub fn Sidebar() -> impl IntoView {
                     on_click=move || nav_to(Page::Profile)
                 />
 
-                // Admin-only items
+                // Admin/Team Admin items
                 {move || {
                     let is_admin = user.with(|u| u.as_ref().map(|u| u.is_admin).unwrap_or(false));
-                    if is_admin {
+                    let is_team_admin = user.with(|u| u.as_ref().map(|u| u.teams.iter().any(|t| t.title == "Team Admin")).unwrap_or(false));
+                    if is_admin || is_team_admin {
                         view! {
                             <NavItem
                                 icon=IconKind::ShieldCheck
@@ -94,12 +95,14 @@ pub fn Sidebar() -> impl IntoView {
                                 active=Signal::derive(move || page.get() == Page::Admin)
                                 on_click=move || nav_to(Page::Admin)
                             />
-                            <NavItem
-                                icon=IconKind::Gear
-                                label="Roles"
-                                active=Signal::derive(move || page.get() == Page::Roles)
-                                on_click=move || nav_to(Page::Roles)
-                            />
+                            {is_admin.then(|| view! {
+                                <NavItem
+                                    icon=IconKind::Gear
+                                    label="Roles"
+                                    active=Signal::derive(move || page.get() == Page::Roles)
+                                    on_click=move || nav_to(Page::Roles)
+                                />
+                            })}
                         }.into_any()
                     } else {
                         view! { <div /> }.into_any()

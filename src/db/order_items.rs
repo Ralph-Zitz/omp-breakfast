@@ -82,7 +82,7 @@ pub async fn get_order_items(
 
     let statement = client
         .prepare(
-            "select orders_teamorders_id, orders_item_id, orders_team_id, amt, created, changed from orders where orders_teamorders_id = $1 and orders_team_id = $2 order by orders_item_id limit $3 offset $4",
+            "select orders_teamorders_id, orders_item_id, orders_team_id, amt, created, changed from orders where orders_teamorders_id = $1 and orders_team_id = $2 order by created asc limit $3 offset $4",
         )
         .await
         .map_err(Error::Db)?;
