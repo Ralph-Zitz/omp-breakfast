@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-04
+Last updated: 2026-03-06
 
 ## Critical Items
 
@@ -55,6 +55,13 @@ Last updated: 2026-03-04
   - Problem: V3 changed the FK on `orders.orders_item_id` from CASCADE to RESTRICT. When deleting an item, PostgreSQL must verify no orders reference it. The composite PK `(orders_teamorders_id, orders_item_id)` cannot serve this lookup because `orders_item_id` is the second column.
   - Fix: Add `CREATE INDEX IF NOT EXISTS idx_orders_item ON orders (orders_item_id);` in a V4 migration.
   - Source commands: `db-review`
+
+### Testing — `current_password` Verification on Self-Password-Change Completely Untested
+
+- [x] **#397 — Three distinct error paths in self-password-change have zero test coverage: missing field→422, wrong password→403, correct→200**
+  - File: `src/handlers/users.rs`, `tests/api_tests.rs`
+  - Fix: Added three API integration tests exercising all three paths: `self_password_change_without_current_password_returns_422`, `self_password_change_with_wrong_current_password_returns_403`, `self_password_change_with_correct_current_password_succeeds`.
+  - Source commands: `test-gaps`
 
 ## Important Items
 
@@ -536,6 +543,48 @@ Last updated: 2026-03-04
   - Problem: Screen readers announced icon-only trash buttons as unlabeled buttons, violating WCAG 2.1 SC 4.1.2.
   - Resolution: Added `aria-label` to all 6 icon-only delete buttons: "Delete team", "Delete item", "Delete order", "Remove item from order", "Delete role", "Delete user".
   - Source commands: `review`
+
+### Performance — Argon2 Password Hashing Blocks Async Tokio Worker Thread
+
+- [x] **#398 — `hash_password()` and `verify_password()` are CPU-intensive (~100–300ms) and run synchronously in async handlers**
+  - Files: `src/db/users.rs`, `src/middleware/auth.rs`, `src/handlers/users.rs`
+  - Fix: Wrapped all 4 call sites in `tokio::task::spawn_blocking()`: `hash_password` in `create_user`/`update_user`, `verify_password` in `basic_validator` (both paths), and `verify_password` in `update_user` handler self-password-change. Added `tokio` as direct dependency.
+  - Source commands: `review`
+
+### Security — Admin Can Delete Their Own Account With No Guard
+
+- [x] **#399 — No frontend or backend guard prevents the last admin from deleting themselves, losing all administrative access**
+  - Files: `src/handlers/users.rs`, `src/db/membership.rs`, `frontend/src/pages/admin.rs`
+  - Fix: (Backend) Added `count_admins()` DB function and guard in `delete_user`/`delete_user_by_email` handlers — returns 403 if caller is deleting self, is admin, and is the last admin. (Frontend) Hide delete button for current user's own row in admin page.
+  - Source commands: `review`
+
+### Testing — Account Lockout Full-Flow Has No End-to-End API Test
+
+- [x] **#400 — 5-attempt lockout → 429 → success clears lockout — no API integration test for the full flow**
+  - File: `tests/api_tests.rs`
+  - Fix: Added `lockout_lifecycle_5_failures_then_429_then_success_clears` API integration test exercising the complete lockout lifecycle.
+  - Source commands: `test-gaps`
+
+### Testing — Self-Delete User Completely Untested at API Level
+
+- [x] **#401 — The `require_self_or_admin_or_team_admin` self-match path for DELETE has no API integration test**
+  - File: `tests/api_tests.rs`
+  - Fix: Added `non_admin_user_can_delete_own_account` API integration test.
+  - Source commands: `test-gaps`
+
+### Testing — `get_password_hash` DB Function Completely Untested
+
+- [x] **#402 — `get_password_hash` in `db/users.rs` is used for password verification during self-password-change but has no DB integration test**
+  - File: `tests/db_tests.rs`
+  - Fix: Added `get_password_hash_returns_argon2_hash` and `get_password_hash_returns_not_found_for_nonexistent_user` DB integration tests.
+  - Source commands: `test-gaps`
+
+### Frontend — Order Delete Button RBAC Mismatch
+
+- [x] **#403 — Frontend gates delete button on global admin only, but backend `require_order_owner_or_team_admin` allows order owner and team admin**
+  - File: `frontend/src/pages/orders.rs`, `frontend/src/api.rs`
+  - Fix: Added `team_id` field to `UserInTeams` struct. Replaced `is_admin` prop with `can_delete` closure that checks admin OR order owner OR team admin. Updated mock data in frontend tests.
+  - Source commands: `api-completeness`
 
 ## Minor Items
 

@@ -465,9 +465,13 @@ pub async fn basic_validator(
                     // Perform a dummy Argon2id verify to equalize response time
                     // with the existing-user-wrong-password path, preventing
                     // user-enumeration via timing side-channel.
-                    if let Ok(dummy) = PasswordHash::new(DUMMY_HASH) {
-                        let _ = crate::argon2_hasher().verify_password(b"dummy-equalize", &dummy);
-                    }
+                    let _ = tokio::task::spawn_blocking(|| {
+                        if let Ok(dummy) = PasswordHash::new(DUMMY_HASH) {
+                            let _ =
+                                crate::argon2_hasher().verify_password(b"dummy-equalize", &dummy);
+                        }
+                    })
+                    .await;
                     warn!(user = %credentials.user_id(), "Unknown user attempted authentication");
                     record_failed_attempt(state, credentials.user_id());
                     return Err((
@@ -482,7 +486,7 @@ pub async fn basic_validator(
     };
     if let Some(pswd) = credentials.password() {
         let parsed_hash = match PasswordHash::new(&auth_entry.password_hash) {
-            Ok(h) => h,
+            Ok(h) => h.to_string(),
             Err(_) => {
                 warn!(user = %credentials.user_id(), "Malformed password hash in database");
                 return Err((
@@ -493,21 +497,27 @@ pub async fn basic_validator(
                 ));
             }
         };
-        match crate::argon2_hasher().verify_password(pswd.as_bytes(), &parsed_hash) {
-            Ok(_) => {
-                clear_failed_attempts(state, credentials.user_id());
-                Ok(req)
-            }
-            Err(_) => {
-                warn!(user = %credentials.user_id(), "Invalid password for user");
-                record_failed_attempt(state, credentials.user_id());
-                Err((
-                    actix_web::error::ErrorUnauthorized(ErrorResponse {
-                        error: "Unauthorized access".to_string(),
-                    }),
-                    req,
-                ))
-            }
+        let pswd = pswd.to_string();
+        let verify_result = tokio::task::spawn_blocking(move || {
+            let hash = PasswordHash::new(&parsed_hash).expect("already validated");
+            crate::argon2_hasher()
+                .verify_password(pswd.as_bytes(), &hash)
+                .is_ok()
+        })
+        .await
+        .unwrap_or(false);
+        if verify_result {
+            clear_failed_attempts(state, credentials.user_id());
+            Ok(req)
+        } else {
+            warn!(user = %credentials.user_id(), "Invalid password for user");
+            record_failed_attempt(state, credentials.user_id());
+            Err((
+                actix_web::error::ErrorUnauthorized(ErrorResponse {
+                    error: "Unauthorized access".to_string(),
+                }),
+                req,
+            ))
         }
     } else {
         warn!(user = %credentials.user_id(), "Missing password in basic auth");

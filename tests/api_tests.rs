@@ -5275,3 +5275,449 @@ async fn get_orders_for_nonexistent_team_returns_empty_list() {
     assert!(orders.is_empty(), "should return empty list");
     assert_eq!(body["total"], 0);
 }
+
+// ===========================================================================
+// #397 — Self-password-change verification: missing, wrong, correct
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn self_password_change_without_current_password_returns_422() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let test_email = "selfpw-no-current@example.com";
+    let test_password = "OriginalPass!123";
+
+    // Create user
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "SelfPw",
+            "lastname": "NoCurrent",
+            "email": test_email,
+            "password": test_password
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let user: Value = test::read_body_json(resp).await;
+    let user_id = user["user_id"].as_str().unwrap().to_string();
+
+    // Login as the user to get their own token
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:{}", test_email, test_password))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let user_auth: Auth = test::read_body_json(resp).await;
+    let user_token = &user_auth.access_token;
+
+    // Self-update password WITHOUT current_password → 422
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", user_token)))
+        .set_json(json!({
+            "firstname": "SelfPw",
+            "lastname": "NoCurrent",
+            "email": test_email,
+            "password": "NewPassword!456"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        422,
+        "self-password-change without current_password should be 422"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn self_password_change_with_wrong_current_password_returns_403() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let test_email = "selfpw-wrong@example.com";
+    let test_password = "OriginalPass!123";
+
+    // Create user
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "SelfPw",
+            "lastname": "WrongCurrent",
+            "email": test_email,
+            "password": test_password
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let user: Value = test::read_body_json(resp).await;
+    let user_id = user["user_id"].as_str().unwrap().to_string();
+
+    // Login as the user
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:{}", test_email, test_password))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let user_auth: Auth = test::read_body_json(resp).await;
+    let user_token = &user_auth.access_token;
+
+    // Self-update password with WRONG current_password → 403
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", user_token)))
+        .set_json(json!({
+            "firstname": "SelfPw",
+            "lastname": "WrongCurrent",
+            "email": test_email,
+            "password": "NewPassword!456",
+            "current_password": "TotallyWrongPassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "self-password-change with wrong current_password should be 403"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn self_password_change_with_correct_current_password_succeeds() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let test_email = "selfpw-correct@example.com";
+    let test_password = "OriginalPass!123";
+    let new_password = "ChangedPass!456";
+
+    // Create user
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "SelfPw",
+            "lastname": "Correct",
+            "email": test_email,
+            "password": test_password
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let user: Value = test::read_body_json(resp).await;
+    let user_id = user["user_id"].as_str().unwrap().to_string();
+
+    // Login as the user
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:{}", test_email, test_password))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let user_auth: Auth = test::read_body_json(resp).await;
+    let user_token = &user_auth.access_token;
+
+    // Self-update password with CORRECT current_password → 200
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", user_token)))
+        .set_json(json!({
+            "firstname": "SelfPw",
+            "lastname": "Correct",
+            "email": test_email,
+            "password": new_password,
+            "current_password": test_password
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "self-password-change with correct current_password should succeed"
+    );
+
+    // Verify new password works
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:{}", test_email, new_password))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "new password should work after change");
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ===========================================================================
+// #400 — Account lockout full lifecycle
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn lockout_lifecycle_5_failures_then_429_then_success_clears() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let test_email = "lockout-lifecycle@example.com";
+    let test_password = "LockoutTest!123";
+
+    // Create a test user
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "Lockout",
+            "lastname": "Test",
+            "email": test_email,
+            "password": test_password
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let user: Value = test::read_body_json(resp).await;
+    let user_id = user["user_id"].as_str().unwrap().to_string();
+
+    // 1. Send 5 wrong password attempts
+    for i in 1..=5 {
+        let req = test::TestRequest::post()
+            .uri("/auth")
+            .peer_addr(PEER)
+            .insert_header((
+                "Authorization",
+                format!(
+                    "Basic {}",
+                    STANDARD.encode(format!("{}:wrong-password-{}", test_email, i))
+                ),
+            ))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            401,
+            "attempt {} should be rejected with 401",
+            i
+        );
+    }
+
+    // 2. Next attempt should be locked out → 429
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:any-password", test_email))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        429,
+        "after 5 failures, account should be locked (429)"
+    );
+
+    // 3. Clear lockout by directly manipulating state (simulates window expiry)
+    state.login_attempts.remove(test_email);
+
+    // 4. Correct password should now succeed
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:{}", test_email, test_password))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "correct password should work after lockout cleared"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ===========================================================================
+// #401 — Self-delete user at API level
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn non_admin_user_can_delete_own_account() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let test_email = "self-delete@example.com";
+    let test_password = "SelfDelete!123";
+
+    // Create a test user
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "SelfDel",
+            "lastname": "Test",
+            "email": test_email,
+            "password": test_password
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let user: Value = test::read_body_json(resp).await;
+    let user_id = user["user_id"].as_str().unwrap().to_string();
+
+    // Login as the user
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:{}", test_email, test_password))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let user_auth: Auth = test::read_body_json(resp).await;
+    let user_token = &user_auth.access_token;
+
+    // Delete own account
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", user_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "non-admin user should be able to delete their own account"
+    );
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["deleted"], true);
+
+    // Verify user no longer exists
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "deleted user should not be found");
+}
+
+// ===========================================================================
+// #399 — Last admin cannot delete themselves
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn last_admin_cannot_delete_own_account() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    // The seed admin is the only admin. Attempting self-delete should fail.
+    // First, find the admin's user_id from the token.
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let users = paginated_items(body);
+    let admin_user = users
+        .iter()
+        .find(|u| u["email"] == "admin@admin.com")
+        .expect("seed admin should exist");
+    let admin_id = admin_user["user_id"].as_str().unwrap();
+
+    // Attempt to delete self
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", admin_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "last admin should not be able to delete their own account"
+    );
+}

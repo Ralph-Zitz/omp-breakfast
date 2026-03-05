@@ -282,7 +282,6 @@ pub fn OrdersPage() -> impl IntoView {
                                 loading=loading_orders
                                 selected_order=selected_order
                                 selected_team=selected_team
-                                is_admin=is_admin
                                 on_select=load_order_items.clone()
                                 on_delete=move |oid: String, label: String| set_delete_target.set(Some((oid, label)))
                             />
@@ -335,10 +334,10 @@ fn OrdersList(
     loading: ReadSignal<bool>,
     selected_order: ReadSignal<Option<TeamOrderEntry>>,
     selected_team: ReadSignal<Option<String>>,
-    is_admin: Signal<bool>,
     on_select: impl Fn(String, TeamOrderEntry) + 'static + Clone + Send,
     on_delete: impl Fn(String, String) + 'static + Clone + Send,
 ) -> impl IntoView {
+    let user = expect_context::<ReadSignal<Option<UserContext>>>();
     view! {
         {move || {
             if loading.get() {
@@ -379,11 +378,22 @@ fn OrdersList(
                             {order_list.into_iter().map(|order| {
                                 let oid = order.teamorders_id.clone();
                                 let oid_del = order.teamorders_id.clone();
+                                let order_owner_id = order.teamorders_user_id.clone();
+                                let order_team_id = order.teamorders_team_id.clone();
                                 let due = order.duedate.clone().unwrap_or_else(|| "No date".to_string());
                                 let due_label = due.clone();
                                 let closed = order.closed;
                                 let is_selected = move || {
                                     selected_order.get().as_ref().map(|o| o.teamorders_id.as_str()) == Some(oid.as_str())
+                                };
+                                let can_delete = move || {
+                                    let ctx = user.get();
+                                    match ctx {
+                                        Some(ref u) if u.is_admin => true,
+                                        Some(ref u) if u.user_id == order_owner_id => true,
+                                        Some(ref u) => u.teams.iter().any(|t| t.team_id == order_team_id && t.title == "Team Admin"),
+                                        None => false,
+                                    }
                                 };
                                 let team_id_click = team_id.clone();
                                 let order_click = order.clone();
@@ -414,7 +424,7 @@ fn OrdersList(
                                             }}
                                         </td>
                                         <td class="connect-table-cell connect-table-cell--actions">
-                                            {move || is_admin.get().then(|| {
+                                            {move || can_delete().then(|| {
                                                 let oid_del = oid_del.clone();
                                                 let due_label = due_label.clone();
                                                 let on_delete = on_delete.clone();

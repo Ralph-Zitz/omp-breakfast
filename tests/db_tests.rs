@@ -9,6 +9,7 @@
 //!   docker compose up -d postgres && docker compose run --rm postgres-setup
 //!   TEST_DB_PORT=5433 cargo test --test db_tests -- --ignored
 
+use argon2::password_hash::PasswordVerifier;
 use breakfast::{db, models::*};
 use chrono::{NaiveDate, Utc};
 use rust_decimal::Decimal;
@@ -2822,4 +2823,72 @@ async fn create_team_order_with_nonexistent_team_id_fails() {
         result.is_err(),
         "creating a team order with non-existent team_id should fail (FK violation)"
     );
+}
+
+// ===========================================================================
+// #402 — get_password_hash DB function
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn get_password_hash_returns_argon2_hash() {
+    let client = test_client().await;
+    let email = unique_email();
+
+    let created = db::create_user(
+        &client,
+        CreateUserEntry {
+            firstname: "HashTest".to_string(),
+            lastname: "User".to_string(),
+            email: email.clone(),
+            password: "securepassword123".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let hash = db::get_password_hash(&client, created.user_id)
+        .await
+        .expect("get_password_hash should succeed");
+
+    assert!(
+        hash.starts_with("$argon2"),
+        "hash should be an Argon2 hash, got: {}",
+        hash
+    );
+
+    // Verify the hash matches the original password
+    let parsed = argon2::PasswordHash::new(&hash).expect("should parse");
+    argon2::Argon2::default()
+        .verify_password(b"securepassword123", &parsed)
+        .expect("hash should verify against original password");
+
+    // Cleanup
+    db::delete_user(&client, created.user_id)
+        .await
+        .expect("cleanup");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn get_password_hash_returns_not_found_for_nonexistent_user() {
+    let client = test_client().await;
+    let fake_id = Uuid::now_v7();
+
+    let result = db::get_password_hash(&client, fake_id).await;
+    assert!(result.is_err(), "should return error for nonexistent user");
+}
+
+// ===========================================================================
+// #399 — count_admins DB function
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn count_admins_returns_at_least_one() {
+    let client = test_client().await;
+    let count = db::count_admins(&client)
+        .await
+        .expect("count_admins should succeed");
+    assert!(count >= 1, "seed data should have at least one admin");
 }

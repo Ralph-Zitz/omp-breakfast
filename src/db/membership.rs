@@ -5,6 +5,28 @@ use crate::models::*;
 use deadpool_postgres::Client;
 use uuid::Uuid;
 
+/// Count the number of distinct users that hold the "Admin" role in any team.
+pub async fn count_admins(client: &Client) -> Result<i64, Error> {
+    let statement = client
+        .prepare(
+            r#"
+                SELECT COUNT(DISTINCT m.memberof_user_id) AS admin_count
+                FROM memberof m
+                JOIN roles r ON r.role_id = m.memberof_role_id
+                WHERE r.title = $1
+            "#,
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    let row = client
+        .query_one(&statement, &[&ROLE_ADMIN])
+        .await
+        .map_err(Error::Db)?;
+
+    Ok(row.get("admin_count"))
+}
+
 /// Check whether the user holds the "Admin" or "Team Admin" role in any team.
 pub async fn is_admin_or_team_admin(client: &Client, user_id: Uuid) -> Result<bool, Error> {
     let statement = client

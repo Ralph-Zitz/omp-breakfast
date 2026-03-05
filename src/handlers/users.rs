@@ -255,6 +255,17 @@ pub async fn delete_user(
     // RBAC: self, global admin, or team admin of a shared team
     require_self_or_admin_or_team_admin(&client, &req, uid).await?;
 
+    // Prevent the last admin from deleting themselves
+    let caller_id = requesting_user_id(&req);
+    if caller_id == Some(uid) && db::is_admin(&client, uid).await? {
+        let admin_count = db::count_admins(&client).await?;
+        if admin_count <= 1 {
+            return Err(Error::Forbidden(
+                "Cannot delete the last admin account".to_string(),
+            ));
+        }
+    }
+
     // Fetch user email before deletion so we can invalidate the auth cache after
     let user_email = db::get_user(&client, uid).await.ok().map(|u| u.email);
 
@@ -303,6 +314,17 @@ pub async fn delete_user_by_email(
     match db::get_user_by_email(&client, &email).await {
         Ok(user) => {
             require_self_or_admin_or_team_admin(&client, &req, user.user_id).await?;
+
+            // Prevent the last admin from deleting themselves
+            let caller_id = requesting_user_id(&req);
+            if caller_id == Some(user.user_id) && db::is_admin(&client, user.user_id).await? {
+                let admin_count = db::count_admins(&client).await?;
+                if admin_count <= 1 {
+                    return Err(Error::Forbidden(
+                        "Cannot delete the last admin account".to_string(),
+                    ));
+                }
+            }
         }
         Err(_) => {
             // User not found — still enforce admin check to prevent info leakage
@@ -367,12 +389,26 @@ pub async fn update_user(
             })?;
 
             let stored_hash = db::get_password_hash(&client, uid).await?;
-            let parsed_hash = argon2::PasswordHash::new(&stored_hash)
-                .map_err(|e| Error::Argon2(e.to_string()))?;
+            let current_pw = current_pw.to_string();
+            let verify_ok = tokio::task::spawn_blocking(move || {
+                let parsed_hash = argon2::PasswordHash::new(&stored_hash)
+                    .map_err(|e| e.to_string())?;
+                crate::argon2_hasher()
+                    .verify_password(current_pw.as_bytes(), &parsed_hash)
+                    .map_err(|_| "mismatch".to_string())
+            })
+            .await
+            .map_err(|e| Error::Argon2(e.to_string()))?;
 
-            crate::argon2_hasher()
-                .verify_password(current_pw.as_bytes(), &parsed_hash)
-                .map_err(|_| Error::Forbidden("Current password is incorrect".to_string()))?;
+            match verify_ok {
+                Err(ref e) if e == "mismatch" => {
+                    return Err(Error::Forbidden(
+                        "Current password is incorrect".to_string(),
+                    ));
+                }
+                Err(e) => return Err(Error::Argon2(e)),
+                Ok(()) => {}
+            }
         }
     }
 

@@ -105,6 +105,7 @@ pub struct OrderItemEntry {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct UserInTeams {
+    pub team_id: String,
     pub tname: String,
     pub title: String,
     #[allow(dead_code)]

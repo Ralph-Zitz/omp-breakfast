@@ -123,12 +123,14 @@ pub fn AdminPage() -> impl IntoView {
                                     let name = format!("{} {}", u.firstname, u.lastname);
                                     let name_del = name.clone();
                                     let email = u.email.clone();
+                                    let uid_for_self = uid.clone();
+                                    let is_self = move || user.get().map(|ctx| ctx.user_id == uid_for_self).unwrap_or(false);
 
                                     view! {
                                         <tr class="connect-table-row">
                                             <td class="connect-table-cell">{name}</td>
                                             <td class="connect-table-cell">{email}</td>
-                                            {move || is_admin.get().then(|| {
+                                            {move || (is_admin.get() && !is_self()).then(|| {
                                                 let uid = uid.clone();
                                                 let name_del = name_del.clone();
                                                 view! {

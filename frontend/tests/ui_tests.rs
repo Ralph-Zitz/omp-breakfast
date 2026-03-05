@@ -1646,6 +1646,7 @@ fn install_mock_fetch_full() {
                 if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {{
                     return Promise.resolve(new Response(
                         JSON.stringify({{"items":[{{
+                            "team_id": "aaaaaaaa-1234-1234-1234-1234567890ab",
                             "tname": "Core Team",
                             "title": "Admin",
                             "firstname": "John",

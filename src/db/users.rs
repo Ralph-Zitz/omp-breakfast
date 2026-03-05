@@ -104,11 +104,16 @@ pub async fn create_user(client: &Client, user: CreateUserEntry) -> Result<UserE
         .await
         .map_err(Error::Db)?;
 
-    let salt = SaltString::generate(&mut OsRng);
-    let hash = crate::argon2_hasher()
-        .hash_password(user.password.as_bytes(), &salt)
-        .map_err(|err| Error::Argon2(err.to_string()))?
-        .to_string();
+    let password = user.password.clone();
+    let hash = tokio::task::spawn_blocking(move || {
+        let salt = SaltString::generate(&mut OsRng);
+        crate::argon2_hasher()
+            .hash_password(password.as_bytes(), &salt)
+            .map(|h| h.to_string())
+    })
+    .await
+    .map_err(|e| Error::Argon2(e.to_string()))?
+    .map_err(|err| Error::Argon2(err.to_string()))?;
     client
         .query_one(
             &statement,
@@ -143,11 +148,16 @@ pub async fn update_user(
                 .await
                 .map_err(Error::Db)?;
 
-            let salt = SaltString::generate(&mut OsRng);
-            let hash = crate::argon2_hasher()
-                .hash_password(password.as_bytes(), &salt)
-                .map_err(|err| Error::Argon2(err.to_string()))?
-                .to_string();
+            let pw = password.clone();
+            let hash = tokio::task::spawn_blocking(move || {
+                let salt = SaltString::generate(&mut OsRng);
+                crate::argon2_hasher()
+                    .hash_password(pw.as_bytes(), &salt)
+                    .map(|h| h.to_string())
+            })
+            .await
+            .map_err(|e| Error::Argon2(e.to_string()))?
+            .map_err(|err| Error::Argon2(err.to_string()))?;
 
             client
                 .query_opt(

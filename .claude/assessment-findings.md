@@ -26,11 +26,226 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
-*No open important items.*
-
 ## Minor Items
 
-*No open minor items.*
+### Documentation — CLAUDE.md Backend Test Counts Stale
+
+- [ ] **#404 — CLAUDE.md states 193 unit, 87 API, 96 DB tests; actual counts are 195 unit, 109 API, 101 DB**
+  - File: `CLAUDE.md` (Testing section)
+  - Source commands: `cross-ref-check`
+
+### Documentation — README Test Counts Stale
+
+- [ ] **#405 — README.md states 193 unit, 87 API, 92 DB; actual counts are 195, 109, 101**
+  - File: `README.md`
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md `db/users.rs` Function List Incomplete
+
+- [ ] **#406 — `get_password_hash` missing from the parenthetical function list**
+  - File: `CLAUDE.md` (Project Structure → `db/users.rs`)
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md Structure Tree Missing Root Files
+
+- [ ] **#407 — `NEW-UI-COMPONENTS.md` and `LICENSE` exist on disk but not in project structure tree**
+  - File: `CLAUDE.md` (Project Structure)
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md Security Headers Omits `Permissions-Policy`
+
+- [ ] **#415 — `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()` is set in `DefaultHeaders` but not documented**
+  - File: `CLAUDE.md` (Security headers bullet), `src/server.rs` (line ~444)
+  - Source commands: `practices-audit`
+
+### Database — Redundant Indexes Duplicate UNIQUE Constraint Auto-Indexes
+
+- [ ] **#408 — `idx_users_email` and `idx_teams_name` duplicate the implicit unique indexes from UNIQUE constraints**
+  - File: `migrations/V1__initial_schema.sql` (lines ~25, ~38)
+  - Fix: Add migration to `DROP INDEX IF EXISTS idx_users_email; DROP INDEX IF EXISTS idx_teams_name;`
+  - Source commands: `db-review`
+
+### Database — Pagination Count and Data Queries Not Transactionally Consistent
+
+- [ ] **#409 — `SELECT COUNT(*)` and `SELECT ... LIMIT/OFFSET` run as separate statements; total can be stale relative to items**
+  - Files: `src/db/users.rs`, `src/db/teams.rs`, `src/db/roles.rs`, `src/db/items.rs`, `src/db/orders.rs`, `src/db/order_items.rs`
+  - Fix: Wrap in explicit transaction or use `COUNT(*) OVER()` window function.
+  - Source commands: `db-review`
+
+### Database — `get_order_items` ORDER BY UUID Gives Non-Meaningful Sort
+
+- [ ] **#410 — `ORDER BY orders_item_id` sorts by item UUID primary key, not by when the item was added or by name**
+  - File: `src/db/order_items.rs` (line ~84)
+  - Fix: Change to `ORDER BY created` or `ORDER BY items.descr` via JOIN.
+  - Source commands: `db-review`
+
+### Dependencies — `tracing-bunyan-formatter` Effectively Unmaintained
+
+- [ ] **#411 — v0.3.10 (last release Feb 2024) causes `tracing-log` v0.1/v0.2 duplication and pulls stale transitive deps**
+  - File: `Cargo.toml`
+  - Fix: Replace with custom JSON layer via `tracing-subscriber::fmt::layer().json()`.
+  - Source commands: `dependency-check`
+
+### OpenAPI — `create_order_item` Missing 404 Response
+
+- [ ] **#412 — `guard_open_order` returns 404 when team order doesn't exist, but utoipa annotation omits 404**
+  - File: `src/handlers/orders.rs` (lines ~68–82)
+  - Fix: Add `(status = 404, description = "Team order or item not found", body = ErrorResponse)`.
+  - Source commands: `openapi-sync`
+
+### OpenAPI — Member Management 403 Descriptions Omit Admin-Role Guard
+
+- [ ] **#413 — `add_team_member` and `update_member_role` 403 descriptions say only "team admin role required" but omit `guard_admin_role_assignment` scenario**
+  - File: `src/handlers/teams.rs` (lines ~358–372, ~431–445)
+  - Fix: Update to "Forbidden — team admin role required, or only global admins can assign the Admin role".
+  - Source commands: `openapi-sync`
+
+### OpenAPI — `create_team_order` Missing 422 Response
+
+- [ ] **#414 — Handler calls `validate(&json)?` but utoipa annotation omits 422**
+  - File: `src/handlers/teams.rs` (line ~228)
+  - Fix: Add `(status = 422, description = "Validation error", body = ErrorResponse)`.
+  - Source commands: `rbac-rules`
+
+### Security — `Error::ActixAuth` Leaks Raw Actix Error Messages
+
+- [ ] **#416 — `ActixAuth` variant returns `e.to_string()` directly in 401 response body, potentially exposing internal framework details**
+  - File: `src/errors.rs` (lines ~131–134)
+  - Fix: Return generic `"Authentication failed"` instead of raw actix error string.
+  - Source commands: `security-audit`
+
+### Security — No `Cache-Control` on Authenticated GET Endpoints
+
+- [ ] **#417 — Authenticated GET responses lack `Cache-Control: no-store` — browsers/proxies may cache sensitive data**
+  - Files: `src/handlers/users.rs`, `src/handlers/teams.rs`, `src/handlers/roles.rs`, `src/handlers/items.rs`, `src/handlers/orders.rs`
+  - Fix: Add `Cache-Control: no-store, private` via `DefaultHeaders` for the `/api/v1.0` scope.
+  - Source commands: `security-audit`
+
+### Security — No Guard That `jwtsecret` ≠ `secret`
+
+- [ ] **#418 — Production startup guards reject default values individually but don't check if both are set to the same custom value**
+  - File: `src/server.rs` (lines ~297–316)
+  - Fix: Add `if settings.server.secret == settings.server.jwtsecret { panic!("...") }`.
+  - Source commands: `security-audit`
+
+### Security — Default Config Plaintext Secrets in Docker Image
+
+- [ ] **#419 — `default.yml` with `secret: "Very Secret"` and `password: actix` is copied into the final Docker image**
+  - File: `Dockerfile.breakfast` (line ~81), `config/default.yml`
+  - Fix: Copy only `production.yml` into final image, or strip secrets from baked `default.yml`.
+  - Source commands: `security-audit`
+
+### Frontend — Missing Edit UI for Teams, Items, and Roles
+
+- [ ] **#420 — `PUT /teams/{id}`, `PUT /items/{id}`, `PUT /roles/{id}` exist but no frontend edit forms**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`
+  - Source commands: `api-completeness`
+
+### Frontend — No Team Member Management UI
+
+- [ ] **#421 — Backend POST/DELETE/PUT on team members fully implemented; frontend shows read-only member table only**
+  - File: `frontend/src/pages/teams.rs`
+  - Source commands: `api-completeness`
+
+### Frontend — No Order Update/Close UI or Order Item Quantity Edit
+
+- [ ] **#422 — `PUT /teams/{id}/orders/{oid}` (close/reopen, due date) and `PUT .../items/{iid}` (quantity) exist but no frontend UI**
+  - File: `frontend/src/pages/orders.rs`
+  - Source commands: `api-completeness`
+
+### Frontend — No Pagination Controls
+
+- [ ] **#423 — All list endpoints return paginated responses but no page has next/previous/page controls; lists truncated at 50**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
+  - Source commands: `api-completeness`
+
+### Frontend — No Admin Edit-User UI
+
+- [ ] **#424 — AdminPage shows user list with create/delete but no edit form; only ProfilePage supports self-edit**
+  - File: `frontend/src/pages/admin.rs`
+  - Source commands: `api-completeness`
+
+### Frontend — Create User Gated Admin-Only in UI but Backend Allows Team Admin
+
+- [ ] **#425 — `require_admin_or_team_admin` allows team admins to create users, but Admin page is only visible to global admins**
+  - File: `frontend/src/pages/admin.rs`
+  - Problem: Team admins have no UI path to create users.
+  - Source commands: `api-completeness`
+
+### Frontend — Profile Save Duplicates `build_user_context()` Logic
+
+- [ ] **#426 — After PUT, profile page manually fetches user + teams + checks admin, duplicating `build_user_context()` from api.rs**
+  - File: `frontend/src/pages/profile.rs` (lines ~69–101)
+  - Fix: Call `build_user_context()` instead.
+  - Source commands: `review`
+
+### Frontend — Profile Save Discards PUT Response, Makes 2 Extra GETs
+
+- [ ] **#427 — Successful PUT response body is not read; code makes separate GET for user and GET for teams**
+  - File: `frontend/src/pages/profile.rs` (lines ~76–78)
+  - Fix: Deserialize PUT response for user data; only teams fetch needed.
+  - Source commands: `review`
+
+### Frontend — No Client-Side Email Validation on Profile Edit
+
+- [ ] **#428 — Invalid email accepted client-side, rejected server-side with generic toast**
+  - File: `frontend/src/pages/profile.rs` (lines ~239–253)
+  - Fix: Add basic email format check to disabled expression.
+  - Source commands: `review`
+
+### Testing — Team Admin Bulk-Delete Orders Positive Path Untested
+
+- [ ] **#429 — Admin bypass tested, member denied tested, but no test where Team Admin bulk-deletes orders on own team**
+  - File: `tests/api_tests.rs`
+  - Source commands: `rbac-rules`
+
+### Testing — Team Admin Update/Delete Another Member's Order Untested
+
+- [ ] **#430 — No test where Team Admin (non-owner) updates or deletes an order created by a regular member**
+  - File: `tests/api_tests.rs`
+  - Source commands: `rbac-rules`
+
+### Testing — Order Owner Update/Delete Own Order Positive Path Untested
+
+- [ ] **#431 — No test where a regular member (order creator) updates or deletes their own order and gets 200**
+  - File: `tests/api_tests.rs`
+  - Source commands: `rbac-rules`
+
+### Testing — Duplicate Team Name Conflict Not Tested via API
+
+- [ ] **#432 — No API test creates a team with an existing name and asserts 409**
+  - File: `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — Negative Price Rejection Not Tested via API
+
+- [ ] **#433 — No API test sends a negative price to `POST /items` and asserts 422**
+  - File: `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — `PaginationParams::sanitize()` Clamping Untested
+
+- [ ] **#434 — No test sends `limit=200` or `offset=-5` and verifies clamped pagination metadata**
+  - File: `src/models.rs` (lines ~31–38), `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — Self-Delete User by Email Untested
+
+- [ ] **#435 — No API test verifies a non-admin user can delete their own account by email**
+  - File: `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — `create_team` Duplicate Name Not Tested at DB Level
+
+- [ ] **#436 — No DB test attempts to create a team with an existing name (UNIQUE constraint)**
+  - File: `tests/db_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — `create_role` Duplicate Title Not Tested at DB Level
+
+- [ ] **#437 — No DB test for creating a role with a duplicate title**
+  - File: `tests/db_tests.rs`
+  - Source commands: `test-gaps`
 
 ## Informational Items
 
@@ -453,6 +668,172 @@ This file is **generated and maintained by the project assessment process** defi
   - File: `src/models.rs`
   - Source commands: `test-gaps`
 
+### Database — `SET timezone` in V1 Is Session-Scoped Dead Code
+
+- [ ] **#438 — `SET timezone = 'Europe/Copenhagen'` only affects the migration connection session, not application connections**
+  - File: `migrations/V1__initial_schema.sql` (line ~10)
+  - Source commands: `db-review`
+
+### Database — Seed Data `teamorders` INSERT Not Idempotent
+
+- [ ] **#439 — `ON CONFLICT DO NOTHING` never fires because PK is auto-generated UUID; re-running seed creates duplicates**
+  - File: `database_seed.sql` (lines ~178–187)
+  - Source commands: `db-review`
+
+### Database — FK Constraint Violations Return Generic 409 Message
+
+- [ ] **#440 — All foreign key violations (23503) map to same opaque message regardless of which relationship is violated**
+  - File: `src/errors.rs` (lines ~110–114)
+  - Fix: Extract constraint name from DB error for more specific messages.
+  - Source commands: `db-review`
+
+### Database — No DB-Level Aggregate Query for Order Totals
+
+- [ ] **#441 — No `get_order_total()` function; frontend must fetch all items and compute totals client-side**
+  - File: `src/db/order_items.rs` (absent function)
+  - Source commands: `db-review`
+
+### Dependencies — `rustls` `tls12` Feature May Be Unnecessary
+
+- [ ] **#442 — Internal app could enforce TLS 1.3 only by removing `tls12` feature**
+  - File: `Cargo.toml` (rustls dependency)
+  - Source commands: `dependency-check`
+
+### Dependencies — Three Versions of `getrandom` Compiled
+
+- [ ] **#443 — `getrandom` v0.2, v0.3, and v0.4 all compiled due to ecosystem version split**
+  - File: `Cargo.toml` (transitive)
+  - Source commands: `dependency-check`
+
+### Dependencies — `refinery` Pulls `toml` 0.8 Alongside `config`'s 0.9
+
+- [ ] **#444 — Duplicates the TOML parser; will resolve when `refinery` upgrades upstream**
+  - File: `Cargo.toml` (transitive)
+  - Source commands: `dependency-check`
+
+### Dependencies — `opentelemetry-stdout` Used Unconditionally
+
+- [ ] **#445 — Trace spans go to stdout in both dev and production; may conflict with Bunyan JSON logging in prod**
+  - File: `Cargo.toml`, `src/server.rs` (line ~13)
+  - Source commands: `dependency-check`
+
+### OpenAPI — `update_user` 403 Description Omits Password Verification Failure
+
+- [ ] **#446 — A correct JWT with wrong `current_password` returns an undocumented 403 with different error message**
+  - File: `src/handlers/users.rs` (lines ~273–289)
+  - Source commands: `openapi-sync`
+
+### Security — JWT HS256 With No Key Rotation Mechanism
+
+- [ ] **#447 — No `kid` claim or multi-key support; compromised secret requires full restart**
+  - File: `src/middleware/auth.rs` (lines ~65–70)
+  - Source commands: `security-audit`
+
+### Security — `local_storage()` Helper Needs Doc Warning
+
+- [ ] **#448 — Public helper exists alongside `session_storage()`; could invite token misuse by future developers**
+  - File: `frontend/src/api.rs` (lines ~187–191)
+  - Fix: Add doc-comment warning against storing tokens in localStorage.
+  - Source commands: `security-audit`
+
+### Security — Docker Containers Lack Hardening Options
+
+- [ ] **#449 — No `read_only: true`, `security_opt: ["no-new-privileges:true"]`, or `cap_drop: ["ALL"]`**
+  - File: `docker-compose.yml`
+  - Source commands: `security-audit`
+
+### Security — CORS `allowed_origin` Uses Bind Address
+
+- [ ] **#450 — `allowed_origin(&format!("https://{}:{}", host, port))` produces non-matching origin string; CORS is effectively non-functional**
+  - File: `src/server.rs` (lines ~430–435)
+  - Source commands: `security-audit`
+
+### Security — `.git` Directory Copied Into Docker Builder Stage
+
+- [ ] **#451 — Full git history in builder image cache; used only for `git_version!()`**
+  - File: `Dockerfile.breakfast` (line ~40)
+  - Fix: Pass git version as build arg instead.
+  - Source commands: `security-audit`
+
+### Frontend — Inconsistent Async Spawning API
+
+- [ ] **#452 — `LogoutButton` uses `leptos::task::spawn_local` while all others use `wasm_bindgen_futures::spawn_local`**
+  - File: `frontend/src/components/sidebar.rs` (line ~172)
+  - Source commands: `review`
+
+### Code Quality — Auth Cache Eviction O(n)
+
+- [ ] **#453 — `evict_oldest_if_full` iterates all 1000 entries to find oldest; fine at current scale**
+  - File: `src/middleware/auth.rs`
+  - Source commands: `review`
+
+### Code Quality — `GovernorConfigBuilder::finish().unwrap()` in Production Path
+
+- [ ] **#454 — Should use `.expect("valid rate limiter config")` for better panic message**
+  - File: `src/routes.rs` (lines ~22–24)
+  - Source commands: `review`
+
+### Code Quality — `format!()` on String Literals
+
+- [ ] **#455 — `format!("Delete User")` etc. allocate unnecessarily; use `.to_string()` instead**
+  - Files: `frontend/src/pages/admin.rs` (line ~169), `frontend/src/pages/roles.rs` (line ~164), `frontend/src/pages/items.rs` (line ~165)
+  - Source commands: `review`
+
+### Code Quality — OrdersPage File Exceeds 700 Lines
+
+- [ ] **#456 — Contains `OrdersPage`, `OrderDetail`, `CreateOrderDialog`, `LoadingSpinner` — hard to navigate**
+  - File: `frontend/src/pages/orders.rs`
+  - Fix: Extract `OrderDetail` and `CreateOrderDialog` into components or submodule.
+  - Source commands: `review`
+
+### API Completeness — `OrderItemEntry` vs Backend `OrderEntry` Naming Inconsistency
+
+- [ ] **#457 — Frontend renames the struct for clarity but creates naming mismatch with backend**
+  - File: `frontend/src/api.rs` (lines ~96–104)
+  - Source commands: `api-completeness`
+
+### API Completeness — Bulk Team Order Delete Endpoint Not Consumed
+
+- [ ] **#458 — `DELETE /api/v1.0/teams/{team_id}/orders` exists but has no frontend UI trigger**
+  - File: `src/routes.rs`
+  - Source commands: `api-completeness`
+
+### API Completeness — Delete-User-by-Email Endpoint Not Consumed
+
+- [ ] **#459 — AdminPage deletes by user_id only; the by-email endpoint is unreachable from UI**
+  - File: `src/routes.rs`
+  - Source commands: `api-completeness`
+
+### API Completeness — Single-Resource GET Endpoints Not Consumed (×5)
+
+- [ ] **#460 — Frontend always fetches via list endpoints; `GET /teams/{id}`, `GET /items/{id}`, `GET /roles/{id}`, single order, single order item all unused**
+  - File: `src/routes.rs`
+  - Source commands: `api-completeness`
+
+### Testing — Revoke Already-Revoked Token Idempotency Untested
+
+- [ ] **#461 — No API test calls `POST /auth/revoke` twice with the same token**
+  - File: `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — `Cache-Control: no-store` Header on Auth Responses Untested
+
+- [ ] **#462 — Both `auth_user` and `refresh_token` set the header but no test asserts its presence**
+  - File: `tests/api_tests.rs`
+  - Source commands: `test-gaps`
+
+### Testing — `ErrorResponse::Display` Fallback Branch Untested
+
+- [ ] **#463 — The `serde_json::to_string` failure fallback in `Display` impl has no test**
+  - File: `src/errors.rs` (lines ~51–59)
+  - Source commands: `test-gaps`
+
+### Testing — `ActixJson` Catch-All Error Branch Untested
+
+- [ ] **#464 — The `_ =>` branch for generic `JsonPayloadError` (overflow, EOF) returns 400 but is untargeted by tests**
+  - File: `src/errors.rs` (lines ~200–205)
+  - Source commands: `test-gaps`
+
 ## Completed Items
 
 Resolved items are maintained in [`.claude/resolved-findings.md`](.claude/resolved-findings.md), organized by original severity.
@@ -460,19 +841,19 @@ See that file for the full history of resolved findings.
 
 ## Notes
 
-- All 421 tests pass: 193 backend unit (171 lib + 22 healthcheck), 90 API integration, 98 DB integration, 41 WASM. Total: **422 tests, 0 failures**.
-- Backend unit test breakdown: config: 6, db/migrate: 34, errors: 16, from_row: 10, handlers/mod: 12, middleware/auth+openapi: 32, models: 16, routes: 19, server: 17, validate: 9, healthcheck: 22 = **193 total**.
+- All 437 tests pass: 195 backend unit (173 lib + 22 healthcheck), 103 API integration, 98 DB integration, 41 WASM. Total: **437 tests, 0 failures**.
+- Backend unit test breakdown: config: 6, db/migrate: 34, errors: 16, from_row: 10, handlers/mod: 12, middleware/auth+openapi: 34, models: 16, routes: 19, server: 17, validate: 9, healthcheck: 22 = **195 total**.
 - `cargo audit --ignore RUSTSEC-2023-0071` reports 0 vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) is intentionally ignored — **blocked on upstream**, see #132. `rsa` 0.10.0 remains at rc.16. Re-evaluate periodically.
 - All dependencies are up to date (`cargo outdated -R` shows zero outdated).
 - Clippy is clean on both backend and frontend.
 - CONNECT Design System: `git pull` reports "Already up to date" — no migration needed.
 - Frontend was refactored from monolithic `app.rs` (600+ lines) into modular architecture: `api.rs` (377 lines), `pages/` (10 files, ~2,800 lines), `components/` (7 files, ~680 lines). `app.rs` is now 164 lines (routing shell only).
-- Frontend consumes 22 of 37 API endpoints (up from 4 at last assessment).
+- Frontend consumes 22 of 37 API endpoints.
 - RBAC enforcement: no violations found. All 30 handlers enforce correct guards per CLAUDE.md policy.
-- OpenAPI spec has 41 operations; remaining annotation inaccuracies tracked (#287, #326, #384, #385).
+- OpenAPI spec has 41 operations; annotation gaps tracked (#326, #384, #385, #412, #413, #414, #446).
 - All SQL queries use parameterized prepared statements — zero injection risk.
 - All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 93 informational. **Total: 94 open items**.
-- 36 new findings in this assessment: #361–#396. 1 regression found (#361, regresses resolved #1). 1 item archived: #301 (backend fix complete).
-- 255 resolved items in `.claude/resolved-findings.md`.
-- Highest finding number: #396.
+- Open items summary: 2 critical (#132 blocked, #397), 6 important, 34 minor, 90 informational. **Total: 132 open items**.
+- 68 new findings in this assessment: #397–#464. 0 regressions found.
+- 296 resolved items in `.claude/resolved-findings.md`.
+- Highest finding number: #464.
