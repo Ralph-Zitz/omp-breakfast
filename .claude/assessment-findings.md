@@ -496,3 +496,11 @@ See that file for the full history of resolved findings.
 - 5 new findings in this assessment: #500–#504 (all documentation, all fixed). 0 regressions found.
 - Highest finding number: #504.
 - 354 resolved items in `.claude/resolved-findings.md`.
+
+### Re-assessment — 2026-03-05 (docker fix session)
+
+- **Changes since last run:** Two Docker bug fixes applied — `config/docker-base.yml` (added `db_ca_cert: localhost_ca.pem` + `ssl_mode: Require` under `pg`) and `docker-compose.yml` (added `BREAKFAST_PG_USER=actix`, `BREAKFAST_PG_PASSWORD=actix`). Both fix startup errors when running `docker compose up`.
+- **All commands re-run (api-completeness, cross-ref-check, db-review, dependency-check, openapi-sync, practices-audit, rbac-rules, review, security-audit, test-gaps):** 0 new findings.
+- **0 regressions** — all 354 resolved items checked, none regressed.
+- **Unit tests:** 193 passing (171 lib + 22 healthcheck). `cargo audit` exit 0.
+- **CONNECT Design System:** Already up to date.
