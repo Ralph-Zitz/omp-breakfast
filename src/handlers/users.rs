@@ -391,8 +391,8 @@ pub async fn update_user(
             let stored_hash = db::get_password_hash(&client, uid).await?;
             let current_pw = current_pw.to_string();
             let verify_ok = tokio::task::spawn_blocking(move || {
-                let parsed_hash = argon2::PasswordHash::new(&stored_hash)
-                    .map_err(|e| e.to_string())?;
+                let parsed_hash =
+                    argon2::PasswordHash::new(&stored_hash).map_err(|e| e.to_string())?;
                 crate::argon2_hasher()
                     .verify_password(current_pw.as_bytes(), &parsed_hash)
                     .map_err(|_| "mismatch".to_string())
