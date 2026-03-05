@@ -8,7 +8,12 @@ use uuid::Uuid;
 /// membership timestamps (`joined`, `role_changed`).
 ///
 /// Returns an empty `Vec` (not 404) when the user has no memberships.
-pub async fn get_user_teams(client: &Client, uid: Uuid, limit: i64, offset: i64) -> Result<(Vec<UserInTeams>, i64), Error> {
+pub async fn get_user_teams(
+    client: &Client,
+    uid: Uuid,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<UserInTeams>, i64), Error> {
     let statement = client
         .prepare(
             r#"
@@ -37,7 +42,11 @@ pub async fn get_user_teams(client: &Client, uid: Uuid, limit: i64, offset: i64)
 /// Fetches teams with pagination, ordered alphabetically by team name.
 ///
 /// Rows that fail to map are logged with `warn!()` and skipped.
-pub async fn get_teams(client: &Client, limit: i64, offset: i64) -> Result<(Vec<TeamEntry>, i64), Error> {
+pub async fn get_teams(
+    client: &Client,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<TeamEntry>, i64), Error> {
     let statement = client
         .prepare("select team_id, tname, descr, created, changed, count(*) over() as total_count from teams order by tname asc limit $1 offset $2")
         .await
@@ -134,7 +143,12 @@ pub async fn update_team(
 /// and membership timestamps (`joined`, `role_changed`).
 ///
 /// Returns an empty `Vec` (not 404) when the team has no members.
-pub async fn get_team_users(client: &Client, tid: Uuid, limit: i64, offset: i64) -> Result<(Vec<UsersInTeam>, i64), Error> {
+pub async fn get_team_users(
+    client: &Client,
+    tid: Uuid,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<UsersInTeam>, i64), Error> {
     let statement = client
         .prepare(
             r#"

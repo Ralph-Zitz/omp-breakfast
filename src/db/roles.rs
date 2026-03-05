@@ -7,7 +7,11 @@ use uuid::Uuid;
 /// Fetches roles with pagination, ordered alphabetically by title.
 ///
 /// Rows that fail to map are logged with `warn!()` and skipped.
-pub async fn get_roles(client: &Client, limit: i64, offset: i64) -> Result<(Vec<RoleEntry>, i64), Error> {
+pub async fn get_roles(
+    client: &Client,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<RoleEntry>, i64), Error> {
     let statement = client
         .prepare("select role_id, title, created, changed, count(*) over() as total_count from roles order by title asc limit $1 offset $2")
         .await
