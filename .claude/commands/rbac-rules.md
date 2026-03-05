@@ -18,6 +18,7 @@ Audit the codebase against the RBAC (Role-Based Access Control) policy defined b
 | Team Members  | Add, Remove, Update Role      | Team Admin or Admin (global)               | `require_team_admin`                    |
 | Team Members  | Assign Admin role             | Admin (global) only                        | `guard_admin_role_assignment`           |
 | Team Members  | Demote/remove a global Admin  | Admin (global) only                        | `guard_admin_demotion`                  |
+| Team Members  | Demote/remove last Admin      | Blocked for all                            | `guard_last_admin_membership`           |
 | User          | Create                        | Admin or Team Admin (any team)             | `require_admin_or_team_admin`           |
 | User          | Update, Delete (by ID/email)  | Self, Admin, or Team Admin (shared team)   | `require_self_or_admin_or_team_admin`   |
 | Items         | Create, Update, Delete        | Admin (global)                             | `require_admin`                         |
@@ -35,7 +36,8 @@ Audit the codebase against the RBAC (Role-Based Access Control) policy defined b
 
 - **Only global Admins can promote someone to Admin** (`guard_admin_role_assignment`): A Team Admin may assign any role *except* Admin. Only a global Admin may grant Admin privileges.
 - **Only global Admins can demote or remove a global Admin** (`guard_admin_demotion`): If the target user holds the Admin role in *any* team, a Team Admin cannot change their role or remove them from a team. Only another global Admin may modify a global Admin's membership.
-- **Global Admins can demote other global Admins**: There is no restriction preventing one Admin from changing another Admin's role.
+- **Global Admins can demote other global Admins**: There is no restriction preventing one Admin from changing another Admin's role, as long as at least one Admin remains.
+- **Last admin protection** (`guard_last_admin_membership`): No user (including a global Admin) may demote or remove the last remaining global Admin. The guard uses `db::would_admins_remain_without` to verify at least one Admin would remain after excluding the target membership. Returns 403 if the operation would leave zero admins.
 - **Members and Guests cannot modify roles**: The `require_team_admin` guard ensures that only Team Admins and global Admins can add, remove, or change member roles. Regular Members and Guests have no access to these operations.
 
 ## Admin Bypass Rules
@@ -57,9 +59,10 @@ For each handler in `src/handlers/`, verify:
 3. **Team Admin vs Admin distinction** is enforced: Team Admin cannot create/delete teams, CUD items, or CUD roles
 4. **Team Admin user scoping** is enforced: Team Admin can only update/delete users who share a team they administer (via `db::is_team_admin_of_user`)
 5. **Admin demotion protection** is enforced: Team Admins cannot demote or remove a global Admin (`guard_admin_demotion` called in `update_member_role` and `remove_team_member`)
-6. **OpenAPI annotations** include `403` response for every guarded endpoint
-6. **Seed data** in `database_seed.sql` assigns roles correctly: "Admin" for global admins, "Team Admin" for team-scoped admins
-7. **Role string constants** (`ROLE_ADMIN`, `ROLE_TEAM_ADMIN` in `middleware/auth.rs`) are used consistently across `db/membership.rs` and `handlers/mod.rs` — `database_seed.sql` uses literal role strings for seeding purposes
+6. **Last admin protection** is enforced: No user can demote or remove the last global Admin (`guard_last_admin_membership` called after `guard_admin_demotion` in `update_member_role` and `remove_team_member`)
+7. **OpenAPI annotations** include `403` response for every guarded endpoint
+8. **Seed data** in `database_seed.sql` assigns roles correctly: "Admin" for global admins, "Team Admin" for team-scoped admins
+9. **Role string constants** (`ROLE_ADMIN`, `ROLE_TEAM_ADMIN` in `middleware/auth.rs`) are used consistently across `db/membership.rs` and `handlers/mod.rs` — `database_seed.sql` uses literal role strings for seeding purposes
 
 ## Report Format
 
