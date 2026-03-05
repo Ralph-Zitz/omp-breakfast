@@ -2402,8 +2402,43 @@ Last updated: 2026-03-06
   - Resolution: Added `create_role_with_duplicate_title_fails` DB test.
   - Source commands: `test-gaps`
 
+### Documentation — CLAUDE.md `components/mod.rs` Description Incomplete
+
+- [x] **#500 — `components/mod.rs` description in CLAUDE.md says only "Module declarations" but the file also defines `LoadingSpinner`, `PaginationBar`, and `role_tag_class()`**
+  - File: `CLAUDE.md` (Project Structure → `components/mod.rs` line)
+  - Resolution: Updated description to "Module declarations + `LoadingSpinner` component, `PaginationBar` component, `role_tag_class()` CSS helper".
+  - Source commands: `cross-ref-check`
+
+### Documentation — `NEW-UI-COMPONENTS.md` Missing `LoadingSpinner` and `PaginationBar`
+
+- [x] **#501 — `LoadingSpinner` and `PaginationBar` are custom UI components not available in CONNECT design system, but neither is listed in `NEW-UI-COMPONENTS.md`**
+  - Files: `NEW-UI-COMPONENTS.md`, `frontend/src/components/mod.rs`
+  - Resolution: Added full registry entries for both components (purpose, props, rationale).
+  - Source commands: `cross-ref-check`, `practices-audit`
+
+### Documentation — CLAUDE.md Project Structure Missing `config/docker-base.yml`
+
+- [x] **#502 — `config/docker-base.yml` exists on disk and is referenced by `Dockerfile.breakfast` but is absent from the CLAUDE.md project structure listing**
+  - File: `CLAUDE.md` (Project Structure → `config/` section)
+  - Resolution: Added "docker-base.yml – Sanitized base config for Docker images (all secret fields empty; supply via env vars)" to the config listing.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md `db/membership.rs` Function List Missing `count_admins`
+
+- [x] **#503 — `count_admins` is a public function in `src/db/membership.rs` but does not appear in the CLAUDE.md parenthetical function list**
+  - File: `CLAUDE.md` (Project Structure → `db/membership.rs`)
+  - Resolution: Added `count_admins` as the first entry in the function list.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md WASM Test Category Breakdown Inaccurate
+
+- [x] **#504 — CLAUDE.md lists "Page rendering (14 tests)" but there are 12 page rendering tests; also omits the "authed_get double-failure (2 tests)" section**
+  - File: `CLAUDE.md` (Testing → Frontend section)
+  - Resolution: Changed to "Page rendering (12 tests)" and added "authed_get double-failure (2 tests): retry after 401 fails, double-failure falls back to login" section.
+  - Source commands: `cross-ref-check`
+
 ## Notes
 
-- Total resolved items: 339 (6 critical, 45 important, 105 minor, 89 informational, plus items previously counted under different categories)
+- Total resolved items: 344 (6 critical, 45 important, 110 minor, 89 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

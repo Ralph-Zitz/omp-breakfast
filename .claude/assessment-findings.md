@@ -35,45 +35,6 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Wrap in explicit transaction or use `COUNT(*) OVER()` window function.
   - Source commands: `db-review`
 
-### Documentation — CLAUDE.md `components/mod.rs` Description Incomplete
-
-- [ ] **#500 — `components/mod.rs` description in CLAUDE.md says only "Module declarations" but the file also defines `LoadingSpinner`, `PaginationBar`, and `role_tag_class()`**
-  - File: `CLAUDE.md` (Project Structure → `components/mod.rs` line)
-  - Problem: Three non-trivial items are undocumented: the `LoadingSpinner` component, the `PaginationBar` component, and the `role_tag_class()` CSS helper.
-  - Fix: Update description to "Module declarations + `LoadingSpinner` component, `PaginationBar` component, `role_tag_class()` CSS helper".
-  - Source commands: `cross-ref-check`
-
-### Documentation — `NEW-UI-COMPONENTS.md` Missing `LoadingSpinner` and `PaginationBar`
-
-- [ ] **#501 — `LoadingSpinner` and `PaginationBar` are custom UI components not available in CONNECT design system, but neither is listed in `NEW-UI-COMPONENTS.md`**
-  - Files: `NEW-UI-COMPONENTS.md`, `frontend/src/components/mod.rs`
-  - Problem: CLAUDE.md requires every custom component to be documented in `NEW-UI-COMPONENTS.md` with name, purpose, props, and rationale. Both components are missing.
-  - Fix: Add entries for `LoadingSpinner` and `PaginationBar` following the existing registry format.
-  - Source commands: `cross-ref-check`, `practices-audit`
-
-### Documentation — CLAUDE.md Project Structure Missing `config/docker-base.yml`
-
-- [ ] **#502 — `config/docker-base.yml` exists on disk and is referenced by `Dockerfile.breakfast` but is absent from the CLAUDE.md project structure listing**
-  - File: `CLAUDE.md` (Project Structure → `config/` section)
-  - Problem: Any developer reading CLAUDE.md will not know this file exists or its purpose (sanitized base config for Docker images, all secret fields empty).
-  - Fix: Add "docker-base.yml – Sanitized base config for Docker images (all secret fields empty; supply via env vars)" to the `config/` listing.
-  - Source commands: `cross-ref-check`
-
-### Documentation — CLAUDE.md `db/membership.rs` Function List Missing `count_admins`
-
-- [ ] **#503 — `count_admins` is a public function in `src/db/membership.rs` but does not appear in the CLAUDE.md parenthetical function list**
-  - File: `CLAUDE.md` (Project Structure → `db/membership.rs`)
-  - Problem: The list shows 8 functions; `count_admins` is the 9th and is omitted.
-  - Fix: Add `count_admins` to the function list.
-  - Source commands: `cross-ref-check`
-
-### Documentation — CLAUDE.md WASM Test Category Breakdown Inaccurate
-
-- [ ] **#504 — CLAUDE.md lists "Page rendering (14 tests)" but there are 12 page rendering tests; also omits the "authed_get double-failure (2 tests)" section**
-  - File: `CLAUDE.md` (Testing → Frontend section, test category list)
-  - Problem: Total of 41 tests is correct, but the per-category breakdown is wrong: page rendering is 12 not 14, and the "authed_get double-failure" subsection (2 tests) is undocumented.
-  - Fix: Change "Page rendering (14 tests)" to "Page rendering (12 tests)" and add "authed_get double-failure (2 tests): retry after 401, double-failure fallback to login".
-  - Source commands: `cross-ref-check`
 
 ## Informational Items
 
@@ -602,7 +563,7 @@ See that file for the full history of resolved findings.
 - **Test counts verified (2026-03-05):** 193 unit (171 lib + 22 healthcheck), 117 API integration (ignored), 103 DB integration (ignored), 41 WASM — all match CLAUDE.md and README.md.
 - **`cargo audit` (2026-03-05):** Exit code 0. No new vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) remains intentionally ignored — **blocked on upstream**, see #132. Re-evaluate periodically.
 - **CONNECT Design System (2026-03-05):** `git pull` reports "Already up to date" — no migration needed.
-- Open items summary: 1 critical (#132 blocked), 0 important, 6 minor, 90+ informational.
-- 5 new findings in this assessment: #500–#504 (all documentation). 0 regressions found.
+- Open items summary: 1 critical (#132 blocked), 0 important, 1 minor (#409), 90+ informational.
+- 5 new findings in this assessment: #500–#504 (all documentation, all fixed). 0 regressions found.
 - Highest finding number: #504.
-- 339 resolved items in `.claude/resolved-findings.md`.
+- 344 resolved items in `.claude/resolved-findings.md`.

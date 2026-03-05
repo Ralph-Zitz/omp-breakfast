@@ -64,7 +64,7 @@ src/
     items.rs       – Item CRUD (get_items, get_item, create_item, update_item, delete_item)
     orders.rs      – Team order CRUD (get_team_orders, get_team_order, create_team_order, update_team_order, delete_team_order, delete_team_orders)
     order_items.rs – Order item CRUD + closed-order check (is_team_order_closed, get_order_items, get_order_item, create_order_item, update_order_item, delete_order_item)
-    membership.rs  – Team membership + RBAC queries (is_admin, is_admin_or_team_admin, is_team_admin_of_user, get_member_role, check_team_access, add_team_member, remove_team_member, update_member_role)
+    membership.rs  – Team membership + RBAC queries (count_admins, is_admin, is_admin_or_team_admin, is_team_admin_of_user, get_member_role, check_team_access, add_team_member, remove_team_member, update_member_role)
     tokens.rs      – Token blacklist persistence (revoke_token_db, is_token_revoked_db, cleanup_expired_tokens)
   errors.rs        – Error enum with thiserror + ResponseError impl (maps to HTTP status codes)
   validate.rs      – Generic validation wrapper using validator crate
@@ -91,7 +91,7 @@ frontend/
     app.rs         – Root App component, Page enum, AppShell layout, session restore
     api.rs         – HTTP helpers (authed_get/post/put/delete), JWT decode, UserContext, session storage
     components/
-      mod.rs       – Module declarations
+      mod.rs       – Module declarations + `LoadingSpinner` component, `PaginationBar` component, `role_tag_class()` CSS helper
       card.rs      – UserCard component
       icons.rs     – SVG icon components (ChevronDown, Plus, Edit, Trash, etc.)
       modal.rs     – ConfirmModal component (destructive-action confirmation dialog)
@@ -122,6 +122,7 @@ connect-design-system/ – Local clone of git@github.com:LEGO/connect-design-sys
 config/
   default.yml      – Base config
   development.yml  – Dev overrides (local DB)
+  docker-base.yml  – Sanitized base config for Docker images (all secret fields empty; supply via env vars)
   production.yml   – Prod overrides
 database.sql       – Full schema (deprecated — kept for manual dev resets only; seed data moved to database_seed.sql)
 database_seed.sql  – Seed data for development/testing
@@ -390,8 +391,9 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
   - Session persistence (2 tests): session persists across refresh, logout clears tokens
   - Session restore edge cases (3 tests): malformed token fallback, expired token fallback, loading page display
   - Token refresh retry (2 tests): authed_get retry after 401, token stored after refresh
+  - authed_get double-failure (2 tests): retry after 401 fails, double-failure falls back to login
   - Theme toggle (2 tests): dark/light mode switch, ARIA attributes
-  - Page rendering (14 tests): TeamsPage (2), ItemsPage (2), OrdersPage (2), ProfilePage (2), AdminPage (2), RolesPage (2) — navigation, data rendering, admin visibility
+  - Page rendering (12 tests): TeamsPage (2), ItemsPage (2), OrdersPage (2), ProfilePage (2), AdminPage (2), RolesPage (2) — navigation, data rendering, admin visibility
   - Login error differentiation (2 tests): 429 rate limit message, 500 server error message
 - Mocking strategy: overrides `window.fetch` via `js_sys::eval` to intercept `gloo-net` HTTP calls; uses `Promise`-based `setTimeout` wrapper for async timing (no `gloo-timers` dependency)
 - Run frontend tests: `make test-frontend` or `cd frontend && wasm-pack test --headless --chrome`

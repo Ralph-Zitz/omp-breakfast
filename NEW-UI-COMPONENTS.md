@@ -76,3 +76,22 @@ Custom frontend components created for OMP Breakfast that are not provided by th
   - `size: u32` (optional, default `20`) — icon width and height in pixels
 - **Available icons:** House, Users, User, ShieldCheck, Tag, ClipboardList, Bars, Sun, Moon, ArrowRightFromBracket, CirclePlus, PenToSquare, Trash, CircleCheck, CircleXmark, CircleInfo, TriangleExclamation, Gear
 - **Rationale:** CONNECT ships icons as individual SVG files (`connect-icons/svg/*.svg`). Trunk cannot import raw SVG files at build time. This component embeds the SVG `d` path data directly from the design system source files, avoiding external HTTP requests and enabling inline coloring via `fill="currentColor"`.
+
+## LoadingSpinner
+
+- **File:** `frontend/src/components/mod.rs`
+- **Purpose:** Indeterminate progress circle shown while data is loading. Used on all list pages (Teams, Items, Orders, Roles, Admin) as a shared loading state indicator.
+- **Props:** None
+- **Rationale:** CONNECT provides `.connect-progress-circle` CSS and the `connect-progress-circle--indeterminate` modifier, but not a Leptos component wrapper. This component wraps the CONNECT markup in a reusable `#[component]` so pages don't repeat the SVG structure.
+
+## PaginationBar
+
+- **File:** `frontend/src/components/mod.rs`
+- **Purpose:** Prev/Next pagination control showing "X–Y of N" item count. Renders only when total items exceed the page limit.
+- **Props:**
+  - `offset: ReadSignal<usize>` — current zero-based page offset
+  - `limit: usize` — items per page
+  - `total: ReadSignal<usize>` — total item count from API response
+  - `on_prev: impl Fn(usize)` — callback receiving the new offset when Prev is clicked
+  - `on_next: impl Fn(usize)` — callback receiving the new offset when Next is clicked
+- **Rationale:** CONNECT does not provide a pagination component. Uses CONNECT button styles (`.connect-button--neutral`, `.connect-button--outline`, `.connect-button--small`) and DS spacing tokens for layout.
