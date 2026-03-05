@@ -78,8 +78,8 @@ macro_rules! impl_from_row {
 // ── FromRow implementations ─────────────────────────────────────────────────
 
 use crate::models::{
-    ItemEntry, OrderEntry, RoleEntry, TeamEntry, TeamOrderEntry, UpdateUserEntry, UserEntry,
-    UserInTeams, UsersInTeam,
+    AvatarListEntry, ItemEntry, OrderEntry, RoleEntry, TeamEntry, TeamOrderEntry, UpdateUserEntry,
+    UserEntry, UserInTeams, UsersInTeam,
 };
 
 impl_from_row!(UserEntry {
@@ -87,6 +87,7 @@ impl_from_row!(UserEntry {
     firstname,
     lastname,
     email,
+    avatar_id,
     created,
     changed
 });
@@ -153,6 +154,7 @@ impl_from_row!(UserInTeams {
     joined,
     role_changed
 });
+impl_from_row!(AvatarListEntry { avatar_id, name });
 
 #[cfg(test)]
 mod tests {

@@ -113,6 +113,7 @@ pub fn LoginPage() -> impl IntoView {
 fn LoginHeader() -> impl IntoView {
     view! {
         <header class="card-header">
+            <img src="lego-logo.svg" alt="LEGO" class="login-logo" />
             <h1 class="brand">
                 "OMP "<span class="brand-accent">"Breakfast"</span>
             </h1>

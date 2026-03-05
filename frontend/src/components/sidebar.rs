@@ -39,6 +39,7 @@ pub fn Sidebar() -> impl IntoView {
             // ── Brand header ────────────────────────────────────────────
             <div class="sidebar__header">
                 <div class="sidebar__brand">
+                    <img src="lego-logo.svg" alt="LEGO" class="sidebar__logo" />
                     <span class="sidebar__brand-text">
                         "OMP "<span class="brand-accent">"Breakfast"</span>
                     </span>
@@ -125,11 +126,27 @@ pub fn Sidebar() -> impl IntoView {
                             let initials = u.initials();
                             let name = u.display_name();
                             let email = u.email.clone();
+                            let avatar_view = match u.avatar_id.as_deref() {
+                                Some(aid) => {
+                                    let src = format!("/api/v1.0/avatars/{}", aid);
+                                    view! {
+                                        <img
+                                            class="connect-avatar connect-avatar--small"
+                                            src=src
+                                            alt="User avatar"
+                                            style="object-fit: cover; border-radius: var(--ds-layout-radius-round, 999px);"
+                                        />
+                                    }.into_any()
+                                }
+                                None => view! {
+                                    <div class="connect-avatar connect-avatar--small connect-avatar--initials connect-avatar--bg-yellow">
+                                        <span class="connect-avatar__text">{initials}</span>
+                                    </div>
+                                }.into_any(),
+                            };
                         view! {
                             <div class="sidebar__user">
-                                <div class="connect-avatar connect-avatar--small connect-avatar--initials connect-avatar--bg-yellow">
-                                    <span class="connect-avatar__text">{initials}</span>
-                                </div>
+                                {avatar_view}
                                 <div class="sidebar__user-info">
                                     <span class="sidebar__user-name">{name}</span>
                                     <span class="sidebar__user-email">{email}</span>
@@ -162,6 +179,7 @@ pub fn MobileHeader() -> impl IntoView {
                 <Icon kind=IconKind::Bars size=24 />
             </button>
             <span class="mobile-header__brand">
+                <img src="lego-logo.svg" alt="LEGO" class="mobile-header__logo" />
                 "OMP "<span class="brand-accent">"Breakfast"</span>
             </span>
         </header>

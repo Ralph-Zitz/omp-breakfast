@@ -106,6 +106,9 @@ pub struct State {
     /// Failed login attempt timestamps per email, for account lockout.
     /// Entries older than the lockout window are pruned on each check.
     pub login_attempts: DashMap<String, Vec<DateTime<Utc>>>,
+    /// In-memory avatar image cache: avatar_id → (image bytes, content_type).
+    /// Loaded on startup from the database; small and static (~2–3 MB total).
+    pub avatar_cache: DashMap<Uuid, (Vec<u8>, String)>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -129,6 +132,7 @@ pub struct UserEntry {
     pub firstname: String,
     pub lastname: String,
     pub email: String,
+    pub avatar_id: Option<Uuid>,
     pub created: DateTime<Utc>,
     pub changed: DateTime<Utc>,
 }
@@ -421,6 +425,21 @@ pub struct CreateOrderEntry {
 pub struct UpdateOrderEntry {
     #[validate(range(min = 1, max = 10000, message = "quantity must be between 1 and 10000"))]
     pub amt: i32,
+}
+
+// ── Avatars ─────────────────────────────────────────────────────────────────
+
+/// Avatar list entry (returned by GET /avatars — no binary data).
+#[derive(Serialize, ToSchema)]
+pub struct AvatarListEntry {
+    pub avatar_id: Uuid,
+    pub name: String,
+}
+
+/// Request body for setting a user's avatar.
+#[derive(Deserialize, Serialize, Clone, Debug, Validate, ToSchema)]
+pub struct SetAvatarRequest {
+    pub avatar_id: Uuid,
 }
 
 #[cfg(test)]

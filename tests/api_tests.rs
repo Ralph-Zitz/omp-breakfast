@@ -62,6 +62,7 @@ async fn test_state() -> Data<State> {
         cache: dashmap::DashMap::new(),
         token_blacklist: dashmap::DashMap::new(),
         login_attempts: dashmap::DashMap::new(),
+        avatar_cache: dashmap::DashMap::new(),
     })
 }
 

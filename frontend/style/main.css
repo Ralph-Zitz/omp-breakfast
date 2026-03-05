@@ -86,6 +86,24 @@ body {
     padding: var(--ds-layout-spacing-300) var(--ds-layout-spacing-200);
 }
 
+.sidebar__brand {
+    display: flex;
+    align-items: center;
+    gap: var(--ds-layout-spacing-150);
+}
+
+.sidebar__logo {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+}
+
+.sidebar__brand-text {
+    font-size: var(--ds-screen-text-heading-md-font-size, 1.125rem);
+    font-weight: var(--ds-screen-text-font-weight-bold, 700);
+    color: var(--ds-color-content-default);
+}
+
 .sidebar__nav {
     flex: 1;
     padding: var(--ds-layout-spacing-100) var(--ds-layout-spacing-100);
@@ -189,6 +207,85 @@ body {
     font-size: 20px;
 }
 
+/* Avatar as <img> — ensure circle clipping */
+img.user-avatar {
+    object-fit: cover;
+}
+
+/* Edit overlay shown on hover over profile avatar */
+.profile-avatar-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.avatar-edit-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--ds-layout-radius-round, 999px);
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+}
+
+.profile-avatar-wrapper:hover .avatar-edit-overlay {
+    opacity: 1;
+}
+
+/* ── Avatar picker grid ───────────────────────────────────────────────────── */
+
+.avatar-picker-dialog {
+    max-width: 560px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.avatar-picker-dialog .modal-body {
+    overflow-y: auto;
+    flex: 1;
+    padding: var(--ds-layout-spacing-300, 16px);
+}
+
+.avatar-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    gap: var(--ds-layout-spacing-200, 8px);
+}
+
+.avatar-grid__item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border: 2px solid transparent;
+    border-radius: var(--ds-layout-radius-200, 8px);
+    background: none;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.avatar-grid__item:hover {
+    border-color: var(--ds-color-border-focus);
+    box-shadow: var(--ds-elevation-100);
+}
+
+.avatar-grid__item--selected {
+    border-color: var(--ds-color-support-brand-default);
+    box-shadow: 0 0 0 2px var(--ds-color-support-brand-default);
+}
+
+.avatar-grid__img {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--ds-layout-radius-round, 999px);
+    object-fit: cover;
+}
+
 /* ── Sidebar overlay (mobile) ─────────────────────────────────────────────── */
 
 .sidebar-overlay {
@@ -248,6 +345,12 @@ body {
 .card-header {
     text-align: center;
     margin-bottom: var(--ds-layout-spacing-400);
+}
+
+.login-logo {
+    width: 64px;
+    height: 64px;
+    margin-bottom: var(--ds-layout-spacing-200);
 }
 
 .brand {
@@ -774,9 +877,18 @@ form {
     }
 
     .mobile-header__brand {
+        display: flex;
+        align-items: center;
+        gap: var(--ds-layout-spacing-100);
         font-size: var(--ds-screen-text-heading-md-font-size, 1.125rem);
         font-weight: var(--ds-screen-text-font-weight-bold, 700);
         color: var(--ds-color-content-default);
+    }
+
+    .mobile-header__logo {
+        width: 28px;
+        height: 28px;
+        flex-shrink: 0;
     }
 
     .main-content {

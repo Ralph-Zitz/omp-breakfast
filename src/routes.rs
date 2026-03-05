@@ -1,5 +1,5 @@
 use crate::errors::{json_error_handler, path_error_handler};
-use crate::handlers::{items::*, orders::*, roles::*, teams::*, users::*, *};
+use crate::handlers::{avatars::*, items::*, orders::*, roles::*, teams::*, users::*, *};
 use crate::middleware::auth::{basic_validator, jwt_validator, refresh_validator};
 use crate::middleware::openapi::*;
 use actix_governor::{Governor, GovernorConfigBuilder};
@@ -107,6 +107,12 @@ pub fn routes(cfg: &mut ServiceConfig) {
                             .route(get().to(user_teams)),
                     )
                     .service(
+                        resource("/{user_id}/avatar")
+                            .name("/users/user_id/avatar")
+                            .route(put().to(set_avatar))
+                            .route(delete().to(remove_avatar)),
+                    )
+                    .service(
                         resource("/email/{email}")
                             .name("/users/email/email")
                             .route(delete().to(delete_user_by_email)),
@@ -196,6 +202,18 @@ pub fn routes(cfg: &mut ServiceConfig) {
                         .route(delete().to(delete_role))
                         .route(put().to(update_role)),
                 ),
+            )
+            .service(
+                resource("/avatars")
+                    .name("/avatars")
+                    .route(get().to(get_avatars)),
+            )
+            .service(
+                scope("/avatars").service(
+                    resource("/{avatar_id}")
+                        .name("/avatars/avatar_id")
+                        .route(get().to(get_avatar)),
+                ),
             ),
     );
 }
@@ -235,6 +253,7 @@ mod tests {
             cache: DashMap::new(),
             token_blacklist: DashMap::new(),
             login_attempts: DashMap::new(),
+            avatar_cache: DashMap::new(),
         })
     }
 
@@ -440,6 +459,30 @@ mod tests {
         assert_route_exists!(app, get, &format!("/api/v1.0/roles/{}", rid));
         assert_route_exists!(app, put, &format!("/api/v1.0/roles/{}", rid));
         assert_route_exists!(app, delete, &format!("/api/v1.0/roles/{}", rid));
+    }
+
+    #[actix_web::test]
+    async fn avatars_collection_route_is_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        assert_route_exists!(app, get, "/api/v1.0/avatars");
+    }
+
+    #[actix_web::test]
+    async fn avatars_item_route_is_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        let aid = "00000000-0000-0000-0000-000000000001";
+        assert_route_exists!(app, get, &format!("/api/v1.0/avatars/{}", aid));
+    }
+
+    #[actix_web::test]
+    async fn user_avatar_routes_are_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        let uid = "00000000-0000-0000-0000-000000000001";
+        assert_route_exists!(app, put, &format!("/api/v1.0/users/{}/avatar", uid));
+        assert_route_exists!(app, delete, &format!("/api/v1.0/users/{}/avatar", uid));
     }
 
     #[actix_web::test]

@@ -81,5 +81,7 @@ COPY --chown=web:web config/docker-base.yml /config/default.yml
 COPY --chown=web:web config/production.yml /config/production.yml
 # Copy built frontend assets
 COPY --from=frontend-builder --chown=web:web /frontend/dist /frontend/dist
+# Copy pre-resized avatar images (128×128 thumbnails, committed to git)
+COPY --chown=web:web minifigs /minifigs
 USER web:web
 CMD ["/breakfast"]

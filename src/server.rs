@@ -21,6 +21,7 @@ use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
 use utoipa_swagger_ui::Config as SwaggerConfig;
+use uuid::Uuid;
 
 /// Interval between token blacklist cleanup runs (1 hour).
 const TOKEN_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
@@ -67,6 +68,114 @@ fn spawn_token_cleanup_task(state: Data<State>) {
 }
 
 const FRONTEND_DIR: &str = "frontend/dist";
+
+/// Directory containing pre-resized (128×128) LEGO minifigure PNG avatars.
+const MINIFIGS_DIR: &str = "minifigs";
+
+/// Seed the `avatars` table from PNG files in `MINIFIGS_DIR` if the table is empty.
+/// Also populates the in-memory `avatar_cache`. This is a one-time operation;
+/// once avatars exist in the database, the function only loads the cache.
+async fn seed_and_cache_avatars(state: &Data<State>) {
+    let client = match state.pool.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            error!(error = %e, "Failed to acquire DB client for avatar seeding");
+            return;
+        }
+    };
+
+    // Check if we need to seed
+    let count = match db::count_avatars(&client).await {
+        Ok(c) => c,
+        Err(e) => {
+            error!(error = %e, "Failed to count avatars");
+            return;
+        }
+    };
+
+    if count == 0 {
+        let minifigs_path = Path::new(MINIFIGS_DIR);
+        if !minifigs_path.is_dir() {
+            info!(
+                "No '{}' directory found — skipping avatar seeding",
+                MINIFIGS_DIR
+            );
+        } else {
+            let mut seeded = 0u32;
+            let mut entries: Vec<_> = match std::fs::read_dir(minifigs_path) {
+                Ok(rd) => rd
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        e.path()
+                            .extension()
+                            .is_some_and(|ext| ext.eq_ignore_ascii_case("png"))
+                    })
+                    .collect(),
+                Err(e) => {
+                    error!(error = %e, "Failed to read '{}' directory", MINIFIGS_DIR);
+                    return;
+                }
+            };
+            entries.sort_by_key(|e| e.file_name());
+
+            for entry in &entries {
+                let path = entry.path();
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                let raw = match std::fs::read(&path) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        warn!(error = %e, file = %path.display(), "Failed to read minifig file");
+                        continue;
+                    }
+                };
+
+                let avatar_id = Uuid::now_v7();
+                let content_type = "image/png".to_string();
+                match db::insert_avatar(&client, avatar_id, &name, &raw, &content_type).await {
+                    Ok(_) => {
+                        state.avatar_cache.insert(avatar_id, (raw, content_type));
+                        seeded += 1;
+                    }
+                    Err(e) => {
+                        warn!(error = %e, name = %name, "Failed to insert avatar");
+                    }
+                }
+            }
+            info!(seeded = seeded, "Seeded avatars from '{}'", MINIFIGS_DIR);
+        }
+    } else {
+        // Table already has avatars — load them into in-memory cache
+        let avatars = match db::get_avatars(&client).await {
+            Ok(a) => a,
+            Err(e) => {
+                error!(error = %e, "Failed to list avatars for cache warm-up");
+                return;
+            }
+        };
+        let mut cached = 0u32;
+        for entry in &avatars {
+            match db::get_avatar(&client, entry.avatar_id).await {
+                Ok((data, ct)) => {
+                    state.avatar_cache.insert(entry.avatar_id, (data, ct));
+                    cached += 1;
+                }
+                Err(e) => {
+                    warn!(error = %e, avatar_id = %entry.avatar_id, "Failed to load avatar into cache");
+                }
+            }
+        }
+        info!(
+            cached = cached,
+            total = count,
+            "Loaded avatars into in-memory cache"
+        );
+    }
+}
 
 /// Handler that redirects any HTTP request to the equivalent HTTPS URL.
 /// Returns `301 Moved Permanently` with a `Location` header pointing to the
@@ -383,7 +492,11 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         cache: DashMap::new(),
         token_blacklist: DashMap::new(),
         login_attempts: DashMap::new(),
+        avatar_cache: DashMap::new(),
     });
+
+    // Seed avatars from disk (one-time) and warm the in-memory cache
+    seed_and_cache_avatars(&state).await;
 
     // Swagger UI config (only relevant in non-production environments)
     let swagger_config = Data::new(SwaggerConfig::from("/explorer/swagger.json"));

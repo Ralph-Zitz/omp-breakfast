@@ -15,7 +15,7 @@ pub async fn get_users(
     offset: i64,
 ) -> Result<(Vec<UserEntry>, i64), Error> {
     let statement = client
-        .prepare("select user_id, firstname, lastname, email, created, changed, count(*) over() as total_count from users order by firstname asc, lastname asc limit $1 offset $2")
+        .prepare("select user_id, firstname, lastname, email, avatar_id, created, changed, count(*) over() as total_count from users order by firstname asc, lastname asc limit $1 offset $2")
         .await
         .map_err(Error::Db)?;
 
@@ -33,7 +33,7 @@ pub async fn get_users(
 /// Returns `Error::NotFound` if no user exists with the given ID.
 pub async fn get_user(client: &Client, user_id: Uuid) -> Result<UserEntry, Error> {
     let statement = client
-        .prepare("select user_id, firstname, lastname, email, created, changed from users where user_id = $1 limit 1")
+        .prepare("select user_id, firstname, lastname, email, avatar_id, created, changed from users where user_id = $1 limit 1")
         .await
         .map_err(Error::Db)?;
 
@@ -93,7 +93,7 @@ pub async fn create_user(client: &Client, user: CreateUserEntry) -> Result<UserE
             r#"
                insert into users (firstname, lastname, email, password)
                values ($1, $2, $3, $4)
-               returning user_id, firstname, lastname, email, created, changed
+               returning user_id, firstname, lastname, email, avatar_id, created, changed
             "#,
         )
         .await
@@ -137,7 +137,7 @@ pub async fn update_user(
                     r#"
                        update users set firstname = $1, lastname = $2, email = $3, password = $4
                        where user_id = $5
-                       returning user_id, firstname, lastname, email, created, changed
+                       returning user_id, firstname, lastname, email, avatar_id, created, changed
                     "#,
                 )
                 .await
@@ -172,7 +172,7 @@ pub async fn update_user(
                     r#"
                        update users set firstname = $1, lastname = $2, email = $3
                        where user_id = $4
-                       returning user_id, firstname, lastname, email, created, changed
+                       returning user_id, firstname, lastname, email, avatar_id, created, changed
                     "#,
                 )
                 .await

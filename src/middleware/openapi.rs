@@ -90,6 +90,11 @@ impl Modify for SecurityAddon {
         roles::create_role,
         roles::delete_role,
         roles::update_role,
+        // Avatars
+        avatars::get_avatars,
+        avatars::get_avatar,
+        avatars::set_avatar,
+        avatars::remove_avatar,
     ),
     components(schemas(
         StatusResponse,
@@ -120,6 +125,8 @@ impl Modify for SecurityAddon {
         CreateOrderEntry,
         UpdateOrderEntry,
         RevokedResponse,
+        AvatarListEntry,
+        SetAvatarRequest,
     ))
 )]
 pub(crate) struct ApiDoc;
@@ -306,6 +313,28 @@ mod tests {
     }
 
     #[test]
+    fn spec_contains_avatar_endpoints() {
+        let doc = openapi_json();
+        let paths = &doc["paths"];
+        assert!(
+            paths["/api/v1.0/avatars"].is_object(),
+            "should contain /api/v1.0/avatars"
+        );
+        assert!(
+            paths["/api/v1.0/avatars/{avatar_id}"].is_object(),
+            "should contain /api/v1.0/avatars/{{avatar_id}}"
+        );
+        assert!(
+            paths["/api/v1.0/users/{user_id}/avatar"]["put"].is_object(),
+            "should contain PUT /api/v1.0/users/{{user_id}}/avatar"
+        );
+        assert!(
+            paths["/api/v1.0/users/{user_id}/avatar"]["delete"].is_object(),
+            "should contain DELETE /api/v1.0/users/{{user_id}}/avatar"
+        );
+    }
+
+    #[test]
     fn spec_has_expected_handler_operation_count() {
         let doc = openapi_json();
         let paths = doc["paths"].as_object().expect("paths should be an object");
@@ -319,14 +348,15 @@ mod tests {
                     .count()
             })
             .sum();
-        // 41 operations: health(1) + auth(3) + users(8) + teams(5) +
-        // team_orders(6) + team_members(4) + items(5) + order_items(5) + roles(5)
+        // 45 operations: health(1) + auth(3) + users(8) + teams(5) +
+        // team_orders(6) + team_members(4) + items(5) + order_items(5) + roles(5) +
+        // avatars(4: list, get, set, remove)
         // Note: some utoipa paths diverge from actix route params (e.g. {id} vs
         // {team_id}), which can produce separate path entries for the same
         // logical resource when the param name differs across handlers.
         assert_eq!(
-            op_count, 41,
-            "should have exactly 41 handler operations, got {}",
+            op_count, 45,
+            "should have exactly 45 handler operations, got {}",
             op_count
         );
     }
@@ -374,6 +404,8 @@ mod tests {
             "PaginatedResponse_ItemEntry",
             "PaginatedResponse_TeamOrderEntry",
             "PaginatedResponse_OrderEntry",
+            "AvatarListEntry",
+            "SetAvatarRequest",
         ];
         let schema_map = schemas.as_object().expect("schemas should be an object");
         for name in &expected {

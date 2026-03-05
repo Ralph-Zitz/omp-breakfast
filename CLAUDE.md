@@ -66,6 +66,7 @@ src/
     order_items.rs – Order item CRUD + closed-order check (is_team_order_closed, get_order_items, get_order_item, create_order_item, update_order_item, delete_order_item)
     membership.rs  – Team membership + RBAC queries (count_admins, is_admin, is_admin_or_team_admin, is_team_admin_of_user, get_member_role, check_team_access, add_team_member, remove_team_member, update_member_role, would_admins_remain_without)
     tokens.rs      – Token blacklist persistence (revoke_token_db, is_token_revoked_db, cleanup_expired_tokens)
+    avatars.rs     – Avatar CRUD (get_avatars, get_avatar, insert_avatar, count_avatars, set_user_avatar)
   errors.rs        – Error enum with thiserror + ResponseError impl (maps to HTTP status codes)
   validate.rs      – Generic validation wrapper using validator crate
   routes.rs        – All route definitions with auth middleware wiring
@@ -77,6 +78,7 @@ src/
     roles.rs       – Role CRUD handlers (admin-gated CUD)
     items.rs       – Item CRUD handlers (breakfast items with prices, admin-gated CUD)
     orders.rs      – Order item CRUD handlers (items within team orders, owner/team-admin-gated)
+    avatars.rs     – Avatar handlers (list, serve image, set/remove user avatar)
   middleware/
     mod.rs         – Module declarations
     auth.rs        – JWT/Basic auth validators, token generation/verification, blacklist
@@ -132,8 +134,11 @@ Dockerfile.breakfast – Multi-stage Docker build for the application
 Dockerfile.postgres  – Custom Postgres image with init scripts
 docker-compose.yml   – Development stack (app + Postgres)
 docker-compose.test.yml – Test stack overlay (port 5433)
+frontend-issues/       – Screenshots and descriptions of UI issues (for bug reporting)
+frontend-fixes/        – Documentation of UI fixes based on resolved frontend issues
 LICENSE            – MIT license
 Makefile           – Build, test, and dev convenience targets
+minifigs/          – Pre-resized 128×128 LEGO minifigure PNG thumbnails used as user profile avatars (committed to git)
 NEW-UI-COMPONENTS.md – Registry of custom UI components not available in the CONNECT design system
 README.md          – Project readme
 migrations/
@@ -144,6 +149,7 @@ migrations/
   V5__trigger_and_notnull_fixes.sql – Trigger fix on users, NOT NULL on teamorders_user_id and memberof.joined
   V6__order_constraint_and_index.sql – NOT NULL + unique constraint on orders, covering index
   V7__drop_redundant_indexes.sql – Drops redundant idx_users_email and idx_teams_name (duplicated by UNIQUE constraints)
+  V8__avatars.sql – Avatars table + users.avatar_id FK column
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
   db_tests.rs      – DB function integration tests (ignored without running DB)
@@ -160,6 +166,7 @@ tests/
 - JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation
 - Token revocation uses a DB-backed `token_blacklist` table (persisted across restarts) with an in-memory `dashmap::DashMap` cache for fast-path lookups. A background task runs every hour to clean up expired entries from both the database (via `db::cleanup_expired_tokens`) and the in-memory map (via `DashMap::retain()`).
 - Auth cache uses TTL (5min) and max-size (1000 entries) with FIFO eviction
+- Avatar cache: `DashMap<Uuid, (Vec<u8>, String)>` maps avatar_id → (image bytes, content_type). Loaded at startup from the database; on first run, pre-resized minifig PNGs from `minifigs/` are seeded into the `avatars` table. Served with `Cache-Control: public, max-age=31536000, immutable`.
 - Account lockout: after 5 failed login attempts within 15 minutes, the account is temporarily locked (HTTP 429). Attempts are tracked in-memory per email and cleared on successful login.
 - RBAC: Four roles — Admin (global superuser), Team Admin (team-scoped), Member, Guest. JWT claims stored in request extensions.
 - GET RBAC policy: All GET endpoints require only JWT authentication — no team-scoped RBAC. Data visibility is open to all authenticated users (no multi-tenant isolation). Team-scoped RBAC is enforced only on mutations (POST/PUT/DELETE) within individual handlers.
@@ -376,8 +383,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 193 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 117 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 198 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
+- 123 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - 103 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)

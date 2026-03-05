@@ -40,10 +40,17 @@ pub struct UserEntry {
     pub firstname: String,
     pub lastname: String,
     pub email: String,
+    pub avatar_id: Option<String>,
     #[allow(dead_code)]
     pub created: String,
     #[allow(dead_code)]
     pub changed: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct AvatarListEntry {
+    pub avatar_id: String,
+    pub name: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -146,6 +153,7 @@ pub struct UserContext {
     pub firstname: String,
     pub lastname: String,
     pub email: String,
+    pub avatar_id: Option<String>,
     pub is_admin: bool,
     pub teams: Vec<UserInTeams>,
 }
@@ -346,7 +354,7 @@ pub async fn revoke_token_server_side(bearer: &str, token_to_revoke: &str) {
 /// Fetch user details. Returns (user_id, display_name, email).
 pub async fn fetch_user_details(
     access_token: &str,
-) -> Option<(String, String, String, String, String)> {
+) -> Option<(String, String, String, String, Option<String>, String)> {
     let payload = decode_jwt_payload(access_token)?;
     let url = format!("/api/v1.0/users/{}", payload.sub);
     let resp = authed_get(&url).await?;
@@ -360,6 +368,7 @@ pub async fn fetch_user_details(
         user.firstname,
         user.lastname,
         user.email,
+        user.avatar_id,
         display,
     ))
 }
@@ -379,7 +388,8 @@ pub async fn fetch_user_teams(user_id: &str) -> Vec<UserInTeams> {
 
 /// Build a full UserContext after login or session restore.
 pub async fn build_user_context(access_token: &str) -> Option<UserContext> {
-    let (user_id, firstname, lastname, email, _display) = fetch_user_details(access_token).await?;
+    let (user_id, firstname, lastname, email, avatar_id, _display) =
+        fetch_user_details(access_token).await?;
     let teams = fetch_user_teams(&user_id).await;
     let is_admin = teams.iter().any(|t| t.title == "Admin");
     Some(UserContext {
@@ -387,6 +397,7 @@ pub async fn build_user_context(access_token: &str) -> Option<UserContext> {
         firstname,
         lastname,
         email,
+        avatar_id,
         is_admin,
         teams,
     })

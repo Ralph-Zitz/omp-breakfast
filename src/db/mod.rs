@@ -1,3 +1,4 @@
+mod avatars;
 mod health;
 mod items;
 mod membership;
@@ -10,6 +11,7 @@ mod tokens;
 mod users;
 
 // Re-export all public functions so call sites can continue using `db::function_name`.
+pub use avatars::*;
 pub use health::*;
 pub use items::*;
 pub use membership::*;

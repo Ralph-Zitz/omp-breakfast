@@ -1,3 +1,4 @@
+pub mod avatars;
 pub mod items;
 pub mod orders;
 pub mod roles;
