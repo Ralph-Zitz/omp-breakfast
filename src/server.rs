@@ -7,8 +7,8 @@ use actix_web::{
 use chrono::Utc;
 use dashmap::DashMap;
 use deadpool_postgres::Runtime;
-use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::{InstrumentationScope, global};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use opentelemetry_stdout as stdout;
 use rustls::ServerConfig;
@@ -343,11 +343,13 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     // Logging
     LogTracer::init().expect("Unable to set up log tracer!");
     global::set_text_map_propagator(TraceContextPropagator::new());
-    let app_name = concat!(env!("CARGO_PKG_NAME"), "-", env!("CARGO_PKG_VERSION")).to_string();
     let provider = SdkTracerProvider::builder()
         .with_simple_exporter(stdout::SpanExporter::default())
         .build();
-    let tracer = provider.tracer(app_name.clone());
+    let scope = InstrumentationScope::builder(env!("CARGO_PKG_NAME"))
+        .with_version(env!("CARGO_PKG_VERSION"))
+        .build();
+    let tracer = provider.tracer_with_scope(scope);
 
     // Create a tracing layer with the configured tracer
     let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);

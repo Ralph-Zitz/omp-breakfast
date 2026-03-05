@@ -207,7 +207,7 @@ pub fn AdminPage() -> impl IntoView {
                                         <tr class="connect-table-row">
                                             <td class="connect-table-cell">{name}</td>
                                             <td class="connect-table-cell">{email}</td>
-                                            {move || (is_admin.get() && !is_self()).then(|| {
+                                            {move || if is_admin.get() && !is_self() {
                                                 let uid = uid.clone();
                                                 let uid_pw = uid.clone();
                                                 let name_del = name_del.clone();
@@ -249,8 +249,12 @@ pub fn AdminPage() -> impl IntoView {
                                                             </span>
                                                         </button>
                                                     </td>
-                                                }
-                                            })}
+                                                }.into_any()
+                                            } else if is_admin.get() {
+                                                view! { <td class="connect-table-cell connect-table-cell--actions" /> }.into_any()
+                                            } else {
+                                                view! { <span /> }.into_any()
+                                            }}
                                         </tr>
                                     }
                                 }).collect::<Vec<_>>()}

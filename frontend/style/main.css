@@ -630,17 +630,26 @@ form {
 }
 
 /*
- * Actions column: let width adapt to button content so buttons are never
- * clipped or pushed to a second line.  The design system already sets
- * display:flex / justify-content:flex-end on these cells, so we only need
- * to add a gap between buttons and ensure the column does not have a
- * hard-coded width that is too narrow.
+ * Actions column: restore table-cell display so the cell participates in
+ * table layout (the design system sets display:flex which breaks out of the
+ * table grid, disconnecting the border-bottom line from sibling header cells).
+ * Right-alignment and button spacing are handled via text-align + inline gap.
+ * The design system sets zero horizontal padding on actions cells — restore it
+ * to match the regular cell padding so buttons aren't cramped against the edge.
  */
 .connect-table-header-cell--actions,
 .connect-table-cell--actions {
+    display: table-cell;
     width: auto;
     white-space: nowrap;
-    gap: var(--ds-layout-spacing-100, 8px);
+    text-align: right;
+    padding-right: var(--ds-layout-spacing-200, 16px);
+    padding-left: var(--ds-layout-spacing-200, 16px);
+}
+
+/* Flex layout for button spacing inside body-row action cells */
+.connect-table-cell--actions > button + button {
+    margin-left: var(--ds-layout-spacing-100, 8px);
 }
 
 .connect-table-row {
