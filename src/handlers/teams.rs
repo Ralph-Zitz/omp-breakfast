@@ -6,8 +6,7 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
-    web::Query,
+    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path, web::Query,
 };
 use deadpool_postgres::Client;
 use tracing::instrument;
@@ -31,7 +30,12 @@ pub async fn get_teams(
     let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
     let (teams, total) = db::get_teams(&client, limit, offset).await?;
-    Ok(HttpResponse::Ok().json(PaginatedResponse { items: teams, total, limit, offset }))
+    Ok(HttpResponse::Ok().json(PaginatedResponse {
+        items: teams,
+        total,
+        limit,
+        offset,
+    }))
 }
 
 #[utoipa::path(
@@ -168,7 +172,12 @@ pub async fn team_users(
     let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
     let (users, total) = db::get_team_users(&client, path.into_inner(), limit, offset).await?;
-    Ok(HttpResponse::Ok().json(PaginatedResponse { items: users, total, limit, offset }))
+    Ok(HttpResponse::Ok().json(PaginatedResponse {
+        items: users,
+        total,
+        limit,
+        offset,
+    }))
 }
 
 #[utoipa::path(
@@ -193,7 +202,12 @@ pub async fn get_team_orders(
     let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
     let (orders, total) = db::get_team_orders(&client, team_id.into_inner(), limit, offset).await?;
-    Ok(HttpResponse::Ok().json(PaginatedResponse { items: orders, total, limit, offset }))
+    Ok(HttpResponse::Ok().json(PaginatedResponse {
+        items: orders,
+        total,
+        limit,
+        offset,
+    }))
 }
 
 #[utoipa::path(

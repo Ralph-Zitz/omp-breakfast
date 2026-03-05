@@ -8,7 +8,12 @@ use uuid::Uuid;
 /// descending (newest first).
 ///
 /// Rows that fail to map are logged with `warn!()` and skipped.
-pub async fn get_team_orders(client: &Client, team_id: Uuid, limit: i64, offset: i64) -> Result<(Vec<TeamOrderEntry>, i64), Error> {
+pub async fn get_team_orders(
+    client: &Client,
+    team_id: Uuid,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<TeamOrderEntry>, i64), Error> {
     let statement = client
         .prepare(
             r#"

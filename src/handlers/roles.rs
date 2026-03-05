@@ -6,8 +6,7 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
-    web::Query,
+    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path, web::Query,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -30,7 +29,12 @@ pub async fn get_roles(
     let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
     let (roles, total) = db::get_roles(&client, limit, offset).await?;
-    Ok(HttpResponse::Ok().json(PaginatedResponse { items: roles, total, limit, offset }))
+    Ok(HttpResponse::Ok().json(PaginatedResponse {
+        items: roles,
+        total,
+        limit,
+        offset,
+    }))
 }
 
 #[utoipa::path(

@@ -5988,7 +5988,10 @@ async fn team_admin_can_update_order_by_another_member() {
         .peer_addr(PEER)
         .insert_header((
             "Authorization",
-            format!("Basic {}", STANDARD.encode(format!("{}:memberpass430", m430_email))),
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:memberpass430", m430_email))
+            ),
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -6120,7 +6123,10 @@ async fn member_can_update_and_delete_own_order() {
         .peer_addr(PEER)
         .insert_header((
             "Authorization",
-            format!("Basic {}", STANDARD.encode(format!("{}:memberpass431", m431_email))),
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:memberpass431", m431_email))
+            ),
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;

@@ -82,15 +82,77 @@ use crate::models::{
     UserInTeams, UsersInTeam,
 };
 
-impl_from_row!(UserEntry { user_id, firstname, lastname, email, created, changed });
-impl_from_row!(UpdateUserEntry { user_id, firstname, lastname, email, password });
-impl_from_row!(TeamEntry { team_id, tname, descr, created, changed });
-impl_from_row!(RoleEntry { role_id, title, created, changed });
-impl_from_row!(ItemEntry { item_id, descr, price, created, changed });
-impl_from_row!(TeamOrderEntry { teamorders_id, teamorders_team_id, teamorders_user_id, duedate, closed, created, changed });
-impl_from_row!(OrderEntry { orders_teamorders_id, orders_item_id, orders_team_id, amt, created, changed });
-impl_from_row!(UsersInTeam { user_id, firstname, lastname, email, title, joined, role_changed });
-impl_from_row!(UserInTeams { team_id, tname, descr, title, firstname, lastname, joined, role_changed });
+impl_from_row!(UserEntry {
+    user_id,
+    firstname,
+    lastname,
+    email,
+    created,
+    changed
+});
+impl_from_row!(UpdateUserEntry {
+    user_id,
+    firstname,
+    lastname,
+    email,
+    password
+});
+impl_from_row!(TeamEntry {
+    team_id,
+    tname,
+    descr,
+    created,
+    changed
+});
+impl_from_row!(RoleEntry {
+    role_id,
+    title,
+    created,
+    changed
+});
+impl_from_row!(ItemEntry {
+    item_id,
+    descr,
+    price,
+    created,
+    changed
+});
+impl_from_row!(TeamOrderEntry {
+    teamorders_id,
+    teamorders_team_id,
+    teamorders_user_id,
+    duedate,
+    closed,
+    created,
+    changed
+});
+impl_from_row!(OrderEntry {
+    orders_teamorders_id,
+    orders_item_id,
+    orders_team_id,
+    amt,
+    created,
+    changed
+});
+impl_from_row!(UsersInTeam {
+    user_id,
+    firstname,
+    lastname,
+    email,
+    title,
+    joined,
+    role_changed
+});
+impl_from_row!(UserInTeams {
+    team_id,
+    tname,
+    descr,
+    title,
+    firstname,
+    lastname,
+    joined,
+    role_changed
+});
 
 #[cfg(test)]
 mod tests {

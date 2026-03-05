@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-05
+Last assessed: 2026-03-05 (re-assessment #2)
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -26,7 +26,49 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
+### RBAC — Last-Admin Demotion/Removal via Membership Operations
+
+- [ ] **#505 — `remove_team_member` and `update_member_role` allow stripping the last global Admin of their Admin role, leaving the system with zero admins**
+  - Files: `src/handlers/teams.rs` (`remove_team_member` lines ~427–441, `update_member_role` lines ~447–478)
+  - Problem: Resolved finding #399 added a `count_admins` guard to `delete_user` and `delete_user_by_email`, preventing the last admin from deleting themselves. However, two other mutation paths can strip the last Admin of their role with no equivalent guard:
+    1. **`remove_team_member`** — A Team Admin removes the last global Admin from the team where they hold the Admin role. After removal, `is_admin()` returns false for that user. No admin access remains.
+    2. **`update_member_role`** — A Team Admin changes the last global Admin's role from "Admin" to "Member". `guard_admin_role_assignment` only blocks non-admins from *assigning* the Admin role; it does not block *revoking* Admin.
+  - Fix: Before executing either mutation, check if the target user currently holds an Admin role. If so, call `count_admins()` and reject the operation (403) when the count would drop to zero. The check should be wrapped in the existing transaction for consistency.
+  - Source commands: `db-review`, `rbac-rules`, `review`, `test-gaps`
+
+### Frontend — Admin Password Reset Sends Incomplete Request Body (Broken Feature)
+
+- [ ] **#506 — `do_reset_password` sends `PUT /api/v1.0/users/{id}` with only `{"password": "..."}`, but `UpdateUserRequest` requires `firstname`, `lastname`, `email` as non-optional fields**
+  - File: `frontend/src/pages/admin.rs` (lines ~106–115)
+  - Problem: The admin password-reset dialog sends a PUT with only the `password` field. The backend `UpdateUserRequest` struct requires `firstname: String`, `lastname: String`, `email: String` as mandatory fields. Serde deserialization always fails with 400/422. **The admin password reset feature is completely broken.**
+  - Fix: Either (a) have the frontend include the user's current `firstname`, `lastname`, and `email` in the reset request body, or (b) create a dedicated `POST /api/v1.0/users/{id}/reset-password` endpoint that only requires the new password (admin-gated).
+  - Source commands: `api-completeness`
+
 ## Minor Items
+
+### Documentation — WASM Test Count Stale (64 Actual vs 41 Documented)
+
+- [ ] **#507 — CLAUDE.md and README.md both state 41 WASM tests; actual count is 64**
+  - Files: `CLAUDE.md` (lines ~119, ~385), `README.md` (line ~72)
+  - Problem: 23 new WASM tests were added since the count was last updated (reset-password suite, table styling tests, actions-column tests, additional theme-toggle tests). Documentation is misleading.
+  - Fix: Update "41" → "64" in all three locations. Update the test category breakdown in CLAUDE.md to add the new test categories.
+  - Source commands: `cross-ref-check`
+
+### Documentation — `order_components.rs` Missing from CLAUDE.md Project Structure
+
+- [ ] **#508 — `frontend/src/pages/order_components.rs` exists on disk but not listed in the Project Structure tree**
+  - File: `CLAUDE.md` (pages/ listing in Project Structure)
+  - Problem: Created when `OrderDetail` and `CreateOrderDialog` were extracted from `orders.rs`, but the tree was never updated.
+  - Fix: Add `order_components.rs – Order sub-components (OrderDetail, CreateOrderDialog)` after `orders.rs` in the pages/ listing.
+  - Source commands: `cross-ref-check`
+
+### Frontend — Orders Page Fetches All Teams Instead of User's Teams
+
+- [ ] **#509 — Orders page uses `/api/v1.0/teams` (all teams) instead of `/api/v1.0/users/{id}/teams` (user's memberships)**
+  - File: `frontend/src/pages/orders.rs` (line ~47)
+  - Problem: Shows teams the current user is not a member of. Creating an order for a non-member team returns 403 from the backend. The correct endpoint is `/api/v1.0/users/{user_id}/teams`.
+  - Fix: Change `authed_get("/api/v1.0/teams")` to `authed_get(&format!("/api/v1.0/users/{}/teams", user_id))`.
+  - Source commands: `review`
 
 ## Informational Items
 
@@ -434,6 +476,29 @@ This file is **generated and maintained by the project assessment process** defi
   - File: `src/middleware/auth.rs`
   - Source commands: `review`
 
+### Frontend — `fetch_user_details` Silently Drops Non-401 Errors
+
+- [ ] **#510 — When `authed_get` returns a non-OK response (403, 500), `fetch_user_details` returns `None` with no logging**
+  - File: `frontend/src/api.rs` (`fetch_user_details` function)
+  - Problem: During session restore, a 403 or 500 silently drops the user to the login page with no explanation. Other page-level fetches at least log errors to the console.
+  - Fix: Add `web_sys::console::warn_1(...)` for non-OK responses before returning `None`.
+  - Source commands: `review`
+
+### Testing — `CreateUserDialog` and `EditUserDialog` Have Zero WASM Tests
+
+- [ ] **#511 — Admin page dialog components for creating and editing users have no test coverage**
+  - File: `frontend/src/pages/admin.rs` (lines ~322–599), `frontend/tests/ui_tests.rs`
+  - Problem: The `ResetPasswordDialog` has 12 comprehensive tests. `CreateUserDialog` and `EditUserDialog` have zero tests — no tests for opening, form validation, submission, or cancel behavior.
+  - Source commands: `test-gaps`
+
+### Database — `database.sql` Not Updated for V7 Migration
+
+- [ ] **#512 — `database.sql` still creates `idx_users_email` and `idx_teams_name` indexes dropped by V7 migration**
+  - File: `database.sql` (lines ~56, ~69)
+  - Problem: V7 drops these indexes as redundant (duplicated by UNIQUE constraints). The deprecated dev-reset script still creates them, causing schema drift.
+  - Fix: Remove the two `CREATE INDEX` statements from `database.sql`.
+  - Source commands: `db-review`
+
 ### API Completeness — `OrderItemEntry` vs Backend `OrderEntry` Naming Inconsistency
 
 - [ ] **#457 — Frontend renames the struct for clarity but creates naming mismatch with backend**
@@ -489,13 +554,25 @@ See that file for the full history of resolved findings.
 
 ## Notes
 
-- **Test counts verified (2026-03-05):** 193 unit (171 lib + 22 healthcheck), 117 API integration (ignored), 103 DB integration (ignored), 41 WASM — all match CLAUDE.md and README.md.
-- **`cargo audit` (2026-03-05):** Exit code 0. No new vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) remains intentionally ignored — **blocked on upstream**, see #132. Re-evaluate periodically.
+- **Test counts verified (2026-03-05):** 193 unit (171 lib + 22 healthcheck), 117 API integration (ignored), 103 DB integration (ignored), 64 WASM (documented as 41 — see #507).
+- **`cargo audit` (2026-03-05):** Exit code 0. No new vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) remains intentionally ignored — **blocked on upstream**, see #132. Verified `hmac`+`sha2` features alone still do NOT register a CryptoProvider in jsonwebtoken 10.3.0. Re-evaluate periodically.
 - **CONNECT Design System (2026-03-05):** `git pull` reports "Already up to date" — no migration needed.
-- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 90+ informational.
-- 5 new findings in this assessment: #500–#504 (all documentation, all fixed). 0 regressions found.
-- Highest finding number: #504.
+- Open items summary: 1 critical (#132 blocked), 2 important (#505, #506), 3 minor (#507, #508, #509), 44+ informational.
+- 8 new findings in this assessment: #505–#512. 0 regressions found. 0 items resolved.
+- Highest finding number: #512.
 - 354 resolved items in `.claude/resolved-findings.md`.
+
+### Re-assessment — 2026-03-05 (3rd run)
+
+- **All 11 commands re-run:** 8 new findings surfaced (2 important, 3 minor, 3 informational).
+- **#505 (Important):** Last-admin demotion/removal via `remove_team_member` and `update_member_role` — no `count_admins` guard (similar gap to resolved #399 which protected `delete_user` only).
+- **#506 (Important):** Admin password reset feature completely broken — frontend sends incomplete PUT body missing required fields.
+- **#507–#508 (Minor):** Documentation drift — WASM test count 64 vs documented 41, `order_components.rs` missing from project structure.
+- **#509 (Minor):** Orders page fetches all teams instead of user's teams, showing non-member teams.
+- **#510–#512 (Informational):** Silent error drops in `fetch_user_details`, missing WASM tests for admin dialogs, `database.sql` schema drift from V7.
+- **0 regressions** — all 354 resolved items checked, none regressed.
+- **Unit tests:** 193 passing (171 lib + 22 healthcheck). `cargo fmt`: clean. `cargo audit`: exit 0.
+- **CONNECT Design System:** Already up to date.
 
 ### Re-assessment — 2026-03-05 (docker fix session)
 

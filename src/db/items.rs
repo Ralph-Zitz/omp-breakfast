@@ -6,7 +6,11 @@ use uuid::Uuid;
 /// Fetches breakfast items with pagination, ordered alphabetically by description.
 ///
 /// Rows that fail to map are logged with `warn!()` and skipped.
-pub async fn get_items(client: &Client, limit: i64, offset: i64) -> Result<(Vec<ItemEntry>, i64), Error> {
+pub async fn get_items(
+    client: &Client,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<ItemEntry>, i64), Error> {
     let statement = client
         .prepare("select item_id, descr, price, created, changed, count(*) over() as total_count from items order by descr asc limit $1 offset $2")
         .await
