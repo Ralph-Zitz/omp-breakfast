@@ -9,11 +9,12 @@
 # 4. Run the V4 migration SQL for schema hardening (NOT NULL, timestamps)
 # 5. Run the V5 migration SQL to fix users trigger and add NOT NULL
 # 6. Run the V6 migration SQL for order constraint and covering index
-# 7. Create the refinery_schema_history table (empty — no rows inserted)
-# 8. Load seed data for development/testing
+# 7. Run the V7 migration SQL to drop redundant indexes
+# 8. Create the refinery_schema_history table (empty — no rows inserted)
+# 9. Load seed data for development/testing
 #
 # On first start the application's refinery migration runner will detect
-# that V1–V6 are "unapplied", re-run them (safe — the SQL is fully
+# that V1–V7 are "unapplied", re-run them (safe — the SQL is fully
 # idempotent), and record them with correct checksums and timestamps.
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -37,9 +38,12 @@ PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V5__trigg
 echo "==> Running V6 migration (order constraint + index)..."
 PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V6__order_constraint_and_index.sql
 
+echo "==> Running V7 migration (drop redundant indexes)..."
+PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V7__drop_redundant_indexes.sql
+
 echo "==> Creating refinery migration tracking table..."
 # The table is created here so the app's migration runner sees it on first
-# start.  We do NOT insert rows — refinery will detect that V1–V6 are
+# start.  We do NOT insert rows — refinery will detect that V1–V7 are
 # "unapplied", re-run them (safe because the SQL is idempotent), and record
 # them with correct checksums and timestamps.
 PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix <<-EOSQL

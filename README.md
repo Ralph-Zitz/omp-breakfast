@@ -95,7 +95,7 @@ make db-down       # stop and remove test DB
 
 ## Database Initialization
 
-The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Six migrations exist:
+The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Seven migrations exist:
 
 | Migration | Description |
 | --- | --- |
@@ -105,10 +105,11 @@ The application uses [Refinery](https://github.com/rust-db/refinery) for schema 
 | V4 | Schema hardening |
 | V5 | Trigger fix on users, NOT NULL on teamorders/memberof |
 | V6 | Unique constraint on orders, covering index |
+| V7 | Drop redundant idx_users_email and idx_teams_name indexes |
 
 **Production:** The application runs pending migrations automatically at startup. No seed data is inserted.
 
-**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all six migrations, creates the Refinery tracking table, and loads seed data from `database_seed.sql`. On first startup, the application's migration runner detects the migrations are already applied and continues normally.
+**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all seven migrations, creates the Refinery tracking table, and loads seed data from `database_seed.sql`. On first startup, the application's migration runner detects the migrations are already applied and continues normally.
 
 **Manual database reset (development only):**
 

@@ -4,7 +4,7 @@
    ⚠️  DEPRECATED for docker-compose workflows ⚠️
 
    docker-compose now uses:
-     - migrations/V1__initial_schema.sql through V6 (via Refinery migrations)
+     - migrations/V1__initial_schema.sql through V7 (via Refinery migrations)
      - database_seed.sql (for test data)
 
    This file is kept ONLY for manual database resets during development:

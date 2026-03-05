@@ -141,6 +141,7 @@ migrations/
   V4__schema_hardening.sql – Schema hardening migration
   V5__trigger_and_notnull_fixes.sql – Trigger fix on users, NOT NULL on teamorders_user_id and memberof.joined
   V6__order_constraint_and_index.sql – NOT NULL + unique constraint on orders, covering index
+  V7__drop_redundant_indexes.sql – Drops redundant idx_users_email and idx_teams_name (duplicated by UNIQUE constraints)
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
   db_tests.rs      – DB function integration tests (ignored without running DB)
