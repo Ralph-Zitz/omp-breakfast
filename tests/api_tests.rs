@@ -5982,10 +5982,7 @@ async fn team_admin_can_update_order_by_another_member() {
         .peer_addr(PEER)
         .insert_header((
             "Authorization",
-            format!(
-                "Basic {}",
-                STANDARD.encode("m430@test.local:memberpass430")
-            ),
+            format!("Basic {}", STANDARD.encode("m430@test.local:memberpass430")),
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -6114,10 +6111,7 @@ async fn member_can_update_and_delete_own_order() {
         .peer_addr(PEER)
         .insert_header((
             "Authorization",
-            format!(
-                "Basic {}",
-                STANDARD.encode("m431@test.local:memberpass431")
-            ),
+            format!("Basic {}", STANDARD.encode("m431@test.local:memberpass431")),
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -6132,7 +6126,11 @@ async fn member_can_update_and_delete_own_order() {
         .set_json(json!({}))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201, "member should be able to create an order");
+    assert_eq!(
+        resp.status(),
+        201,
+        "member should be able to create an order"
+    );
     let order: Value = test::read_body_json(resp).await;
     let order_id = order["teamorders_id"].as_str().unwrap().to_string();
 
@@ -6362,9 +6360,5 @@ async fn user_can_delete_own_account_by_email() {
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(
-        resp.status(),
-        404,
-        "deleted user should no longer be found"
-    );
+    assert_eq!(resp.status(), 404, "deleted user should no longer be found");
 }

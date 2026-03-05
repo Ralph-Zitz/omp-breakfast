@@ -1,4 +1,7 @@
-use crate::api::{HttpMethod, PaginatedResponse, RoleEntry, TeamEntry, UserContext, UserEntry, UsersInTeam, authed_get, authed_request};
+use crate::api::{
+    HttpMethod, PaginatedResponse, RoleEntry, TeamEntry, UserContext, UserEntry, UsersInTeam,
+    authed_get, authed_request,
+};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
@@ -71,7 +74,8 @@ pub fn TeamsPage() -> impl IntoView {
                 Some(r) if r.ok() => {
                     if let Ok(updated) = r.json::<TeamEntry>().await {
                         set_teams.update(|list| {
-                            if let Some(t) = list.iter_mut().find(|t| t.team_id == updated.team_id) {
+                            if let Some(t) = list.iter_mut().find(|t| t.team_id == updated.team_id)
+                            {
                                 *t = updated;
                             }
                         });
@@ -126,7 +130,9 @@ pub fn TeamsPage() -> impl IntoView {
                     }
                     toast_success("Member added");
                 }
-                Some(r) if r.status() == 409 => toast_error("User is already a member of this team"),
+                Some(r) if r.status() == 409 => {
+                    toast_error("User is already a member of this team")
+                }
                 _ => toast_error("Failed to add member"),
             }
             set_show_add_member.set(false);

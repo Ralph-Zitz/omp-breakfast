@@ -1,4 +1,6 @@
-use crate::api::{HttpMethod, ItemEntry, PaginatedResponse, UserContext, authed_get, authed_request};
+use crate::api::{
+    HttpMethod, ItemEntry, PaginatedResponse, UserContext, authed_get, authed_request,
+};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
@@ -65,7 +67,8 @@ pub fn ItemsPage() -> impl IntoView {
                 Some(r) if r.ok() => {
                     if let Ok(updated) = r.json::<ItemEntry>().await {
                         set_items.update(|list| {
-                            if let Some(i) = list.iter_mut().find(|i| i.item_id == updated.item_id) {
+                            if let Some(i) = list.iter_mut().find(|i| i.item_id == updated.item_id)
+                            {
                                 *i = updated;
                             }
                         });
