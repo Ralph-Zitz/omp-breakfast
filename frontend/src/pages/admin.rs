@@ -1,4 +1,6 @@
-use crate::api::{HttpMethod, PaginatedResponse, UserContext, UserEntry, authed_get, authed_request};
+use crate::api::{
+    HttpMethod, PaginatedResponse, UserContext, UserEntry, authed_get, authed_request,
+};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
@@ -31,8 +33,13 @@ pub fn AdminPage() -> impl IntoView {
             if let Some(resp) = authed_get(&url).await {
                 if resp.ok() {
                     match resp.json::<PaginatedResponse<UserEntry>>().await {
-                        Ok(data) => { set_total.set(data.total as usize); set_users.set(data.items); }
-                        Err(e) => web_sys::console::warn_1(&format!("users JSON parse error: {e}").into()),
+                        Ok(data) => {
+                            set_total.set(data.total as usize);
+                            set_users.set(data.items);
+                        }
+                        Err(e) => {
+                            web_sys::console::warn_1(&format!("users JSON parse error: {e}").into())
+                        }
                     }
                 }
             }
@@ -51,19 +58,20 @@ pub fn AdminPage() -> impl IntoView {
             let url = format!("/api/v1.0/users/{}", user_id);
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
-                Some(r) if r.ok() => {
-                    match r.json::<UserEntry>().await {
-                        Ok(updated) => {
-                            set_users.update(|list| {
-                                if let Some(u) = list.iter_mut().find(|u| u.user_id == updated.user_id) {
-                                    *u = updated;
-                                }
-                            });
-                            toast_success("User updated");
-                        }
-                        Err(e) => web_sys::console::warn_1(&format!("user update JSON parse error: {e}").into()),
+                Some(r) if r.ok() => match r.json::<UserEntry>().await {
+                    Ok(updated) => {
+                        set_users.update(|list| {
+                            if let Some(u) = list.iter_mut().find(|u| u.user_id == updated.user_id)
+                            {
+                                *u = updated;
+                            }
+                        });
+                        toast_success("User updated");
                     }
-                }
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("user update JSON parse error: {e}").into(),
+                    ),
+                },
                 _ => toast_error("Failed to update user"),
             }
             set_edit_target.set(None);
@@ -80,12 +88,15 @@ pub fn AdminPage() -> impl IntoView {
         leptos::task::spawn_local_scoped(async move {
             let resp = authed_request(HttpMethod::Post, "/api/v1.0/users", Some(&body)).await;
             match resp {
-                Some(r) if r.ok() => {
-                    match r.json::<UserEntry>().await {
-                        Ok(u) => { set_users.update(|list| list.push(u)); toast_success("User created"); }
-                        Err(e) => web_sys::console::warn_1(&format!("user create JSON parse error: {e}").into()),
+                Some(r) if r.ok() => match r.json::<UserEntry>().await {
+                    Ok(u) => {
+                        set_users.update(|list| list.push(u));
+                        toast_success("User created");
                     }
-                }
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("user create JSON parse error: {e}").into(),
+                    ),
+                },
                 _ => toast_error("Failed to create user"),
             }
             set_show_create.set(false);
@@ -476,7 +487,11 @@ fn EditUserDialog(
         !firstname.get().trim().is_empty()
             && !lastname.get().trim().is_empty()
             && em.contains('@')
-            && em.split('@').nth(1).map(|d| d.contains('.')).unwrap_or(false)
+            && em
+                .split('@')
+                .nth(1)
+                .map(|d| d.contains('.'))
+                .unwrap_or(false)
     });
 
     view! {
