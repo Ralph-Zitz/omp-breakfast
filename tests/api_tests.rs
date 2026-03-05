@@ -220,7 +220,10 @@ async fn get_users_with_valid_token() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert!(body["items"].as_array().unwrap().len() >= 5, "seed data has 5 users");
+    assert!(
+        body["items"].as_array().unwrap().len() >= 5,
+        "seed data has 5 users"
+    );
 }
 
 #[actix_web::test]
@@ -239,7 +242,10 @@ async fn get_teams_with_valid_token() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert!(body["items"].as_array().unwrap().len() >= 2, "seed data has 2 teams");
+    assert!(
+        body["items"].as_array().unwrap().len() >= 2,
+        "seed data has 2 teams"
+    );
 }
 
 #[actix_web::test]
@@ -258,7 +264,10 @@ async fn get_roles_with_valid_token() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert!(body["items"].as_array().unwrap().len() >= 3, "seed data has 3 roles");
+    assert!(
+        body["items"].as_array().unwrap().len() >= 3,
+        "seed data has 3 roles"
+    );
 }
 
 #[actix_web::test]
@@ -501,7 +510,10 @@ async fn get_items_returns_seed_data() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert!(body["items"].as_array().unwrap().len() >= 4, "seed data has 4 items");
+    assert!(
+        body["items"].as_array().unwrap().len() >= 4,
+        "seed data has 4 items"
+    );
 }
 
 #[actix_web::test]
@@ -748,10 +760,7 @@ async fn get_single_team_order_returns_details() {
 
     // GET single order by ID
     let req = test::TestRequest::get()
-        .uri(&format!(
-            "/api/v1.0/teams/{}/orders/{}",
-            team_id, order_id
-        ))
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -775,10 +784,7 @@ async fn get_single_team_order_returns_details() {
     // GET nonexistent order should return 404
     let fake_id = uuid::Uuid::now_v7();
     let req = test::TestRequest::get()
-        .uri(&format!(
-            "/api/v1.0/teams/{}/orders/{}",
-            team_id, fake_id
-        ))
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, fake_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -4855,10 +4861,7 @@ async fn non_member_cannot_update_team_order() {
 
     // Non-member tries PUT → 403
     let req = test::TestRequest::put()
-        .uri(&format!(
-            "/api/v1.0/teams/{}/orders/{}",
-            team_id, order_id
-        ))
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .set_json(json!({"closed": true}))
         .to_request();
@@ -4871,10 +4874,7 @@ async fn non_member_cannot_update_team_order() {
 
     // Cleanup
     let req = test::TestRequest::delete()
-        .uri(&format!(
-            "/api/v1.0/teams/{}/orders/{}",
-            team_id, order_id
-        ))
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     test::call_service(&app, req).await;
@@ -4920,10 +4920,7 @@ async fn non_member_cannot_delete_team_order() {
 
     // Non-member tries DELETE → 403
     let req = test::TestRequest::delete()
-        .uri(&format!(
-            "/api/v1.0/teams/{}/orders/{}",
-            team_id, order_id
-        ))
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -4935,10 +4932,7 @@ async fn non_member_cannot_delete_team_order() {
 
     // Cleanup
     let req = test::TestRequest::delete()
-        .uri(&format!(
-            "/api/v1.0/teams/{}/orders/{}",
-            team_id, order_id
-        ))
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     test::call_service(&app, req).await;
@@ -5277,9 +5271,7 @@ async fn get_orders_for_nonexistent_team_returns_empty_list() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200, "should return 200 for nonexistent team");
     let body: Value = test::read_body_json(resp).await;
-    let orders = body["items"]
-        .as_array()
-        .expect("should have items array");
+    let orders = body["items"].as_array().expect("should have items array");
     assert!(orders.is_empty(), "should return empty list");
     assert_eq!(body["total"], 0);
 }

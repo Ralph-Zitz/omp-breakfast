@@ -10,8 +10,7 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
-    web::Query,
+    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path, web::Query,
 };
 use actix_web_httpauth::extractors::basic::BasicAuth;
 use argon2::password_hash::PasswordVerifier;
@@ -37,7 +36,12 @@ pub async fn get_users(
     let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
     let (users, total) = db::get_users(&client, limit, offset).await?;
-    Ok(HttpResponse::Ok().json(PaginatedResponse { items: users, total, limit, offset }))
+    Ok(HttpResponse::Ok().json(PaginatedResponse {
+        items: users,
+        total,
+        limit,
+        offset,
+    }))
 }
 
 #[utoipa::path(
@@ -412,5 +416,10 @@ pub async fn user_teams(
     let (limit, offset) = pagination.sanitize();
     let client: Client = get_client(&state.pool).await?;
     let (teams, total) = db::get_user_teams(&client, path.into_inner(), limit, offset).await?;
-    Ok(HttpResponse::Ok().json(PaginatedResponse { items: teams, total, limit, offset }))
+    Ok(HttpResponse::Ok().json(PaginatedResponse {
+        items: teams,
+        total,
+        limit,
+        offset,
+    }))
 }
