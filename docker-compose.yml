@@ -25,6 +25,8 @@ services:
           cpus: "1"
     environment:
       - BREAKFAST_PG_HOST=postgres
+      - BREAKFAST_PG_USER=actix
+      - BREAKFAST_PG_PASSWORD=actix
       - ENV=development
   postgres-setup:
     image: postgres:18.3
