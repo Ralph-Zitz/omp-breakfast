@@ -71,18 +71,9 @@ pub async fn get_order_items(
     limit: i64,
     offset: i64,
 ) -> Result<(Vec<OrderEntry>, i64), Error> {
-    let count: i64 = client
-        .query_one(
-            "select count(*) from orders where orders_teamorders_id = $1 and orders_team_id = $2",
-            &[&teamorder_id, &team_id],
-        )
-        .await
-        .map_err(Error::Db)?
-        .get(0);
-
     let statement = client
         .prepare(
-            "select orders_teamorders_id, orders_item_id, orders_team_id, amt, created, changed from orders where orders_teamorders_id = $1 and orders_team_id = $2 order by created asc limit $3 offset $4",
+            "select orders_teamorders_id, orders_item_id, orders_team_id, amt, created, changed, count(*) over() as total_count from orders where orders_teamorders_id = $1 and orders_team_id = $2 order by created asc limit $3 offset $4",
         )
         .await
         .map_err(Error::Db)?;
@@ -92,7 +83,8 @@ pub async fn get_order_items(
         .await
         .map_err(Error::Db)?;
 
-    Ok((map_rows(&rows, "order item"), count))
+    let total: i64 = rows.first().map(|r| r.get("total_count")).unwrap_or(0);
+    Ok((map_rows(&rows, "order item"), total))
 }
 
 /// Fetches a single line item by team order ID, item ID, and team ID.

@@ -28,14 +28,6 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Minor Items
 
-### Database — Pagination Count and Data Queries Not Transactionally Consistent
-
-- [ ] **#409 — `SELECT COUNT(*)` and `SELECT ... LIMIT/OFFSET` run as separate statements; total can be stale relative to items**
-  - Files: `src/db/users.rs`, `src/db/teams.rs`, `src/db/roles.rs`, `src/db/items.rs`, `src/db/orders.rs`, `src/db/order_items.rs`
-  - Fix: Wrap in explicit transaction or use `COUNT(*) OVER()` window function.
-  - Source commands: `db-review`
-
-
 ## Informational Items
 
 ### Testing — Delete-Not-Found API Paths Untested for 5 Entities
@@ -563,7 +555,7 @@ See that file for the full history of resolved findings.
 - **Test counts verified (2026-03-05):** 193 unit (171 lib + 22 healthcheck), 117 API integration (ignored), 103 DB integration (ignored), 41 WASM — all match CLAUDE.md and README.md.
 - **`cargo audit` (2026-03-05):** Exit code 0. No new vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) remains intentionally ignored — **blocked on upstream**, see #132. Re-evaluate periodically.
 - **CONNECT Design System (2026-03-05):** `git pull` reports "Already up to date" — no migration needed.
-- Open items summary: 1 critical (#132 blocked), 0 important, 1 minor (#409), 90+ informational.
+- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 90+ informational.
 - 5 new findings in this assessment: #500–#504 (all documentation, all fixed). 0 regressions found.
 - Highest finding number: #504.
-- 344 resolved items in `.claude/resolved-findings.md`.
+- 345 resolved items in `.claude/resolved-findings.md`.

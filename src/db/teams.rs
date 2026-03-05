@@ -9,19 +9,10 @@ use uuid::Uuid;
 ///
 /// Returns an empty `Vec` (not 404) when the user has no memberships.
 pub async fn get_user_teams(client: &Client, uid: Uuid, limit: i64, offset: i64) -> Result<(Vec<UserInTeams>, i64), Error> {
-    let count: i64 = client
-        .query_one(
-            "select count(*) from memberof where memberof_user_id = $1",
-            &[&uid],
-        )
-        .await
-        .map_err(Error::Db)?
-        .get(0);
-
     let statement = client
         .prepare(
             r#"
-                select teams.team_id, tname, teams.descr, title, firstname, lastname, memberof.joined, memberof.changed as role_changed
+                select teams.team_id, tname, teams.descr, title, firstname, lastname, memberof.joined, memberof.changed as role_changed, count(*) over() as total_count
                 from memberof
                 join users on users.user_id = memberof.memberof_user_id
                 join teams on teams.team_id = memberof.memberof_team_id
@@ -39,21 +30,16 @@ pub async fn get_user_teams(client: &Client, uid: Uuid, limit: i64, offset: i64)
         .await
         .map_err(Error::Db)?;
 
-    Ok((map_rows(&rows, "user-in-teams"), count))
+    let total: i64 = rows.first().map(|r| r.get("total_count")).unwrap_or(0);
+    Ok((map_rows(&rows, "user-in-teams"), total))
 }
 
 /// Fetches teams with pagination, ordered alphabetically by team name.
 ///
 /// Rows that fail to map are logged with `warn!()` and skipped.
 pub async fn get_teams(client: &Client, limit: i64, offset: i64) -> Result<(Vec<TeamEntry>, i64), Error> {
-    let count: i64 = client
-        .query_one("select count(*) from teams", &[])
-        .await
-        .map_err(Error::Db)?
-        .get(0);
-
     let statement = client
-        .prepare("select team_id, tname, descr, created, changed from teams order by tname asc limit $1 offset $2")
+        .prepare("select team_id, tname, descr, created, changed, count(*) over() as total_count from teams order by tname asc limit $1 offset $2")
         .await
         .map_err(Error::Db)?;
 
@@ -62,7 +48,8 @@ pub async fn get_teams(client: &Client, limit: i64, offset: i64) -> Result<(Vec<
         .await
         .map_err(Error::Db)?;
 
-    Ok((map_rows(&rows, "team"), count))
+    let total: i64 = rows.first().map(|r| r.get("total_count")).unwrap_or(0);
+    Ok((map_rows(&rows, "team"), total))
 }
 
 /// Fetches a single team by ID.
@@ -148,19 +135,10 @@ pub async fn update_team(
 ///
 /// Returns an empty `Vec` (not 404) when the team has no members.
 pub async fn get_team_users(client: &Client, tid: Uuid, limit: i64, offset: i64) -> Result<(Vec<UsersInTeam>, i64), Error> {
-    let count: i64 = client
-        .query_one(
-            "select count(*) from memberof where memberof_team_id = $1",
-            &[&tid],
-        )
-        .await
-        .map_err(Error::Db)?
-        .get(0);
-
     let statement = client
         .prepare(
             r#"
-                select user_id, firstname, lastname, email, title, memberof.joined, memberof.changed as role_changed
+                select user_id, firstname, lastname, email, title, memberof.joined, memberof.changed as role_changed, count(*) over() as total_count
                 from memberof
                 join users on users.user_id = memberof.memberof_user_id
                 join roles on roles.role_id = memberof.memberof_role_id
@@ -177,5 +155,6 @@ pub async fn get_team_users(client: &Client, tid: Uuid, limit: i64, offset: i64)
         .await
         .map_err(Error::Db)?;
 
-    Ok((map_rows(&rows, "users-in-team"), count))
+    let total: i64 = rows.first().map(|r| r.get("total_count")).unwrap_or(0);
+    Ok((map_rows(&rows, "users-in-team"), total))
 }

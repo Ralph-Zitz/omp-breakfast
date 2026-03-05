@@ -2402,6 +2402,13 @@ Last updated: 2026-03-06
   - Resolution: Added `create_role_with_duplicate_title_fails` DB test.
   - Source commands: `test-gaps`
 
+### Database — Pagination Count and Data Queries Not Transactionally Consistent
+
+- [x] **#409 — `SELECT COUNT(*)` and `SELECT ... LIMIT/OFFSET` run as separate statements; total can be stale relative to items**
+  - Files: `src/db/users.rs`, `src/db/teams.rs`, `src/db/roles.rs`, `src/db/items.rs`, `src/db/orders.rs`, `src/db/order_items.rs`
+  - Resolution: Replaced the two-query pattern with a single `SELECT ..., count(*) over() as total_count ... LIMIT/OFFSET` query in all 8 list functions (`get_users`, `get_teams`, `get_user_teams`, `get_team_users`, `get_roles`, `get_items`, `get_team_orders`, `get_order_items`). The window function computes the total row count in the same query execution, eliminating the race window between the count and data queries. The `total_count` column is extracted from `rows.first()` (returning 0 for empty results) and is silently ignored by the existing named-column `FromRow` impls.
+  - Source commands: `db-review`
+
 ### Documentation — CLAUDE.md `components/mod.rs` Description Incomplete
 
 - [x] **#500 — `components/mod.rs` description in CLAUDE.md says only "Module declarations" but the file also defines `LoadingSpinner`, `PaginationBar`, and `role_tag_class()`**
@@ -2439,6 +2446,6 @@ Last updated: 2026-03-06
 
 ## Notes
 
-- Total resolved items: 344 (6 critical, 45 important, 110 minor, 89 informational, plus items previously counted under different categories)
+- Total resolved items: 345 (6 critical, 45 important, 111 minor, 89 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

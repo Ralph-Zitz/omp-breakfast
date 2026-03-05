@@ -7,14 +7,8 @@ use uuid::Uuid;
 ///
 /// Rows that fail to map are logged with `warn!()` and skipped.
 pub async fn get_items(client: &Client, limit: i64, offset: i64) -> Result<(Vec<ItemEntry>, i64), Error> {
-    let count: i64 = client
-        .query_one("select count(*) from items", &[])
-        .await
-        .map_err(Error::Db)?
-        .get(0);
-
     let statement = client
-        .prepare("select item_id, descr, price, created, changed from items order by descr asc limit $1 offset $2")
+        .prepare("select item_id, descr, price, created, changed, count(*) over() as total_count from items order by descr asc limit $1 offset $2")
         .await
         .map_err(Error::Db)?;
 
@@ -23,7 +17,8 @@ pub async fn get_items(client: &Client, limit: i64, offset: i64) -> Result<(Vec<
         .await
         .map_err(Error::Db)?;
 
-    Ok((map_rows(&rows, "item"), count))
+    let total: i64 = rows.first().map(|r| r.get("total_count")).unwrap_or(0);
+    Ok((map_rows(&rows, "item"), total))
 }
 
 /// Fetches a single breakfast item by ID.
