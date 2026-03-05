@@ -2171,8 +2171,239 @@ Last updated: 2026-03-06
   - Resolution: Changed `format!("Delete X")` to `"Delete X".to_string()` in all 3 files.
   - Source commands: `review`
 
+### Documentation — CLAUDE.md Backend Test Counts Stale
+
+- [x] **#404 — CLAUDE.md states 193 unit, 87 API, 96 DB tests; actual counts are 195 unit, 109 API, 101 DB**
+  - File: `CLAUDE.md` (Testing section)
+  - Resolution: Updated CLAUDE.md and README.md test count sections to reflect correct values.
+  - Source commands: `cross-ref-check`
+
+### Documentation — README Test Counts Stale
+
+- [x] **#405 — README.md states 193 unit, 87 API, 92 DB; actual counts are 195, 109, 101**
+  - File: `README.md`
+  - Resolution: Updated README.md test counts to match actual running suites.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md `db/users.rs` Function List Incomplete
+
+- [x] **#406 — `get_password_hash` missing from the parenthetical function list**
+  - File: `CLAUDE.md` (Project Structure → `db/users.rs`)
+  - Resolution: Added `get_password_hash` to the function list in CLAUDE.md.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md Structure Tree Missing Root Files
+
+- [x] **#407 — `NEW-UI-COMPONENTS.md` and `LICENSE` exist on disk but not in project structure tree**
+  - File: `CLAUDE.md` (Project Structure)
+  - Resolution: Added both files to the project structure listing.
+  - Source commands: `cross-ref-check`
+
+### Database — Redundant Indexes Duplicate UNIQUE Constraint Auto-Indexes
+
+- [x] **#408 — `idx_users_email` and `idx_teams_name` duplicate the implicit unique indexes from UNIQUE constraints**
+  - File: `migrations/V1__initial_schema.sql` (lines ~25, ~38)
+  - Resolution: Added migration V7 to drop both redundant indexes.
+  - Source commands: `db-review`
+
+### Database — `get_order_items` ORDER BY UUID Gives Non-Meaningful Sort
+
+- [x] **#410 — `ORDER BY orders_item_id` sorts by item UUID primary key, not by when the item was added or by name**
+  - File: `src/db/order_items.rs` (line ~84)
+  - Resolution: Changed to `ORDER BY created ASC` to sort by insertion time.
+  - Source commands: `db-review`
+
+### Dependencies — `tracing-bunyan-formatter` Effectively Unmaintained
+
+- [x] **#411 — v0.3.10 (last release Feb 2024) causes `tracing-log` v0.1/v0.2 duplication and pulls stale transitive deps**
+  - File: `Cargo.toml`
+  - Resolution: Replaced with `tracing-subscriber::fmt::layer().json()` for structured JSON logging in production.
+  - Source commands: `dependency-check`
+
+### OpenAPI — `create_order_item` Missing 404 Response
+
+- [x] **#412 — `guard_open_order` returns 404 when team order doesn't exist, but utoipa annotation omits 404**
+  - File: `src/handlers/orders.rs` (lines ~68–82)
+  - Resolution: Added `(status = 404, description = "Team order or item not found", body = ErrorResponse)` to utoipa annotation.
+  - Source commands: `openapi-sync`
+
+### OpenAPI — Member Management 403 Descriptions Omit Admin-Role Guard
+
+- [x] **#413 — `add_team_member` and `update_member_role` 403 descriptions say only "team admin role required" but omit `guard_admin_role_assignment` scenario**
+  - File: `src/handlers/teams.rs` (lines ~358–372, ~431–445)
+  - Resolution: Updated 403 descriptions to include admin-role-assignment guard scenario.
+  - Source commands: `openapi-sync`
+
+### OpenAPI — `create_team_order` Missing 422 Response
+
+- [x] **#414 — Handler calls `validate(&json)?` but utoipa annotation omits 422**
+  - File: `src/handlers/teams.rs` (line ~228)
+  - Resolution: Added `(status = 422, description = "Validation error", body = ErrorResponse)` to utoipa annotation.
+  - Source commands: `rbac-rules`
+
+### Documentation — CLAUDE.md Security Headers Omits `Permissions-Policy`
+
+- [x] **#415 — `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()` is set in `DefaultHeaders` but not documented**
+  - File: `CLAUDE.md` (Security headers bullet), `src/server.rs` (line ~444)
+  - Resolution: Added Permissions-Policy entry to the security headers documentation in CLAUDE.md.
+  - Source commands: `practices-audit`
+
+### Security — `Error::ActixAuth` Leaks Raw Actix Error Messages
+
+- [x] **#416 — `ActixAuth` variant returns `e.to_string()` directly in 401 response body, potentially exposing internal framework details**
+  - File: `src/errors.rs` (lines ~131–134)
+  - Resolution: Changed to return generic `"Authentication failed"` string.
+  - Source commands: `security-audit`
+
+### Security — No `Cache-Control` on Authenticated GET Endpoints
+
+- [x] **#417 — Authenticated GET responses lack `Cache-Control: no-store` — browsers/proxies may cache sensitive data**
+  - Files: `src/handlers/users.rs`, `src/handlers/teams.rs`, `src/handlers/roles.rs`, `src/handlers/items.rs`, `src/handlers/orders.rs`
+  - Resolution: Added `Cache-Control: no-store, private` via `DefaultHeaders` wrapping the `/api/v1.0` scope in `src/routes.rs`.
+  - Source commands: `security-audit`
+
+### Security — No Guard That `jwtsecret` ≠ `secret`
+
+- [x] **#418 — Production startup guards reject default values individually but don't check if both are set to the same custom value**
+  - File: `src/server.rs` (lines ~297–316)
+  - Resolution: Added `if settings.server.secret == settings.server.jwtsecret { panic!("...") }` startup guard.
+  - Source commands: `security-audit`
+
+### Security — Default Config Plaintext Secrets in Docker Image
+
+- [x] **#419 — `default.yml` with `secret: "Very Secret"` and `password: actix` is copied into the final Docker image**
+  - File: `Dockerfile.breakfast` (line ~81), `config/default.yml`
+  - Resolution: Dockerfile now copies `config/docker-base.yml` as the base config (sanitized, all secret fields empty — must be supplied via env vars).
+  - Source commands: `security-audit`
+
+### Frontend — Missing Edit UI for Teams, Items, and Roles
+
+- [x] **#420 — `PUT /teams/{id}`, `PUT /items/{id}`, `PUT /roles/{id}` exist but no frontend edit forms**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`
+  - Resolution: Added inline edit dialogs (`do_update_team`, `do_update_item`, `do_update_role`) to all three pages.
+  - Source commands: `api-completeness`
+
+### Frontend — No Team Member Management UI
+
+- [x] **#421 — Backend POST/DELETE/PUT on team members fully implemented; frontend shows read-only member table only**
+  - File: `frontend/src/pages/teams.rs`
+  - Resolution: Added add-member, remove-member, and update-role UI (`do_add_member`, `do_remove_member`, `do_update_member_role`).
+  - Source commands: `api-completeness`
+
+### Frontend — No Order Update/Close UI or Order Item Quantity Edit
+
+- [x] **#422 — `PUT /teams/{id}/orders/{oid}` (close/reopen, due date) and `PUT .../items/{iid}` (quantity) exist but no frontend UI**
+  - File: `frontend/src/pages/orders.rs`
+  - Resolution: Added close/reopen toggle (`do_toggle_order_closed`) and order item quantity editing.
+  - Source commands: `api-completeness`
+
+### Frontend — No Pagination Controls
+
+- [x] **#423 — All list endpoints return paginated responses but no page has next/previous/page controls; lists truncated at 50**
+  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
+  - Resolution: Added `PaginationBar` component to all five list pages.
+  - Source commands: `api-completeness`
+
+### Frontend — No Admin Edit-User UI
+
+- [x] **#424 — AdminPage shows user list with create/delete but no edit form; only ProfilePage supports self-edit**
+  - File: `frontend/src/pages/admin.rs`
+  - Resolution: Added `EditUserDialog` component with `do_update_user` handler.
+  - Source commands: `api-completeness`
+
+### Frontend — Create User Gated Admin-Only in UI but Backend Allows Team Admin
+
+- [x] **#425 — `require_admin_or_team_admin` allows team admins to create users, but Admin page is only visible to global admins**
+  - File: `frontend/src/pages/admin.rs`
+  - Resolution: Admin page and user-create are now visible to `is_admin || is_team_admin`, matching backend gate.
+  - Source commands: `api-completeness`
+
+### Frontend — Profile Save Duplicates `build_user_context()` Logic
+
+- [x] **#426 — After PUT, profile page manually fetches user + teams + checks admin, duplicating `build_user_context()` from api.rs**
+  - File: `frontend/src/pages/profile.rs` (lines ~69–101)
+  - Resolution: Profile save now calls `build_user_context()` instead of duplicating the logic.
+  - Source commands: `review`
+
+### Frontend — Profile Save Discards PUT Response, Makes 2 Extra GETs
+
+- [x] **#427 — Successful PUT response body is not read; code makes separate GET for user and GET for teams**
+  - File: `frontend/src/pages/profile.rs` (lines ~76–78)
+  - Resolution: PUT response body is now deserialized for updated user data; only teams fetch remains.
+  - Source commands: `review`
+
+### Frontend — No Client-Side Email Validation on Profile Edit
+
+- [x] **#428 — Invalid email accepted client-side, rejected server-side with generic toast**
+  - File: `frontend/src/pages/profile.rs` (lines ~239–253)
+  - Resolution: Added `!em.contains('@') || !domain.contains('.')` email format check.
+  - Source commands: `review`
+
+### Testing — Team Admin Bulk-Delete Orders Positive Path Untested
+
+- [x] **#429 — Admin bypass tested, member denied tested, but no test where Team Admin bulk-deletes orders on own team**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `team_admin_can_bulk_delete_own_team_orders` test.
+  - Source commands: `rbac-rules`
+
+### Testing — Team Admin Update/Delete Another Member's Order Untested
+
+- [x] **#430 — No test where Team Admin (non-owner) updates or deletes an order created by a regular member**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `team_admin_can_update_order_by_another_member` test.
+  - Source commands: `rbac-rules`
+
+### Testing — Order Owner Update/Delete Own Order Positive Path Untested
+
+- [x] **#431 — No test where a regular member (order creator) updates or deletes their own order and gets 200**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `member_can_update_and_delete_own_order` test.
+  - Source commands: `rbac-rules`
+
+### Testing — Duplicate Team Name Conflict Not Tested via API
+
+- [x] **#432 — No API test creates a team with an existing name and asserts 409**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added duplicate team name 409 test.
+  - Source commands: `test-gaps`
+
+### Testing — Negative Price Rejection Not Tested via API
+
+- [x] **#433 — No API test sends a negative price to `POST /items` and asserts 422**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `create_item_with_negative_price_returns_422` test.
+  - Source commands: `test-gaps`
+
+### Testing — `PaginationParams::sanitize()` Clamping Untested
+
+- [x] **#434 — No test sends `limit=200` or `offset=-5` and verifies clamped pagination metadata**
+  - File: `src/models.rs` (lines ~31–38), `tests/api_tests.rs`
+  - Resolution: Added pagination clamping tests (limit=200 → 100, offset=-5 → 0).
+  - Source commands: `test-gaps`
+
+### Testing — Self-Delete User by Email Untested
+
+- [x] **#435 — No API test verifies a non-admin user can delete their own account by email**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `user_can_delete_own_account_by_email` test.
+  - Source commands: `test-gaps`
+
+### Testing — `create_team` Duplicate Name Not Tested at DB Level
+
+- [x] **#436 — No DB test attempts to create a team with an existing name (UNIQUE constraint)**
+  - File: `tests/db_tests.rs`
+  - Resolution: Added `create_team_with_duplicate_name_fails` DB test.
+  - Source commands: `test-gaps`
+
+### Testing — `create_role` Duplicate Title Not Tested at DB Level
+
+- [x] **#437 — No DB test for creating a role with a duplicate title**
+  - File: `tests/db_tests.rs`
+  - Resolution: Added `create_role_with_duplicate_title_fails` DB test.
+  - Source commands: `test-gaps`
+
 ## Notes
 
-- Total resolved items: 306 (6 critical, 45 important, 72 minor, 89 informational, plus items previously counted under different categories)
+- Total resolved items: 339 (6 critical, 45 important, 105 minor, 89 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

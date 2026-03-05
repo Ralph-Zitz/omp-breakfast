@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-14
+Last assessed: 2026-03-05
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -28,43 +28,6 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Minor Items
 
-### Documentation — CLAUDE.md Backend Test Counts Stale
-
-- [x] **#404 — CLAUDE.md states 193 unit, 87 API, 96 DB tests; actual counts are 195 unit, 109 API, 101 DB**
-  - File: `CLAUDE.md` (Testing section)
-  - Source commands: `cross-ref-check`
-
-### Documentation — README Test Counts Stale
-
-- [x] **#405 — README.md states 193 unit, 87 API, 92 DB; actual counts are 195, 109, 101**
-  - File: `README.md`
-  - Source commands: `cross-ref-check`
-
-### Documentation — CLAUDE.md `db/users.rs` Function List Incomplete
-
-- [x] **#406 — `get_password_hash` missing from the parenthetical function list**
-  - File: `CLAUDE.md` (Project Structure → `db/users.rs`)
-  - Source commands: `cross-ref-check`
-
-### Documentation — CLAUDE.md Structure Tree Missing Root Files
-
-- [x] **#407 — `NEW-UI-COMPONENTS.md` and `LICENSE` exist on disk but not in project structure tree**
-  - File: `CLAUDE.md` (Project Structure)
-  - Source commands: `cross-ref-check`
-
-### Documentation — CLAUDE.md Security Headers Omits `Permissions-Policy`
-
-- [x] **#415 — `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()` is set in `DefaultHeaders` but not documented**
-  - File: `CLAUDE.md` (Security headers bullet), `src/server.rs` (line ~444)
-  - Source commands: `practices-audit`
-
-### Database — Redundant Indexes Duplicate UNIQUE Constraint Auto-Indexes
-
-- [x] **#408 — `idx_users_email` and `idx_teams_name` duplicate the implicit unique indexes from UNIQUE constraints**
-  - File: `migrations/V1__initial_schema.sql` (lines ~25, ~38)
-  - Fix: Add migration to `DROP INDEX IF EXISTS idx_users_email; DROP INDEX IF EXISTS idx_teams_name;`
-  - Source commands: `db-review`
-
 ### Database — Pagination Count and Data Queries Not Transactionally Consistent
 
 - [ ] **#409 — `SELECT COUNT(*)` and `SELECT ... LIMIT/OFFSET` run as separate statements; total can be stale relative to items**
@@ -72,180 +35,45 @@ This file is **generated and maintained by the project assessment process** defi
   - Fix: Wrap in explicit transaction or use `COUNT(*) OVER()` window function.
   - Source commands: `db-review`
 
-### Database — `get_order_items` ORDER BY UUID Gives Non-Meaningful Sort
+### Documentation — CLAUDE.md `components/mod.rs` Description Incomplete
 
-- [x] **#410 — `ORDER BY orders_item_id` sorts by item UUID primary key, not by when the item was added or by name**
-  - File: `src/db/order_items.rs` (line ~84)
-  - Fix: Change to `ORDER BY created` or `ORDER BY items.descr` via JOIN.
-  - Source commands: `db-review`
+- [ ] **#500 — `components/mod.rs` description in CLAUDE.md says only "Module declarations" but the file also defines `LoadingSpinner`, `PaginationBar`, and `role_tag_class()`**
+  - File: `CLAUDE.md` (Project Structure → `components/mod.rs` line)
+  - Problem: Three non-trivial items are undocumented: the `LoadingSpinner` component, the `PaginationBar` component, and the `role_tag_class()` CSS helper.
+  - Fix: Update description to "Module declarations + `LoadingSpinner` component, `PaginationBar` component, `role_tag_class()` CSS helper".
+  - Source commands: `cross-ref-check`
 
-### Dependencies — `tracing-bunyan-formatter` Effectively Unmaintained
+### Documentation — `NEW-UI-COMPONENTS.md` Missing `LoadingSpinner` and `PaginationBar`
 
-- [x] **#411 — v0.3.10 (last release Feb 2024) causes `tracing-log` v0.1/v0.2 duplication and pulls stale transitive deps**
-  - File: `Cargo.toml`
-  - Fix: Replace with custom JSON layer via `tracing-subscriber::fmt::layer().json()`.
-  - Source commands: `dependency-check`
+- [ ] **#501 — `LoadingSpinner` and `PaginationBar` are custom UI components not available in CONNECT design system, but neither is listed in `NEW-UI-COMPONENTS.md`**
+  - Files: `NEW-UI-COMPONENTS.md`, `frontend/src/components/mod.rs`
+  - Problem: CLAUDE.md requires every custom component to be documented in `NEW-UI-COMPONENTS.md` with name, purpose, props, and rationale. Both components are missing.
+  - Fix: Add entries for `LoadingSpinner` and `PaginationBar` following the existing registry format.
+  - Source commands: `cross-ref-check`, `practices-audit`
 
-### OpenAPI — `create_order_item` Missing 404 Response
+### Documentation — CLAUDE.md Project Structure Missing `config/docker-base.yml`
 
-- [x] **#412 — `guard_open_order` returns 404 when team order doesn't exist, but utoipa annotation omits 404**
-  - File: `src/handlers/orders.rs` (lines ~68–82)
-  - Fix: Add `(status = 404, description = "Team order or item not found", body = ErrorResponse)`.
-  - Source commands: `openapi-sync`
+- [ ] **#502 — `config/docker-base.yml` exists on disk and is referenced by `Dockerfile.breakfast` but is absent from the CLAUDE.md project structure listing**
+  - File: `CLAUDE.md` (Project Structure → `config/` section)
+  - Problem: Any developer reading CLAUDE.md will not know this file exists or its purpose (sanitized base config for Docker images, all secret fields empty).
+  - Fix: Add "docker-base.yml – Sanitized base config for Docker images (all secret fields empty; supply via env vars)" to the `config/` listing.
+  - Source commands: `cross-ref-check`
 
-### OpenAPI — Member Management 403 Descriptions Omit Admin-Role Guard
+### Documentation — CLAUDE.md `db/membership.rs` Function List Missing `count_admins`
 
-- [x] **#413 — `add_team_member` and `update_member_role` 403 descriptions say only "team admin role required" but omit `guard_admin_role_assignment` scenario**
-  - File: `src/handlers/teams.rs` (lines ~358–372, ~431–445)
-  - Fix: Update to "Forbidden — team admin role required, or only global admins can assign the Admin role".
-  - Source commands: `openapi-sync`
+- [ ] **#503 — `count_admins` is a public function in `src/db/membership.rs` but does not appear in the CLAUDE.md parenthetical function list**
+  - File: `CLAUDE.md` (Project Structure → `db/membership.rs`)
+  - Problem: The list shows 8 functions; `count_admins` is the 9th and is omitted.
+  - Fix: Add `count_admins` to the function list.
+  - Source commands: `cross-ref-check`
 
-### OpenAPI — `create_team_order` Missing 422 Response
+### Documentation — CLAUDE.md WASM Test Category Breakdown Inaccurate
 
-- [x] **#414 — Handler calls `validate(&json)?` but utoipa annotation omits 422**
-  - File: `src/handlers/teams.rs` (line ~228)
-  - Fix: Add `(status = 422, description = "Validation error", body = ErrorResponse)`.
-  - Source commands: `rbac-rules`
-
-### Security — `Error::ActixAuth` Leaks Raw Actix Error Messages
-
-- [x] **#416 — `ActixAuth` variant returns `e.to_string()` directly in 401 response body, potentially exposing internal framework details**
-  - File: `src/errors.rs` (lines ~131–134)
-  - Fix: Return generic `"Authentication failed"` instead of raw actix error string.
-  - Source commands: `security-audit`
-
-### Security — No `Cache-Control` on Authenticated GET Endpoints
-
-- [x] **#417 — Authenticated GET responses lack `Cache-Control: no-store` — browsers/proxies may cache sensitive data**
-  - Files: `src/handlers/users.rs`, `src/handlers/teams.rs`, `src/handlers/roles.rs`, `src/handlers/items.rs`, `src/handlers/orders.rs`
-  - Fix: Add `Cache-Control: no-store, private` via `DefaultHeaders` for the `/api/v1.0` scope.
-  - Source commands: `security-audit`
-
-### Security — No Guard That `jwtsecret` ≠ `secret`
-
-- [x] **#418 — Production startup guards reject default values individually but don't check if both are set to the same custom value**
-  - File: `src/server.rs` (lines ~297–316)
-  - Fix: Add `if settings.server.secret == settings.server.jwtsecret { panic!("...") }`.
-  - Source commands: `security-audit`
-
-### Security — Default Config Plaintext Secrets in Docker Image
-
-- [x] **#419 — `default.yml` with `secret: "Very Secret"` and `password: actix` is copied into the final Docker image**
-  - File: `Dockerfile.breakfast` (line ~81), `config/default.yml`
-  - Fix: Copy only `production.yml` into final image, or strip secrets from baked `default.yml`.
-  - Source commands: `security-audit`
-
-### Frontend — Missing Edit UI for Teams, Items, and Roles
-
-- [x] **#420 — `PUT /teams/{id}`, `PUT /items/{id}`, `PUT /roles/{id}` exist but no frontend edit forms**
-  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/roles.rs`
-  - Source commands: `api-completeness`
-
-### Frontend — No Team Member Management UI
-
-- [x] **#421 — Backend POST/DELETE/PUT on team members fully implemented; frontend shows read-only member table only**
-  - File: `frontend/src/pages/teams.rs`
-  - Source commands: `api-completeness`
-
-### Frontend — No Order Update/Close UI or Order Item Quantity Edit
-
-- [x] **#422 — `PUT /teams/{id}/orders/{oid}` (close/reopen, due date) and `PUT .../items/{iid}` (quantity) exist but no frontend UI**
-  - File: `frontend/src/pages/orders.rs`
-  - Source commands: `api-completeness`
-
-### Frontend — No Pagination Controls
-
-- [x] **#423 — All list endpoints return paginated responses but no page has next/previous/page controls; lists truncated at 50**
-  - Files: `frontend/src/pages/teams.rs`, `frontend/src/pages/items.rs`, `frontend/src/pages/orders.rs`, `frontend/src/pages/roles.rs`, `frontend/src/pages/admin.rs`
-  - Source commands: `api-completeness`
-
-### Frontend — No Admin Edit-User UI
-
-- [x] **#424 — AdminPage shows user list with create/delete but no edit form; only ProfilePage supports self-edit**
-  - File: `frontend/src/pages/admin.rs`
-  - Source commands: `api-completeness`
-
-### Frontend — Create User Gated Admin-Only in UI but Backend Allows Team Admin
-
-- [x] **#425 — `require_admin_or_team_admin` allows team admins to create users, but Admin page is only visible to global admins**
-  - File: `frontend/src/pages/admin.rs`
-  - Problem: Team admins have no UI path to create users.
-  - Source commands: `api-completeness`
-
-### Frontend — Profile Save Duplicates `build_user_context()` Logic
-
-- [x] **#426 — After PUT, profile page manually fetches user + teams + checks admin, duplicating `build_user_context()` from api.rs**
-  - File: `frontend/src/pages/profile.rs` (lines ~69–101)
-  - Fix: Call `build_user_context()` instead.
-  - Source commands: `review`
-
-### Frontend — Profile Save Discards PUT Response, Makes 2 Extra GETs
-
-- [x] **#427 — Successful PUT response body is not read; code makes separate GET for user and GET for teams**
-  - File: `frontend/src/pages/profile.rs` (lines ~76–78)
-  - Fix: Deserialize PUT response for user data; only teams fetch needed.
-  - Source commands: `review`
-
-### Frontend — No Client-Side Email Validation on Profile Edit
-
-- [x] **#428 — Invalid email accepted client-side, rejected server-side with generic toast**
-  - File: `frontend/src/pages/profile.rs` (lines ~239–253)
-  - Fix: Add basic email format check to disabled expression.
-  - Source commands: `review`
-
-### Testing — Team Admin Bulk-Delete Orders Positive Path Untested
-
-- [x] **#429 — Admin bypass tested, member denied tested, but no test where Team Admin bulk-deletes orders on own team**
-  - File: `tests/api_tests.rs`
-  - Source commands: `rbac-rules`
-
-### Testing — Team Admin Update/Delete Another Member's Order Untested
-
-- [x] **#430 — No test where Team Admin (non-owner) updates or deletes an order created by a regular member**
-  - File: `tests/api_tests.rs`
-  - Source commands: `rbac-rules`
-
-### Testing — Order Owner Update/Delete Own Order Positive Path Untested
-
-- [x] **#431 — No test where a regular member (order creator) updates or deletes their own order and gets 200**
-  - File: `tests/api_tests.rs`
-  - Source commands: `rbac-rules`
-
-### Testing — Duplicate Team Name Conflict Not Tested via API
-
-- [x] **#432 — No API test creates a team with an existing name and asserts 409**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — Negative Price Rejection Not Tested via API
-
-- [x] **#433 — No API test sends a negative price to `POST /items` and asserts 422**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — `PaginationParams::sanitize()` Clamping Untested
-
-- [x] **#434 — No test sends `limit=200` or `offset=-5` and verifies clamped pagination metadata**
-  - File: `src/models.rs` (lines ~31–38), `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — Self-Delete User by Email Untested
-
-- [x] **#435 — No API test verifies a non-admin user can delete their own account by email**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — `create_team` Duplicate Name Not Tested at DB Level
-
-- [x] **#436 — No DB test attempts to create a team with an existing name (UNIQUE constraint)**
-  - File: `tests/db_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — `create_role` Duplicate Title Not Tested at DB Level
-
-- [x] **#437 — No DB test for creating a role with a duplicate title**
-  - File: `tests/db_tests.rs`
-  - Source commands: `test-gaps`
+- [ ] **#504 — CLAUDE.md lists "Page rendering (14 tests)" but there are 12 page rendering tests; also omits the "authed_get double-failure (2 tests)" section**
+  - File: `CLAUDE.md` (Testing → Frontend section, test category list)
+  - Problem: Total of 41 tests is correct, but the per-category breakdown is wrong: page rendering is 12 not 14, and the "authed_get double-failure" subsection (2 tests) is undocumented.
+  - Fix: Change "Page rendering (14 tests)" to "Page rendering (12 tests)" and add "authed_get double-failure (2 tests): retry after 401, double-failure fallback to login".
+  - Source commands: `cross-ref-check`
 
 ## Informational Items
 
@@ -771,19 +599,10 @@ See that file for the full history of resolved findings.
 
 ## Notes
 
-- All 437 tests pass: 195 backend unit (173 lib + 22 healthcheck), 103 API integration, 98 DB integration, 41 WASM. Total: **437 tests, 0 failures**.
-- Backend unit test breakdown: config: 6, db/migrate: 34, errors: 16, from_row: 10, handlers/mod: 12, middleware/auth+openapi: 34, models: 16, routes: 19, server: 17, validate: 9, healthcheck: 22 = **195 total**.
-- `cargo audit --ignore RUSTSEC-2023-0071` reports 0 vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) is intentionally ignored — **blocked on upstream**, see #132. `rsa` 0.10.0 remains at rc.16. Re-evaluate periodically.
-- All dependencies are up to date (`cargo outdated -R` shows zero outdated).
-- Clippy is clean on both backend and frontend.
-- CONNECT Design System: `git pull` reports "Already up to date" — no migration needed.
-- Frontend was refactored from monolithic `app.rs` (600+ lines) into modular architecture: `api.rs` (377 lines), `pages/` (10 files, ~2,800 lines), `components/` (7 files, ~680 lines). `app.rs` is now 164 lines (routing shell only).
-- Frontend consumes 22 of 37 API endpoints.
-- RBAC enforcement: no violations found. All 30 handlers enforce correct guards per CLAUDE.md policy.
-- OpenAPI spec has 41 operations; annotation gaps tracked (#326, #384, #385, #412, #413, #414, #446).
-- All SQL queries use parameterized prepared statements — zero injection risk.
-- All 11 assessment commands run: `api-completeness`, `cross-ref-check`, `db-review`, `dependency-check`, `openapi-sync`, `practices-audit`, `rbac-rules`, `review`, `security-audit`, `test-gaps`, `resume-assessment` (loader only).
-- Open items summary: 2 critical (#132 blocked, #397), 6 important, 34 minor, 90 informational. **Total: 132 open items**.
-- 68 new findings in this assessment: #397–#464. 0 regressions found.
-- 296 resolved items in `.claude/resolved-findings.md`.
-- Highest finding number: #464.
+- **Test counts verified (2026-03-05):** 193 unit (171 lib + 22 healthcheck), 117 API integration (ignored), 103 DB integration (ignored), 41 WASM — all match CLAUDE.md and README.md.
+- **`cargo audit` (2026-03-05):** Exit code 0. No new vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) remains intentionally ignored — **blocked on upstream**, see #132. Re-evaluate periodically.
+- **CONNECT Design System (2026-03-05):** `git pull` reports "Already up to date" — no migration needed.
+- Open items summary: 1 critical (#132 blocked), 0 important, 6 minor, 90+ informational.
+- 5 new findings in this assessment: #500–#504 (all documentation). 0 regressions found.
+- Highest finding number: #504.
+- 339 resolved items in `.claude/resolved-findings.md`.
