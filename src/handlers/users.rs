@@ -65,7 +65,7 @@ pub async fn get_user(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
     path = "/auth",
     responses(
         (status = 200, description = "Authentication successful", body = Auth),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
     ),
     security(("basic_auth" = [])),
 )]

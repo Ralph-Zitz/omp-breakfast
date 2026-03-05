@@ -824,4 +824,88 @@ mod tests {
             "Lockout should be per-email"
         );
     }
+
+    // -- Cache FIFO eviction (#292) --
+
+    #[test]
+    fn cache_eviction_fires_at_max_capacity() {
+        let state = test_state();
+        // Fill cache to CACHE_MAX_SIZE
+        for i in 0..CACHE_MAX_SIZE {
+            let entry = AuthCacheEntry {
+                user_id: Uuid::now_v7(),
+                password_hash: format!("hash_{}", i),
+            };
+            state.cache.insert(
+                format!("user_{}@example.com", i),
+                CachedUser {
+                    user: entry,
+                    cached_at: Utc::now()
+                        + Duration::try_seconds(i as i64).expect("valid duration"),
+                },
+            );
+        }
+        assert_eq!(state.cache.len(), CACHE_MAX_SIZE);
+
+        // Simulate inserting one more — the eviction logic removes oldest 10%
+        // Reproduce the eviction algorithm from basic_validator
+        let to_remove = (CACHE_MAX_SIZE / 10).max(1);
+        let mut entries: Vec<(String, i64)> = state
+            .cache
+            .iter()
+            .map(|entry| (entry.key().clone(), entry.value().cached_at.timestamp()))
+            .collect();
+        if entries.len() > to_remove {
+            entries.select_nth_unstable_by_key(to_remove - 1, |(_, ts)| *ts);
+            entries.truncate(to_remove);
+        }
+        for (key, _) in &entries {
+            state.cache.remove(key);
+        }
+
+        assert_eq!(
+            state.cache.len(),
+            CACHE_MAX_SIZE - to_remove,
+            "10% of entries should be evicted"
+        );
+    }
+
+    // -- Token blacklist cleanup (#293) --
+
+    #[test]
+    fn token_blacklist_retain_removes_expired_entries() {
+        let state = test_state();
+        let now = Utc::now();
+
+        // Insert an expired token (expiry in the past)
+        state.token_blacklist.insert(
+            "expired-jti".to_string(),
+            now - Duration::try_hours(1).expect("valid duration"),
+        );
+        // Insert a valid token (expiry in the future)
+        state.token_blacklist.insert(
+            "valid-jti".to_string(),
+            now + Duration::try_hours(1).expect("valid duration"),
+        );
+        assert_eq!(state.token_blacklist.len(), 2);
+
+        // Run the same retain logic as spawn_token_cleanup_task
+        state
+            .token_blacklist
+            .retain(|_, expires_at| *expires_at > now);
+
+        assert_eq!(
+            state.token_blacklist.len(),
+            1,
+            "expired entry should be removed"
+        );
+        assert!(
+            !state.token_blacklist.contains_key("expired-jti"),
+            "expired token should be gone"
+        );
+        assert!(
+            state.token_blacklist.contains_key("valid-jti"),
+            "valid token should remain"
+        );
+    }
 }

@@ -4556,3 +4556,730 @@ async fn add_team_member_with_nonexistent_role_id_returns_404() {
         .to_request();
     test::call_service(&app, req).await;
 }
+
+// ---------------------------------------------------------------------------
+// #289 — Member cannot manage team members
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn member_cannot_add_team_member() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U1_F is "Member" in "League of Cool Coders"
+    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let token = &auth.access_token;
+
+    // Get team ID for "League of Cool Coders"
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Get a role ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
+    let member_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Member"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a temp user as admin
+    let admin_auth: Auth = login_admin(&app).await;
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .set_json(json!({
+            "firstname": "TempMember",
+            "lastname": "Test",
+            "email": "tempmember.test289@test.com",
+            "password": "securepassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let new_user: Value = test::read_body_json(resp).await;
+    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
+
+    // Member tries to add a team member → 403
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({
+            "user_id": new_user_id,
+            "role_id": member_role_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "Member should not be able to add team members"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", new_user_id))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn member_cannot_remove_team_member() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U1_F is "Member" in "League of Cool Coders"
+    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let token = &auth.access_token;
+
+    // Get team and users
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Get U2_F's user_id (another member)
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users = paginated_items(test::read_body_json(resp).await);
+    let u2_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("U2_F.U2_L@LEGO.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Member tries to remove another member → 403
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, u2_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "Member should not be able to remove team members"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn member_cannot_update_member_role() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U1_F is "Member" in "League of Cool Coders"
+    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let token = &auth.access_token;
+
+    // Get team
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Get U2_F and Member role ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users = paginated_items(test::read_body_json(resp).await);
+    let u2_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("U2_F.U2_L@LEGO.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
+    let member_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Member"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Member tries to update another member's role → 403
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, u2_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({ "role_id": member_role_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "Member should not be able to update member roles"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// #290 — Member cannot bulk-delete team orders
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn member_cannot_bulk_delete_team_orders() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U1_F is "Member" in "League of Cool Coders"
+    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let token = &auth.access_token;
+
+    // Get team
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Member tries to bulk-delete all team orders → 403
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "Member should not be able to bulk-delete team orders"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// #291 — Non-member cannot PUT/DELETE single team order
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn non_member_cannot_update_team_order() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U1_F is NOT a member of "Pixel Bakers"
+    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let token = &auth.access_token;
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    // Get team ID for "Pixel Bakers"
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a real order via admin so the lookup succeeds
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // Non-member tries PUT → 403
+    let req = test::TestRequest::put()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"closed": true}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "non-member should not update team orders"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn non_member_cannot_delete_team_order() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U1_F is NOT a member of "Pixel Bakers"
+    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let token = &auth.access_token;
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    // Get team ID for "Pixel Bakers"
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a real order via admin
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // Non-member tries DELETE → 403
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "non-member should not delete team orders"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ---------------------------------------------------------------------------
+// #294 — Location header on remaining create endpoints
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn create_user_returns_location_header() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({
+            "firstname": "LocHdr",
+            "lastname": "Test",
+            "email": "lochdr.test294@test.com",
+            "password": "securepassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let location = resp
+        .headers()
+        .get("Location")
+        .expect("201 should include Location header");
+    assert!(
+        location.to_str().unwrap().contains("/api/v1.0/users/"),
+        "Location should contain user path"
+    );
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["user_id"].as_str().unwrap();
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn create_team_returns_location_header() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"tname": "LocHdr Team 294", "descr": "temp"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let location = resp
+        .headers()
+        .get("Location")
+        .expect("201 should include Location header");
+    assert!(
+        location.to_str().unwrap().contains("/api/v1.0/teams/"),
+        "Location should contain team path"
+    );
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["team_id"].as_str().unwrap();
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn create_role_returns_location_header() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"title": "LocHdrRole294", "descr": "temp"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let location = resp
+        .headers()
+        .get("Location")
+        .expect("201 should include Location header");
+    assert!(
+        location.to_str().unwrap().contains("/api/v1.0/roles/"),
+        "Location should contain role path"
+    );
+    let body: Value = test::read_body_json(resp).await;
+    let role_id = body["role_id"].as_str().unwrap();
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/roles/{}", role_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn create_team_order_returns_location_header() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Create temp team
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"tname": "LocHdr Order Team 294", "descr": "temp"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let team: Value = test::read_body_json(resp).await;
+    let team_id = team["team_id"].as_str().unwrap().to_string();
+
+    // Create order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let location = resp
+        .headers()
+        .get("Location")
+        .expect("201 should include Location header");
+    let loc_str = location.to_str().unwrap();
+    assert!(
+        loc_str.contains(&format!("/api/v1.0/teams/{}/orders/", team_id)),
+        "Location should contain team order path, got: {}",
+        loc_str
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn create_order_item_returns_location_header() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Create temp team + order
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"tname": "LocHdr OItem Team 294", "descr": "temp"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let team: Value = test::read_body_json(resp).await;
+    let team_id = team["team_id"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // Get a seed item
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let items = paginated_items(test::read_body_json(resp).await);
+    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
+
+    // Create order item
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"orders_item_id": item_id, "amt": 2}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let location = resp
+        .headers()
+        .get("Location")
+        .expect("201 should include Location header");
+    let loc_str = location.to_str().unwrap();
+    assert!(
+        loc_str.contains(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items/",
+            team_id, order_id
+        )),
+        "Location should contain order item path, got: {}",
+        loc_str
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn add_team_member_returns_location_header() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Create temp team
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"tname": "LocHdr Member Team 294", "descr": "temp"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let team: Value = test::read_body_json(resp).await;
+    let team_id = team["team_id"].as_str().unwrap().to_string();
+
+    // Create temp user
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({
+            "firstname": "LocMember",
+            "lastname": "Test",
+            "email": "locmember.test294@test.com",
+            "password": "securepassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let new_user: Value = test::read_body_json(resp).await;
+    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
+
+    // Get Member role_id
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
+    let member_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Member"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Add member
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({
+            "user_id": new_user_id,
+            "role_id": member_role_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let location = resp
+        .headers()
+        .get("Location")
+        .expect("201 should include Location header");
+    let loc_str = location.to_str().unwrap();
+    assert!(
+        loc_str.contains(&format!("/api/v1.0/teams/{}/users/", team_id)),
+        "Location should contain team member path, got: {}",
+        loc_str
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", new_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ---------------------------------------------------------------------------
+// #295 — GET orders for nonexistent team returns 200 with empty list
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn get_orders_for_nonexistent_team_returns_empty_list() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    let fake_team_id = Uuid::now_v7();
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/teams/{}/orders", fake_team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "should return 200 for nonexistent team");
+    let body: Value = test::read_body_json(resp).await;
+    let orders = body["items"]
+        .as_array()
+        .expect("should have items array");
+    assert!(orders.is_empty(), "should return empty list");
+    assert_eq!(body["total"], 0);
+}

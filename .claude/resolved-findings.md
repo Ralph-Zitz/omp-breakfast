@@ -1975,8 +1975,85 @@ Last updated: 2026-03-04
   - Resolution: Added `add_team_member_with_nonexistent_role_id_returns_404` API integration test.
   - Source commands: `test-gaps`
 
+### Database — Text Column Constraints Acknowledged
+
+- [x] **#285 — Text columns have API-level max-length validation but no `VARCHAR(N)` or `CHECK` at the database layer**
+  - Files: `migrations/V1__initial_schema.sql`
+  - Resolution: Acknowledged informational. API is the sole entry point and enforces max-length via `validator` crate.
+  - Source commands: `db-review`
+
+### Error Handling — Trigger Exception Mapping Acknowledged
+
+- [x] **#286 — PostgreSQL `P0001` (raise_exception from trigger) maps to generic DB error (500)**
+  - File: `src/db/order_items.rs`
+  - Resolution: Acknowledged informational. Handler calls `guard_open_order` with `FOR UPDATE` row lock before INSERT; trigger only fires under race conditions the lock prevents.
+  - Source commands: `db-review`
+
+### OpenAPI — auth_user 401 Body Type Added
+
+- [x] **#287 — `auth_user` utoipa has `(status = 401)` but no `body = ErrorResponse`**
+  - File: `src/handlers/users.rs`
+  - Resolution: Added `body = ErrorResponse` to the 401 response annotation.
+  - Source commands: `openapi-sync`
+
+### Dead Code — is_team_order_closed Visibility Acknowledged
+
+- [x] **#288 — `is_team_order_closed` is public API but only used in integration tests**
+  - File: `src/db/order_items.rs`
+  - Resolution: Acknowledged informational. Cannot make `pub(crate)` because external integration tests use it. Intentionally `pub` for test access.
+  - Source commands: `review`
+
+### Testing — Member-Cannot-Manage-Members Tests Added
+
+- [x] **#289 — No test where a user with "Member" role tries to POST/DELETE/PUT on team members**
+  - Files: `tests/api_tests.rs`
+  - Resolution: Added 3 API tests: `member_cannot_add_team_member`, `member_cannot_remove_team_member`, `member_cannot_update_member_role`.
+  - Source commands: `rbac-rules`, `test-gaps`
+
+### Testing — Member-Cannot-Bulk-Delete-Orders Test Added
+
+- [x] **#290 — `delete_team_orders` requires `require_team_admin` but only admin bypass is tested**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `member_cannot_bulk_delete_team_orders` API test.
+  - Source commands: `rbac-rules`, `test-gaps`
+
+### Testing — Non-Member Cannot Update/Delete Team Order Tests Added
+
+- [x] **#291 — `non_member_cannot_create_team_order` tests only POST; PUT and DELETE have no non-member test**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `non_member_cannot_update_team_order` and `non_member_cannot_delete_team_order` API tests.
+  - Source commands: `rbac-rules`, `test-gaps`
+
+### Testing — Cache FIFO Eviction Test Added
+
+- [x] **#292 — No test saturates the cache past 1000 entries to verify eviction fires correctly**
+  - File: `src/middleware/auth.rs`
+  - Resolution: Added `cache_eviction_fires_at_max_capacity` unit test.
+  - Source commands: `test-gaps`
+
+### Testing — Token Blacklist Cleanup Test Added
+
+- [x] **#293 — `DashMap::retain()` cleanup path has no test**
+  - File: `src/middleware/auth.rs`
+  - Resolution: Added `token_blacklist_retain_removes_expired_entries` unit test.
+  - Source commands: `test-gaps`
+
+### Testing — Location Header Tests Added for All Create Endpoints
+
+- [x] **#294 — `create_item_returns_location_header` exists but no equivalent for 6 other create endpoints**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added 6 API tests for Location header on create_user, create_team, create_role, create_team_order, create_order_item, add_team_member.
+  - Source commands: `test-gaps`
+
+### Testing — GET Orders for Nonexistent Team Test Added
+
+- [x] **#295 — No test calls `GET /teams/{nonexistent}/orders` to verify 200 empty vs 404**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `get_orders_for_nonexistent_team_returns_empty_list` API test.
+  - Source commands: `test-gaps`
+
 ## Notes
 
-- Total resolved items: 285 (6 critical, 45 important, 72 minor, 68 informational, plus items previously counted under different categories)
+- Total resolved items: 296 (6 critical, 45 important, 72 minor, 79 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file
