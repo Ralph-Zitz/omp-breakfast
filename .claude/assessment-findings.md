@@ -26,49 +26,11 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
-### RBAC — Last-Admin Demotion/Removal via Membership Operations
-
-- [ ] **#505 — `remove_team_member` and `update_member_role` allow stripping the last global Admin of their Admin role, leaving the system with zero admins**
-  - Files: `src/handlers/teams.rs` (`remove_team_member` lines ~427–441, `update_member_role` lines ~447–478)
-  - Problem: Resolved finding #399 added a `count_admins` guard to `delete_user` and `delete_user_by_email`, preventing the last admin from deleting themselves. However, two other mutation paths can strip the last Admin of their role with no equivalent guard:
-    1. **`remove_team_member`** — A Team Admin removes the last global Admin from the team where they hold the Admin role. After removal, `is_admin()` returns false for that user. No admin access remains.
-    2. **`update_member_role`** — A Team Admin changes the last global Admin's role from "Admin" to "Member". `guard_admin_role_assignment` only blocks non-admins from *assigning* the Admin role; it does not block *revoking* Admin.
-  - Fix: Before executing either mutation, check if the target user currently holds an Admin role. If so, call `count_admins()` and reject the operation (403) when the count would drop to zero. The check should be wrapped in the existing transaction for consistency.
-  - Source commands: `db-review`, `rbac-rules`, `review`, `test-gaps`
-
-### Frontend — Admin Password Reset Sends Incomplete Request Body (Broken Feature)
-
-- [ ] **#506 — `do_reset_password` sends `PUT /api/v1.0/users/{id}` with only `{"password": "..."}`, but `UpdateUserRequest` requires `firstname`, `lastname`, `email` as non-optional fields**
-  - File: `frontend/src/pages/admin.rs` (lines ~106–115)
-  - Problem: The admin password-reset dialog sends a PUT with only the `password` field. The backend `UpdateUserRequest` struct requires `firstname: String`, `lastname: String`, `email: String` as mandatory fields. Serde deserialization always fails with 400/422. **The admin password reset feature is completely broken.**
-  - Fix: Either (a) have the frontend include the user's current `firstname`, `lastname`, and `email` in the reset request body, or (b) create a dedicated `POST /api/v1.0/users/{id}/reset-password` endpoint that only requires the new password (admin-gated).
-  - Source commands: `api-completeness`
+_No open important items. See `.claude/resolved-findings.md` for resolved items._
 
 ## Minor Items
 
-### Documentation — WASM Test Count Stale (64 Actual vs 41 Documented)
-
-- [ ] **#507 — CLAUDE.md and README.md both state 41 WASM tests; actual count is 64**
-  - Files: `CLAUDE.md` (lines ~119, ~385), `README.md` (line ~72)
-  - Problem: 23 new WASM tests were added since the count was last updated (reset-password suite, table styling tests, actions-column tests, additional theme-toggle tests). Documentation is misleading.
-  - Fix: Update "41" → "64" in all three locations. Update the test category breakdown in CLAUDE.md to add the new test categories.
-  - Source commands: `cross-ref-check`
-
-### Documentation — `order_components.rs` Missing from CLAUDE.md Project Structure
-
-- [ ] **#508 — `frontend/src/pages/order_components.rs` exists on disk but not listed in the Project Structure tree**
-  - File: `CLAUDE.md` (pages/ listing in Project Structure)
-  - Problem: Created when `OrderDetail` and `CreateOrderDialog` were extracted from `orders.rs`, but the tree was never updated.
-  - Fix: Add `order_components.rs – Order sub-components (OrderDetail, CreateOrderDialog)` after `orders.rs` in the pages/ listing.
-  - Source commands: `cross-ref-check`
-
-### Frontend — Orders Page Fetches All Teams Instead of User's Teams
-
-- [ ] **#509 — Orders page uses `/api/v1.0/teams` (all teams) instead of `/api/v1.0/users/{id}/teams` (user's memberships)**
-  - File: `frontend/src/pages/orders.rs` (line ~47)
-  - Problem: Shows teams the current user is not a member of. Creating an order for a non-member team returns 403 from the backend. The correct endpoint is `/api/v1.0/users/{user_id}/teams`.
-  - Fix: Change `authed_get("/api/v1.0/teams")` to `authed_get(&format!("/api/v1.0/users/{}/teams", user_id))`.
-  - Source commands: `review`
+_No open minor items. See `.claude/resolved-findings.md` for resolved items._
 
 ## Informational Items
 

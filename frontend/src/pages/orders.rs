@@ -1,24 +1,33 @@
 use crate::api::{
-    HttpMethod, ItemEntry, OrderItemEntry, PaginatedResponse, TeamEntry, TeamOrderEntry,
-    UserContext, authed_get, authed_request,
+    HttpMethod, ItemEntry, OrderItemEntry, PaginatedResponse, TeamOrderEntry, UserContext,
+    authed_get, authed_request,
 };
+use crate::components::LoadingSpinner;
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
 use crate::components::toast::{toast_error, toast_success};
-use crate::components::LoadingSpinner;
 use leptos::prelude::*;
+use serde::Deserialize;
 
 #[path = "order_components.rs"]
 mod order_components;
 use order_components::{CreateOrderDialog, OrderDetail};
+
+/// Minimal team entry for the user-teams response (`/api/v1.0/users/{id}/teams`).
+/// Only the fields used by the orders page are included; extra fields are ignored.
+#[derive(Clone, Debug, Deserialize)]
+struct UserTeamEntry {
+    pub team_id: String,
+    pub tname: String,
+}
 
 #[component]
 pub fn OrdersPage() -> impl IntoView {
     let user = expect_context::<ReadSignal<Option<UserContext>>>();
 
     // User's teams for team selector
-    let (teams, set_teams) = signal(Vec::<TeamEntry>::new());
+    let (teams, set_teams) = signal(Vec::<UserTeamEntry>::new());
     let (selected_team, set_selected_team) = signal(Option::<String>::None);
     let (loading_teams, set_loading_teams) = signal(true);
 
@@ -44,11 +53,18 @@ pub fn OrdersPage() -> impl IntoView {
 
     // Fetch user's teams on mount
     leptos::task::spawn_local_scoped(async move {
-        if let Some(resp) = authed_get("/api/v1.0/teams").await {
+        let user_id = user
+            .get_untracked()
+            .map(|u| u.user_id.clone())
+            .unwrap_or_default();
+        let teams_url = format!("/api/v1.0/users/{}/teams", user_id);
+        if let Some(resp) = authed_get(&teams_url).await {
             if resp.ok() {
-                match resp.json::<PaginatedResponse<TeamEntry>>().await {
+                match resp.json::<PaginatedResponse<UserTeamEntry>>().await {
                     Ok(data) => set_teams.set(data.items),
-                    Err(e) => web_sys::console::warn_1(&format!("teams JSON parse error: {e}").into()),
+                    Err(e) => {
+                        web_sys::console::warn_1(&format!("teams JSON parse error: {e}").into())
+                    }
                 }
             }
         }
@@ -57,7 +73,9 @@ pub fn OrdersPage() -> impl IntoView {
             if resp.ok() {
                 match resp.json::<PaginatedResponse<ItemEntry>>().await {
                     Ok(data) => set_catalog_items.set(data.items),
-                    Err(e) => web_sys::console::warn_1(&format!("catalog JSON parse error: {e}").into()),
+                    Err(e) => {
+                        web_sys::console::warn_1(&format!("catalog JSON parse error: {e}").into())
+                    }
                 }
             }
         }
@@ -77,7 +95,9 @@ pub fn OrdersPage() -> impl IntoView {
                 if resp.ok() {
                     match resp.json::<PaginatedResponse<TeamOrderEntry>>().await {
                         Ok(data) => set_orders.set(data.items),
-                        Err(e) => web_sys::console::warn_1(&format!("orders JSON parse error: {e}").into()),
+                        Err(e) => web_sys::console::warn_1(
+                            &format!("orders JSON parse error: {e}").into(),
+                        ),
                     }
                 }
             }
@@ -97,7 +117,9 @@ pub fn OrdersPage() -> impl IntoView {
                 if resp.ok() {
                     match resp.json::<PaginatedResponse<OrderItemEntry>>().await {
                         Ok(data) => set_order_items.set(data.items),
-                        Err(e) => web_sys::console::warn_1(&format!("order items JSON parse error: {e}").into()),
+                        Err(e) => web_sys::console::warn_1(
+                            &format!("order items JSON parse error: {e}").into(),
+                        ),
                     }
                 }
             }
@@ -118,12 +140,15 @@ pub fn OrdersPage() -> impl IntoView {
             let url = format!("/api/v1.0/teams/{}/orders", team_id);
             let resp = authed_request(HttpMethod::Post, &url, Some(&body)).await;
             match resp {
-                Some(r) if r.ok() => {
-                    match r.json::<TeamOrderEntry>().await {
-                        Ok(order) => { set_orders.update(|list| list.push(order)); toast_success("Order created"); }
-                        Err(e) => web_sys::console::warn_1(&format!("order create JSON parse error: {e}").into()),
+                Some(r) if r.ok() => match r.json::<TeamOrderEntry>().await {
+                    Ok(order) => {
+                        set_orders.update(|list| list.push(order));
+                        toast_success("Order created");
                     }
-                }
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("order create JSON parse error: {e}").into(),
+                    ),
+                },
                 _ => toast_error("Failed to create order"),
             }
             set_show_create_order.set(false);
@@ -140,23 +165,34 @@ pub fn OrdersPage() -> impl IntoView {
             let url = format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id);
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
-                Some(r) if r.ok() => {
-                    match r.json::<TeamOrderEntry>().await {
-                        Ok(updated) => {
-                            set_orders.update(|list| {
-                                if let Some(o) = list.iter_mut().find(|o| o.teamorders_id == updated.teamorders_id) {
-                                    *o = updated.clone();
-                                }
-                            });
-                            if selected_order.get().map(|o| o.teamorders_id == updated.teamorders_id).unwrap_or(false) {
-                                set_selected_order.set(Some(updated));
+                Some(r) if r.ok() => match r.json::<TeamOrderEntry>().await {
+                    Ok(updated) => {
+                        set_orders.update(|list| {
+                            if let Some(o) = list
+                                .iter_mut()
+                                .find(|o| o.teamorders_id == updated.teamorders_id)
+                            {
+                                *o = updated.clone();
                             }
-                            let msg = if currently_closed { "Order reopened" } else { "Order closed" };
-                            toast_success(msg);
+                        });
+                        if selected_order
+                            .get()
+                            .map(|o| o.teamorders_id == updated.teamorders_id)
+                            .unwrap_or(false)
+                        {
+                            set_selected_order.set(Some(updated));
                         }
-                        Err(e) => web_sys::console::warn_1(&format!("order toggle JSON parse error: {e}").into()),
+                        let msg = if currently_closed {
+                            "Order reopened"
+                        } else {
+                            "Order closed"
+                        };
+                        toast_success(msg);
                     }
-                }
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("order toggle JSON parse error: {e}").into(),
+                    ),
+                },
                 _ => toast_error("Failed to update order"),
             }
         });
@@ -206,12 +242,15 @@ pub fn OrdersPage() -> impl IntoView {
             let url = format!("/api/v1.0/teams/{}/orders/{}/items", team_id, order_id);
             let resp = authed_request(HttpMethod::Post, &url, Some(&body)).await;
             match resp {
-                Some(r) if r.ok() => {
-                    match r.json::<OrderItemEntry>().await {
-                        Ok(oi) => { set_order_items.update(|list| list.push(oi)); toast_success("Item added to order"); }
-                        Err(e) => web_sys::console::warn_1(&format!("order item JSON parse error: {e}").into()),
+                Some(r) if r.ok() => match r.json::<OrderItemEntry>().await {
+                    Ok(oi) => {
+                        set_order_items.update(|list| list.push(oi));
+                        toast_success("Item added to order");
                     }
-                }
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("order item JSON parse error: {e}").into(),
+                    ),
+                },
                 _ => toast_error("Failed to add item"),
             }
         });

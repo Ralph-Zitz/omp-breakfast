@@ -17,6 +17,7 @@ Audit the codebase against the RBAC (Role-Based Access Control) policy defined b
 | Team Orders   | Update, Delete Single         | Order owner, Team Admin, or Admin (global) | `require_order_owner_or_team_admin`     |
 | Team Members  | Add, Remove, Update Role      | Team Admin or Admin (global)               | `require_team_admin`                    |
 | Team Members  | Assign Admin role             | Admin (global) only                        | `guard_admin_role_assignment`           |
+| Team Members  | Demote/remove a global Admin  | Admin (global) only                        | `guard_admin_demotion`                  |
 | User          | Create                        | Admin or Team Admin (any team)             | `require_admin_or_team_admin`           |
 | User          | Update, Delete (by ID/email)  | Self, Admin, or Team Admin (shared team)   | `require_self_or_admin_or_team_admin`   |
 | Items         | Create, Update, Delete        | Admin (global)                             | `require_admin`                         |
@@ -29,6 +30,13 @@ Audit the codebase against the RBAC (Role-Based Access Control) policy defined b
 - **Team Admin:** User holds the "Team Admin" role for the specific team being acted upon (checked via `db::get_member_role`). Can fully manage their team (members, orders, settings) but has no cross-team or system-wide powers. For user mutations (update, delete), a Team Admin can only act on users who are members of a team they administer (checked via `db::is_team_admin_of_user` — a self-join on `memberof`).
 - **Team Member:** User holds any role (Team Admin, Member, or Guest) for the specific team (checked via `db::get_member_role`)
 - **Self only:** The JWT `sub` claim must match the target user's ID. Admin (global) and Team Admin (of a shared team) bypass this check.
+
+## Admin Demotion / Promotion Rules
+
+- **Only global Admins can promote someone to Admin** (`guard_admin_role_assignment`): A Team Admin may assign any role *except* Admin. Only a global Admin may grant Admin privileges.
+- **Only global Admins can demote or remove a global Admin** (`guard_admin_demotion`): If the target user holds the Admin role in *any* team, a Team Admin cannot change their role or remove them from a team. Only another global Admin may modify a global Admin's membership.
+- **Global Admins can demote other global Admins**: There is no restriction preventing one Admin from changing another Admin's role.
+- **Members and Guests cannot modify roles**: The `require_team_admin` guard ensures that only Team Admins and global Admins can add, remove, or change member roles. Regular Members and Guests have no access to these operations.
 
 ## Admin Bypass Rules
 
@@ -48,7 +56,8 @@ For each handler in `src/handlers/`, verify:
 2. **Admin bypass** works on all team-scoped and self-only endpoints
 3. **Team Admin vs Admin distinction** is enforced: Team Admin cannot create/delete teams, CUD items, or CUD roles
 4. **Team Admin user scoping** is enforced: Team Admin can only update/delete users who share a team they administer (via `db::is_team_admin_of_user`)
-5. **OpenAPI annotations** include `403` response for every guarded endpoint
+5. **Admin demotion protection** is enforced: Team Admins cannot demote or remove a global Admin (`guard_admin_demotion` called in `update_member_role` and `remove_team_member`)
+6. **OpenAPI annotations** include `403` response for every guarded endpoint
 6. **Seed data** in `database_seed.sql` assigns roles correctly: "Admin" for global admins, "Team Admin" for team-scoped admins
 7. **Role string constants** (`ROLE_ADMIN`, `ROLE_TEAM_ADMIN` in `middleware/auth.rs`) are used consistently across `db/membership.rs` and `handlers/mod.rs` — `database_seed.sql` uses literal role strings for seeding purposes
 

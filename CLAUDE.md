@@ -64,14 +64,14 @@ src/
     items.rs       – Item CRUD (get_items, get_item, create_item, update_item, delete_item)
     orders.rs      – Team order CRUD (get_team_orders, get_team_order, create_team_order, update_team_order, delete_team_order, delete_team_orders)
     order_items.rs – Order item CRUD + closed-order check (is_team_order_closed, get_order_items, get_order_item, create_order_item, update_order_item, delete_order_item)
-    membership.rs  – Team membership + RBAC queries (count_admins, is_admin, is_admin_or_team_admin, is_team_admin_of_user, get_member_role, check_team_access, add_team_member, remove_team_member, update_member_role)
+    membership.rs  – Team membership + RBAC queries (count_admins, is_admin, is_admin_or_team_admin, is_team_admin_of_user, get_member_role, check_team_access, add_team_member, remove_team_member, update_member_role, would_admins_remain_without)
     tokens.rs      – Token blacklist persistence (revoke_token_db, is_token_revoked_db, cleanup_expired_tokens)
   errors.rs        – Error enum with thiserror + ResponseError impl (maps to HTTP status codes)
   validate.rs      – Generic validation wrapper using validator crate
   routes.rs        – All route definitions with auth middleware wiring
   lib.rs           – Module declarations
   handlers/
-    mod.rs         – get_client() utility, health endpoint, RBAC helpers (require_admin, require_admin_or_team_admin, require_team_admin, require_team_member, require_order_owner_or_team_admin, require_self_or_admin_or_team_admin, guard_admin_role_assignment, requesting_user_id)
+    mod.rs         – get_client() utility, health endpoint, RBAC helpers (require_admin, require_admin_or_team_admin, require_team_admin, require_team_member, require_order_owner_or_team_admin, require_self_or_admin_or_team_admin, guard_admin_role_assignment, guard_admin_demotion, guard_last_admin_membership, requesting_user_id)
     users.rs       – User CRUD + auth handlers (RBAC: self or admin)
     teams.rs       – Team CRUD + team order + member management handlers (team RBAC)
     roles.rs       – Role CRUD handlers (admin-gated CUD)
@@ -106,6 +106,7 @@ frontend/
       loading.rs   – Loading page (session restoration spinner)
       login.rs     – Login page (LoginHeader, LoginForm, ErrorAlert, fields)
       orders.rs    – Order management page (team orders, line items, totals)
+      order_components.rs – Order sub-components (OrderDetail, CreateOrderDialog)
       profile.rs   – User profile page (view/edit profile, change password)
       roles.rs     – Role management page (view/assign roles, admin-gated)
       teams.rs     – Team management page (CRUD teams, members, team roles)
@@ -116,7 +117,7 @@ frontend/
       tokens.css   – Imports CONNECT core tokens + enterprise theme from connect-design-system/
       components.css – Imports all CONNECT component CSS modules from connect-design-system/
   tests/
-    ui_tests.rs    – 41 WASM integration tests (headless Chrome)
+    ui_tests.rs    – 64 WASM integration tests (headless Chrome)
   bundle-css.sh    – Script to bundle CONNECT CSS into style/bundled.css
 connect-design-system/ – Local clone of git@github.com:LEGO/connect-design-system.git (gitignored, read-only asset source)
 config/
@@ -168,6 +169,8 @@ tests/
 - Order RBAC: `require_order_owner_or_team_admin` gates single-order mutations (update, delete); allows the order creator, a Team Admin for the team, or a global Admin. Regular members and guests may only mutate their own orders.
 - Order Items RBAC: Creating an order item requires team membership (any role — by design, all team members may add items to a breakfast order). Updating or deleting an order item requires `require_order_owner_or_team_admin` (same as team orders). Adding items to a closed order is blocked by `guard_open_order`.
 - Admin role guard: `guard_admin_role_assignment` prevents non-admin users from assigning the "Admin" role. Called after `require_team_admin` in membership handlers (add member, update role). Only global Admins may grant Admin privileges; Team Admins may assign any other role.
+- Admin demotion guard: `guard_admin_demotion` prevents non-admin users from demoting or removing a global Admin. Called after `require_team_admin` in `update_member_role` and `remove_team_member` handlers. If the target user is a global Admin, only another global Admin may change their role or remove them from a team. Team Admins cannot modify global Admins' memberships.
+- Last admin guard: `guard_last_admin_membership` prevents operations that would leave zero global Admins. Called after `guard_admin_demotion` in `update_member_role` and `remove_team_member` handlers. Uses `db::would_admins_remain_without` to check whether at least one Admin would remain after excluding the target membership. Returns 403 if the operation would orphan the system.
 - Self-or-Admin-or-Team-Admin RBAC: `require_self_or_admin_or_team_admin` helper gates user mutations (update, delete); allows the user themselves, a global Admin, or a Team Admin of any team where the target user is also a member (checked via `db::is_team_admin_of_user` — a self-join on `memberof`).
 - `Error::Forbidden` variant maps to HTTP 403 for authorization failures
 - `Error::Unauthorized` variant maps to HTTP 401 for authentication failures
@@ -382,7 +385,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Frontend
 
-- 41 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
+- 64 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
 - Test categories:
   - JWT decode (4 tests): valid token, missing segments, bad base64, invalid JSON
   - Login page rendering (3 tests): brand/form elements, email attributes, password attributes
@@ -394,9 +397,12 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
   - Session restore edge cases (3 tests): malformed token fallback, expired token fallback, loading page display
   - Token refresh retry (2 tests): authed_get retry after 401, token stored after refresh
   - authed_get double-failure (2 tests): retry after 401 fails, double-failure falls back to login
-  - Theme toggle (2 tests): dark/light mode switch, ARIA attributes
-  - Page rendering (12 tests): TeamsPage (2), ItemsPage (2), OrdersPage (2), ProfilePage (2), AdminPage (2), RolesPage (2) — navigation, data rendering, admin visibility
+  - Theme toggle (4 tests): dark/light mode switch, round-trip toggle, ARIA attributes
+  - Page rendering (14 tests): TeamsPage (2), ItemsPage (2), OrdersPage (2), ProfilePage (2 + team memberships), AdminPage (2), RolesPage (2) — navigation, data rendering, admin visibility
   - Login error differentiation (2 tests): 429 rate limit message, 500 server error message
+  - Table styling (4 tests): connect-table-header-cell class on admin, items, roles, teams tables
+  - Actions column (6 tests): actions modifier classes (3), no narrow inline width (2), multiple buttons present (2)
+  - Admin password reset (10 tests): button visibility, dialog open/close, validation (empty, short, mismatch), success toast
 - Mocking strategy: overrides `window.fetch` via `js_sys::eval` to intercept `gloo-net` HTTP calls; uses `Promise`-based `setTimeout` wrapper for async timing (no `gloo-timers` dependency)
 - Run frontend tests: `make test-frontend` or `cd frontend && wasm-pack test --headless --chrome`
 - Note: ChromeDriver version must match installed Chrome version

@@ -141,6 +141,60 @@ pub async fn guard_admin_role_assignment(
     Ok(())
 }
 
+/// Guard against non-admin users demoting or removing a global Admin.
+///
+/// If the target user is a global Admin, only another global Admin may change
+/// their role or remove them from a team. Team Admins are forbidden from
+/// modifying global Admins' memberships. Call this after `require_team_admin`
+/// in handlers that mutate a specific user's membership.
+pub async fn guard_admin_demotion(
+    client: &Client,
+    req: &HttpRequest,
+    target_user_id: Uuid,
+) -> Result<(), Error> {
+    // If the target user is not a global admin, no restriction applies.
+    if !db::is_admin(client, target_user_id).await? {
+        return Ok(());
+    }
+    // Target is a global admin — only another global admin may proceed.
+    let requester_id = requesting_user_id(req)
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
+    if !db::is_admin(client, requester_id).await? {
+        return Err(Error::Forbidden(
+            "Only global Admins can modify a global Admin's membership".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Guard against removing or demoting the last global Admin.
+///
+/// If the target user currently holds the Admin role in the specified team,
+/// verify that at least one global admin would remain after the membership is
+/// removed or changed away from Admin. Rejects with 403 if the operation would
+/// leave zero admins.
+///
+/// Call this in `remove_team_member` and `update_member_role` handlers before
+/// the mutation is executed.
+pub async fn guard_last_admin_membership(
+    client: &Client,
+    team_id: Uuid,
+    target_user_id: Uuid,
+) -> Result<(), Error> {
+    // Only relevant if the target currently holds Admin in this team.
+    let role = db::get_member_role(client, team_id, target_user_id).await?;
+    if role.as_deref() != Some(ROLE_ADMIN) {
+        return Ok(());
+    }
+    // Would any admin remain if this membership were removed/changed?
+    if !db::would_admins_remain_without(client, team_id, target_user_id).await? {
+        return Err(Error::Forbidden(
+            "Cannot remove or demote the last global Admin".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Require the requesting user to be the owner of the specified team order,
 /// a Team Admin for the team, or a global Admin. Regular members / guests
 /// may only mutate their own orders.
@@ -306,6 +360,30 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "You can only modify your own account, or must be an admin of a shared team"
+        );
+        let resp = err.error_response();
+        assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn guard_admin_demotion_error_message() {
+        let err = Error::Forbidden(
+            "Only global Admins can modify a global Admin's membership".to_string(),
+        );
+        assert_eq!(
+            err.to_string(),
+            "Only global Admins can modify a global Admin's membership"
+        );
+        let resp = err.error_response();
+        assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn guard_last_admin_membership_error_message() {
+        let err = Error::Forbidden("Cannot remove or demote the last global Admin".to_string());
+        assert_eq!(
+            err.to_string(),
+            "Cannot remove or demote the last global Admin"
         );
         let resp = err.error_response();
         assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);

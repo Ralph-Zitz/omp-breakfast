@@ -6377,3 +6377,498 @@ async fn user_can_delete_own_account_by_email() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404, "deleted user should no longer be found");
 }
+
+// ---------------------------------------------------------------------------
+// guard_admin_demotion — protect global Admins from Team Admin actions
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn team_admin_cannot_demote_global_admin() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U4_F is Team Admin of "League of Cool Coders"
+    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let ta_token = &ta_auth.access_token;
+
+    // Get admin user ID (global Admin in LoCC)
+    let admin_auth: Auth = login_admin(&app).await;
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users = paginated_items(test::read_body_json(resp).await);
+    let admin_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Get team ID and Member role ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
+    let member_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Member"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Team Admin tries to demote global Admin to Member → 403
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, admin_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .set_json(json!({ "role_id": member_role_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "team admin must not demote a global Admin"
+    );
+    let body: Value = test::read_body_json(resp).await;
+    assert!(
+        body["error"].as_str().unwrap().contains("global Admin"),
+        "error message should mention global Admin: {:?}",
+        body
+    );
+
+    // Ensure admin still has Admin role (unchanged)
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let members = paginated_items(test::read_body_json(resp).await);
+    let admin_member = members
+        .iter()
+        .find(|m| m["email"].as_str() == Some("admin@admin.com"))
+        .expect("admin should still be in team");
+    assert_eq!(
+        admin_member["title"].as_str().unwrap(),
+        "Admin",
+        "admin's role should be unchanged"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn team_admin_cannot_remove_global_admin_from_team() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U4_F is Team Admin of "League of Cool Coders"
+    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let ta_token = &ta_auth.access_token;
+
+    // Get admin user ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users = paginated_items(test::read_body_json(resp).await);
+    let admin_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Get team ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Team Admin tries to remove global Admin from team → 403
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, admin_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "team admin must not remove a global Admin from a team"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn global_admin_can_demote_another_global_admin() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    // Get team and role IDs
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
+    let admin_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Admin"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let member_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Member"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a second admin: create user, add as Admin in the team
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "SecondAdmin",
+            "lastname": "Test",
+            "email": "second.admin.demotion@test.com",
+            "password": "securepassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let new_admin: Value = test::read_body_json(resp).await;
+    let new_admin_id = new_admin["user_id"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "user_id": new_admin_id,
+            "role_id": admin_role_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201, "admin should add second admin");
+
+    // First admin demotes second admin to Member → should succeed
+    let req = test::TestRequest::put()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/users/{}",
+            team_id, new_admin_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({ "role_id": member_role_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "global admin should be able to demote another global admin"
+    );
+
+    // Clean up: remove from team and delete user
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/users/{}",
+            team_id, new_admin_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", new_admin_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ---------------------------------------------------------------------------
+// guard_last_admin_membership — prevent zero-admin state
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn last_admin_cannot_demote_self() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    // Get admin user ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users = paginated_items(test::read_body_json(resp).await);
+    let admin_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Get team ID and Member role ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
+    let member_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Member"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Admin tries to demote self to Member → 403 (last admin)
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, admin_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({ "role_id": member_role_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "last admin must not be able to demote themselves"
+    );
+    let body: Value = test::read_body_json(resp).await;
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("last global Admin"),
+        "error should mention last admin: {:?}",
+        body
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn last_admin_cannot_remove_self_from_admin_team() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    // Get admin user ID and team ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users = paginated_items(test::read_body_json(resp).await);
+    let admin_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Admin tries to remove self from team → 403 (last admin)
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, admin_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "last admin must not be able to remove themselves from their admin team"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn demoting_admin_allowed_when_another_admin_exists() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    // Get team and role IDs
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
+    let admin_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Admin"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let member_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Member"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a second admin
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "SecondAdmin",
+            "lastname": "LastGuard",
+            "email": "second.admin.lastguard@test.com",
+            "password": "securepassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let new_admin: Value = test::read_body_json(resp).await;
+    let new_admin_id = new_admin["user_id"].as_str().unwrap().to_string();
+
+    // Add second user as Admin in the team
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "user_id": new_admin_id,
+            "role_id": admin_role_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // Now demoting the second admin to Member should succeed (first admin still exists)
+    let req = test::TestRequest::put()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/users/{}",
+            team_id, new_admin_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({ "role_id": member_role_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "demoting an admin should succeed when another admin exists"
+    );
+
+    // Clean up
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/users/{}",
+            team_id, new_admin_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", new_admin_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}

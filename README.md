@@ -69,7 +69,7 @@ make test-integration
 
 This automatically starts an isolated Postgres container on port 5433, runs all seven migrations (V1–V7), seeds test data, executes all integration tests, and tears down the container.
 
-**Frontend WASM tests** (41 tests) — require Chrome:
+**Frontend WASM tests** (64 tests) — require Chrome:
 
 ```bash
 make test-frontend

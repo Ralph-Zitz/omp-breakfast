@@ -27,6 +27,40 @@ pub async fn count_admins(client: &Client) -> Result<i64, Error> {
     Ok(row.get("admin_count"))
 }
 
+/// Check whether removing or changing a specific membership would leave zero
+/// global admins. Returns `true` if the operation is safe (at least one admin
+/// would remain), `false` if it would leave zero admins.
+///
+/// The query counts distinct admin users *excluding* the specified
+/// (team_id, user_id) pair, which represents the membership being removed or
+/// changed away from Admin.
+pub async fn would_admins_remain_without(
+    client: &Client,
+    team_id: Uuid,
+    user_id: Uuid,
+) -> Result<bool, Error> {
+    let statement = client
+        .prepare(
+            r#"
+                SELECT COUNT(DISTINCT m.memberof_user_id) AS admin_count
+                FROM memberof m
+                JOIN roles r ON r.role_id = m.memberof_role_id
+                WHERE r.title = $1
+                  AND NOT (m.memberof_team_id = $2 AND m.memberof_user_id = $3)
+            "#,
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    let row = client
+        .query_one(&statement, &[&ROLE_ADMIN, &team_id, &user_id])
+        .await
+        .map_err(Error::Db)?;
+
+    let remaining: i64 = row.get("admin_count");
+    Ok(remaining > 0)
+}
+
 /// Check whether the user holds the "Admin" or "Team Admin" role in any team.
 pub async fn is_admin_or_team_admin(client: &Client, user_id: Uuid) -> Result<bool, Error> {
     let statement = client

@@ -104,7 +104,18 @@ pub fn AdminPage() -> impl IntoView {
     };
 
     let do_reset_password = move |user_id: String, new_password: String| {
-        let body = serde_json::json!({ "password": new_password });
+        let target_user = users.get().into_iter().find(|u| u.user_id == user_id);
+        let Some(u) = target_user else {
+            toast_error("User not found");
+            set_reset_pw_target.set(None);
+            return;
+        };
+        let body = serde_json::json!({
+            "firstname": u.firstname,
+            "lastname": u.lastname,
+            "email": u.email,
+            "password": new_password,
+        });
         leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/users/{}", user_id);
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;

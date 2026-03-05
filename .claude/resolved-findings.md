@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-07
+Last updated: 2026-03-05
 
 ## Critical Items
 
@@ -584,6 +584,20 @@ Last updated: 2026-03-07
 - [x] **#403 — Frontend gates delete button on global admin only, but backend `require_order_owner_or_team_admin` allows order owner and team admin**
   - File: `frontend/src/pages/orders.rs`, `frontend/src/api.rs`
   - Fix: Added `team_id` field to `UserInTeams` struct. Replaced `is_admin` prop with `can_delete` closure that checks admin OR order owner OR team admin. Updated mock data in frontend tests.
+  - Source commands: `api-completeness`
+
+### RBAC — Last-Admin Demotion/Removal via Membership Operations
+
+- [x] **#505 — `remove_team_member` and `update_member_role` allow stripping the last global Admin of their Admin role, leaving the system with zero admins**
+  - Files: `src/handlers/teams.rs` (`remove_team_member`, `update_member_role`), `src/handlers/mod.rs` (`guard_last_admin_membership`), `src/db/membership.rs` (`would_admins_remain_without`)
+  - Fix: Added `would_admins_remain_without` DB function and `guard_last_admin_membership` handler guard. The guard checks if the target holds Admin in the specific team, then verifies at least one admin user would remain after excluding that membership. Wired into both `remove_team_member` and `update_member_role` handlers after `guard_admin_demotion`. Returns 403 if the operation would leave zero admins.
+  - Source commands: `db-review`, `rbac-rules`, `review`, `test-gaps`
+
+### Frontend — Admin Password Reset Sends Incomplete Request Body (Broken Feature)
+
+- [x] **#506 — `do_reset_password` sends `PUT /api/v1.0/users/{id}` with only `{"password": "..."}`, but `UpdateUserRequest` requires `firstname`, `lastname`, `email` as non-optional fields**
+  - File: `frontend/src/pages/admin.rs`
+  - Fix: Updated `do_reset_password` to look up the target user from the `users` signal and include `firstname`, `lastname`, `email` in the PUT request body alongside the new `password`.
   - Source commands: `api-completeness`
 
 ## Minor Items
@@ -1530,6 +1544,27 @@ Last updated: 2026-03-07
   - File: `src/handlers/users.rs`
   - Resolution: Added email format validation (`len > 255 || !contains('@')` → `Error::Validation`) before DB call in `delete_user_by_email`.
   - Source commands: `security-audit`
+
+### Documentation — WASM Test Count Stale (64 Actual vs 41 Documented)
+
+- [x] **#507 — CLAUDE.md and README.md both state 41 WASM tests; actual count is 64**
+  - Files: `CLAUDE.md`, `README.md`
+  - Fix: Updated "41" → "64" in all locations. Updated test category breakdown in CLAUDE.md to add new test categories (table styling, actions column, admin password reset).
+  - Source commands: `cross-ref-check`
+
+### Documentation — `order_components.rs` Missing from CLAUDE.md Project Structure
+
+- [x] **#508 — `frontend/src/pages/order_components.rs` exists on disk but not listed in the Project Structure tree**
+  - File: `CLAUDE.md`
+  - Fix: Added `order_components.rs – Order sub-components (OrderDetail, CreateOrderDialog)` after `orders.rs` in the pages/ listing.
+  - Source commands: `cross-ref-check`
+
+### Frontend — Orders Page Fetches All Teams Instead of User's Teams
+
+- [x] **#509 — Orders page uses `/api/v1.0/teams` (all teams) instead of `/api/v1.0/users/{id}/teams` (user's memberships)**
+  - File: `frontend/src/pages/orders.rs`
+  - Fix: Changed `authed_get("/api/v1.0/teams")` to `authed_get(&format!("/api/v1.0/users/{}/teams", user_id))`. Added local `UserTeamEntry` struct for deserialization compatibility since the user-teams endpoint returns different fields than the all-teams endpoint.
+  - Source commands: `review`
 
 ## Informational Items
 
@@ -2509,6 +2544,6 @@ Last updated: 2026-03-07
 
 ## Notes
 
-- Total resolved items: 354 (6 critical, 45 important, 111 minor, 89 informational, plus items previously counted under different categories)
+- Total resolved items: 359 (6 critical, 47 important, 114 minor, 89 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

@@ -432,6 +432,8 @@ pub async fn remove_team_member(
     let (team_id, user_id) = path.into_inner();
     let client: Client = get_client(&state.pool).await?;
     require_team_admin(&client, &req, team_id).await?;
+    guard_admin_demotion(&client, &req, user_id).await?;
+    guard_last_admin_membership(&client, team_id, user_id).await?;
     let deleted = db::remove_team_member(&client, team_id, user_id).await?;
     if deleted {
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
@@ -467,6 +469,8 @@ pub async fn update_member_role(
     let role_id = json.into_inner().role_id;
     let mut client: Client = get_client(&state.pool).await?;
     require_team_admin(&client, &req, team_id).await?;
+    guard_admin_demotion(&client, &req, user_id).await?;
+    guard_last_admin_membership(&client, team_id, user_id).await?;
     guard_admin_role_assignment(&client, &req, role_id).await?;
 
     let result = db::update_member_role(&mut client, team_id, user_id, role_id).await?;
