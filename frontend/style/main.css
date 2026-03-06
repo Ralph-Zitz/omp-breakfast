@@ -212,9 +212,15 @@ body {
     font-size: 20px;
 }
 
-/* Avatar as <img> — ensure circle clipping */
+/* Avatar as <img> — ensure circle clipping, transparent background */
 img.user-avatar {
     object-fit: cover;
+    background: transparent;
+}
+
+/* CONNECT avatar with image: remove default neutral background so only the image shows */
+.connect-avatar.connect-avatar--image {
+    background-color: transparent;
 }
 
 /* Edit overlay shown on hover over profile avatar */
