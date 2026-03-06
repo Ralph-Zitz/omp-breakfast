@@ -74,6 +74,26 @@ pub async fn delete_role(client: &Client, rid: Uuid) -> Result<bool, Error> {
     Ok(result == 1)
 }
 
+/// Inserts the four default roles (Admin, Team Admin, Member, Guest) if
+/// they do not already exist. Returns all roles in the table.
+pub async fn seed_default_roles(client: &Client) -> Result<Vec<RoleEntry>, Error> {
+    let statement = client
+        .prepare(
+            r#"
+               insert into roles (title)
+               values ('Admin'), ('Team Admin'), ('Member'), ('Guest')
+               on conflict (title) do nothing
+            "#,
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    client.execute(&statement, &[]).await.map_err(Error::Db)?;
+
+    let (roles, _) = get_roles(client, 100, 0).await?;
+    Ok(roles)
+}
+
 /// Updates a role's title.
 ///
 /// Uses `query_opt` + 404 to avoid returning 500 for missing roles.

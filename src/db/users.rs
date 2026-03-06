@@ -208,6 +208,18 @@ pub async fn delete_user(client: &Client, uid: Uuid) -> Result<bool, Error> {
     Ok(result == 1)
 }
 
+/// Returns the total number of users in the database.
+pub async fn count_users(client: &Client) -> Result<i64, Error> {
+    let statement = client
+        .prepare("select count(*) as cnt from users")
+        .await
+        .map_err(Error::Db)?;
+
+    let row = client.query_one(&statement, &[]).await.map_err(Error::Db)?;
+
+    Ok(row.get("cnt"))
+}
+
 /// Deletes a user by email address. Returns `true` if a row was deleted,
 /// `false` if no user matched.
 pub async fn delete_user_by_email(client: &Client, email: &str) -> Result<bool, Error> {

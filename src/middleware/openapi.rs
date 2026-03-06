@@ -47,6 +47,7 @@ impl Modify for SecurityAddon {
         users::get_users,
         users::get_user,
         users::auth_user,
+        users::register_first_user,
         users::refresh_token,
         users::revoke_user_token,
         users::create_user,
@@ -349,15 +350,12 @@ mod tests {
                     .count()
             })
             .sum();
-        // 45 operations: health(1) + auth(3) + users(8) + teams(5) +
+        // 46 operations: health(1) + auth(4, including register) + users(8) + teams(5) +
         // team_orders(6) + team_members(4) + items(5) + order_items(5) + roles(5) +
         // avatars(4: list, get, set, remove)
-        // Note: some utoipa paths diverge from actix route params (e.g. {id} vs
-        // {team_id}), which can produce separate path entries for the same
-        // logical resource when the param name differs across handlers.
         assert_eq!(
-            op_count, 45,
-            "should have exactly 45 handler operations, got {}",
+            op_count, 46,
+            "should have exactly 46 handler operations, got {}",
             op_count
         );
     }

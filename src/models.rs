@@ -123,6 +123,7 @@ pub struct State {
 #[derive(Serialize, ToSchema)]
 pub struct StatusResponse {
     pub up: bool,
+    pub setup_required: bool,
 }
 
 #[derive(Serialize, ToSchema)]

@@ -61,8 +61,8 @@ For each handler in `src/handlers/`, verify:
 5. **Admin demotion protection** is enforced: Team Admins cannot demote or remove a global Admin (`guard_admin_demotion` called in `update_member_role` and `remove_team_member`)
 6. **Last admin protection** is enforced: No user can demote or remove the last global Admin (`guard_last_admin_membership` called after `guard_admin_demotion` in `update_member_role` and `remove_team_member`)
 7. **OpenAPI annotations** include `403` response for every guarded endpoint
-8. **Seed data** in `database_seed.sql` assigns roles correctly: "Admin" for global admins, "Team Admin" for team-scoped admins
-9. **Role string constants** (`ROLE_ADMIN`, `ROLE_TEAM_ADMIN` in `middleware/auth.rs`) are used consistently across `db/membership.rs` and `handlers/mod.rs` — `database_seed.sql` uses literal role strings for seeding purposes
+8. **First-user bootstrap** in `register_first_user` seeds the four default roles via `seed_default_roles()` and assigns the first user as Admin
+9. **Role string constants** (`ROLE_ADMIN`, `ROLE_TEAM_ADMIN` in `middleware/auth.rs`) are used consistently across `db/membership.rs`, `handlers/mod.rs`, and `db/roles.rs` (`seed_default_roles`)
 
 ## Report Format
 

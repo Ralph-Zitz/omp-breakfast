@@ -109,9 +109,9 @@ The application uses [Refinery](https://github.com/rust-db/refinery) for schema 
 | V8 | Avatars table + users.avatar_id FK column |
 | V9 | Avatar FK index + token_blacklist.revoked_at NOT NULL |
 
-**Production:** The application runs pending migrations automatically at startup. No seed data is inserted.
+**Production:** The application runs pending migrations automatically at startup. No seed data is inserted. The first user to register via the login page becomes the global Admin.
 
-**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all nine migrations, creates the Refinery tracking table, and loads seed data from `database_seed.sql`. On first startup, the application's migration runner detects the migrations are already applied and continues normally.
+**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all nine migrations and creates the Refinery tracking table. On first startup, the application's migration runner detects the migrations are already applied and continues normally. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
 
 **Manual database reset (development only):**
 

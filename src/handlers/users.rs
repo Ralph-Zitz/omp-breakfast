@@ -90,6 +90,57 @@ pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Resp
 
 #[utoipa::path(
     post,
+    request_body = CreateUserEntry,
+    path = "/auth/register",
+    responses(
+        (status = 201, description = "First admin user created", body = UserEntry),
+        (status = 403, description = "Forbidden - registration is closed (users already exist)", body = ErrorResponse),
+        (status = 422, description = "Validation error", body = ErrorResponse),
+    ),
+)]
+#[instrument(skip(state, json), level = "debug")]
+pub async fn register_first_user(
+    state: Data<State>,
+    json: Json<CreateUserEntry>,
+) -> Result<impl Responder, Error> {
+    validate(&json)?;
+    let mut client: Client = get_client(&state.pool).await?;
+
+    // Only allow registration when zero users exist
+    let user_count = db::count_users(&client).await?;
+    if user_count > 0 {
+        return Err(Error::Forbidden(
+            "Registration is closed — users already exist".to_string(),
+        ));
+    }
+
+    // Create the user
+    let user = db::create_user(&client, json.into_inner()).await?;
+
+    // Ensure the four default roles exist
+    let roles = db::seed_default_roles(&client).await?;
+    let admin_role = roles
+        .iter()
+        .find(|r| r.title == "Admin")
+        .ok_or_else(|| Error::NotFound("Admin role not found after seeding".to_string()))?;
+
+    // Create a bootstrap team and assign the user as Admin
+    let team = db::create_team(
+        &client,
+        CreateTeamEntry {
+            tname: "Default".to_string(),
+            descr: Some("Bootstrap team".to_string()),
+        },
+    )
+    .await?;
+
+    db::add_team_member(&mut client, team.team_id, user.user_id, admin_role.role_id).await?;
+
+    Ok(HttpResponse::Created().json(user))
+}
+
+#[utoipa::path(
+    post,
     path = "/auth/refresh",
     request_body(content = Option<RefreshRequest>, description = "Optional: include the old access token to revoke it immediately"),
     responses(

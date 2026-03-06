@@ -13,7 +13,6 @@
 # 8. Run the V8 migration SQL for avatars table and users.avatar_id
 # 9. Run the V9 migration SQL for avatar index and revoked_at NOT NULL
 # 10. Create the refinery_schema_history table (empty — no rows inserted)
-# 11. Load seed data for development/testing
 #
 # On first start the application's refinery migration runner will detect
 # that V1–V7 are "unapplied", re-run them (safe — the SQL is fully
@@ -62,8 +61,5 @@ PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix <<-EOSQL
     checksum VARCHAR(255)
   );
 EOSQL
-
-echo "==> Loading seed data..."
-PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /database_seed.sql
 
 echo "==> Development database initialized successfully!"

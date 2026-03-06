@@ -415,10 +415,22 @@ mod tests {
 #[instrument(skip(state), level = "debug")]
 pub async fn get_health(state: Data<State>) -> Result<impl Responder, Error> {
     let Ok(client) = get_client(&state.pool).await else {
-        return Ok(HttpResponse::ServiceUnavailable().json(StatusResponse { up: false }));
+        return Ok(HttpResponse::ServiceUnavailable().json(StatusResponse {
+            up: false,
+            setup_required: false,
+        }));
     };
     match db::check_db(&client).await {
-        Ok(()) => Ok(HttpResponse::Ok().json(StatusResponse { up: true })),
-        Err(_) => Ok(HttpResponse::ServiceUnavailable().json(StatusResponse { up: false })),
+        Ok(()) => {
+            let setup_required = db::count_users(&client).await.unwrap_or(1) == 0;
+            Ok(HttpResponse::Ok().json(StatusResponse {
+                up: true,
+                setup_required,
+            }))
+        }
+        Err(_) => Ok(HttpResponse::ServiceUnavailable().json(StatusResponse {
+            up: false,
+            setup_required: false,
+        })),
     }
 }

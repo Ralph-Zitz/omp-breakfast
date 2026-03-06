@@ -54,6 +54,17 @@ pub fn routes(cfg: &mut ServiceConfig) {
             .route(post().to(auth_user)),
     )
     .service(
+        resource("/auth/register")
+            .name("auth_register")
+            .wrap(Governor::new(&auth_rate_limit))
+            .app_data(
+                JsonConfig::default()
+                    .limit(65_536)
+                    .error_handler(json_error_handler),
+            )
+            .route(post().to(register_first_user)),
+    )
+    .service(
         resource("/auth/refresh")
             .name("auth_refresh")
             .wrap(Governor::new(&auth_rate_limit))
@@ -307,6 +318,13 @@ mod tests {
         let state = dummy_state();
         let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
         assert_route_exists!(app, post, "/auth/revoke");
+    }
+
+    #[actix_web::test]
+    async fn auth_register_endpoint_is_registered() {
+        let state = dummy_state();
+        let app = test::init_service(App::new().app_data(state.clone()).configure(routes)).await;
+        assert_route_exists!(app, post, "/auth/register");
     }
 
     #[actix_web::test]

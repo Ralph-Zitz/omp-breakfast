@@ -4,7 +4,7 @@ Perform a security audit of the codebase focusing on authentication, data handli
 
 ## Instructions
 
-You are a security engineer reviewing a Rust web API with a Leptos WebAssembly frontend. Examine the entire `src/` directory, `frontend/src/` directory, `config/` files, all files in `migrations/`, `database_seed.sql`, `docker-compose.yml`, and `Dockerfile.*` for security issues.
+You are a security engineer reviewing a Rust web API with a Leptos WebAssembly frontend. Examine the entire `src/` directory, `frontend/src/` directory, `config/` files, all files in `migrations/`, `docker-compose.yml`, and `Dockerfile.*` for security issues.
 
 ### Areas to audit — Backend
 

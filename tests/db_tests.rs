@@ -1,7 +1,8 @@
 //! Integration tests for `db.rs` — tests every database function directly.
 //!
 //! These tests require a running PostgreSQL instance initialized via Refinery
-//! migrations and seeded with `database_seed.sql`.
+//! migrations. Each test creates its own data using unique names/emails to
+//! support parallel execution.
 //! Run them via:
 //!   make test-integration
 //!
@@ -48,41 +49,116 @@ async fn test_client() -> deadpool_postgres::Client {
     pool.get().await.expect("failed to get test client")
 }
 
-/// Generate a unique email that won't collide with seed data.
+/// Generate a unique email that won't collide across parallel tests.
 fn unique_email() -> String {
     format!("dbtest-{}@test.local", Uuid::now_v7())
 }
 
-/// Lookup a seed user by email, returning the user_id.
-async fn seed_user_id(client: &deadpool_postgres::Client, email: &str) -> Uuid {
-    let user = db::get_user_by_email(client, email)
-        .await
-        .expect("seed user should exist");
-    user.user_id
+/// Generate a unique team name.
+fn unique_team_name() -> String {
+    format!("Team-{}", Uuid::now_v7())
 }
 
-/// Lookup a seed team by name, returning the team_id.
-async fn seed_team_id(client: &deadpool_postgres::Client, tname: &str) -> Uuid {
-    let (teams, _) = db::get_teams(client, 100, 0)
+/// Ensure the four default roles exist (Admin, Team Admin, Member, Guest).
+/// Returns them as a map of title → role_id.
+async fn ensure_roles(
+    client: &deadpool_postgres::Client,
+) -> std::collections::HashMap<String, Uuid> {
+    let roles = db::seed_default_roles(client)
         .await
-        .expect("should list teams");
-    teams
-        .into_iter()
-        .find(|t| t.tname == tname)
-        .unwrap_or_else(|| panic!("seed team '{}' not found", tname))
-        .team_id
+        .expect("seed_default_roles should succeed");
+    roles.into_iter().map(|r| (r.title, r.role_id)).collect()
 }
 
-/// Lookup a seed role by title, returning the role_id.
-async fn seed_role_id(client: &deadpool_postgres::Client, title: &str) -> Uuid {
-    let (roles, _) = db::get_roles(client, 100, 0)
+/// Create a test user with a unique email.
+async fn create_test_user(client: &deadpool_postgres::Client) -> UserEntry {
+    db::create_user(
+        client,
+        CreateUserEntry {
+            firstname: "Test".to_string(),
+            lastname: "User".to_string(),
+            email: unique_email(),
+            password: "securepassword123".to_string(),
+        },
+    )
+    .await
+    .expect("create_test_user should succeed")
+}
+
+/// Create a test team with a unique name.
+async fn create_test_team(client: &deadpool_postgres::Client) -> TeamEntry {
+    db::create_team(
+        client,
+        CreateTeamEntry {
+            tname: unique_team_name(),
+            descr: Some("Test team".to_string()),
+        },
+    )
+    .await
+    .expect("create_test_team should succeed")
+}
+
+/// Create a full admin setup: roles + user + team + Admin membership.
+/// Returns (user, team, roles_map).
+async fn create_admin_setup(
+    client: &mut deadpool_postgres::Client,
+) -> (
+    UserEntry,
+    TeamEntry,
+    std::collections::HashMap<String, Uuid>,
+) {
+    let roles = ensure_roles(client).await;
+    let user = create_test_user(client).await;
+    let team = create_test_team(client).await;
+    let admin_role_id = roles["Admin"];
+    db::add_team_member(client, team.team_id, user.user_id, admin_role_id)
         .await
-        .expect("should list roles");
-    roles
-        .into_iter()
-        .find(|r| r.title == title)
-        .unwrap_or_else(|| panic!("seed role '{}' not found", title))
-        .role_id
+        .expect("add admin membership should succeed");
+    (user, team, roles)
+}
+
+/// Create a membership graph for RBAC testing: admin user (Admin role),
+/// team-admin user (Team Admin role), member user (Member role), and
+/// optionally a second team with the team-admin as Member.
+/// Returns (admin_user, team_admin_user, member_user, team1, Option<team2>, roles_map).
+#[allow(clippy::type_complexity)]
+async fn create_rbac_setup(
+    client: &mut deadpool_postgres::Client,
+) -> (
+    UserEntry,
+    UserEntry,
+    UserEntry,
+    TeamEntry,
+    TeamEntry,
+    std::collections::HashMap<String, Uuid>,
+) {
+    let roles = ensure_roles(client).await;
+    let admin = create_test_user(client).await;
+    let team_admin = create_test_user(client).await;
+    let member = create_test_user(client).await;
+    let team1 = create_test_team(client).await;
+    let team2 = create_test_team(client).await;
+
+    db::add_team_member(client, team1.team_id, admin.user_id, roles["Admin"])
+        .await
+        .expect("add admin");
+    db::add_team_member(
+        client,
+        team1.team_id,
+        team_admin.user_id,
+        roles["Team Admin"],
+    )
+    .await
+    .expect("add team admin");
+    db::add_team_member(client, team1.team_id, member.user_id, roles["Member"])
+        .await
+        .expect("add member");
+    // team_admin is also a Member of team2
+    db::add_team_member(client, team2.team_id, team_admin.user_id, roles["Member"])
+        .await
+        .expect("add team admin to team2 as member");
+
+    (admin, team_admin, member, team1, team2, roles)
 }
 
 // ===========================================================================
@@ -199,16 +275,17 @@ async fn get_user_by_email_returns_update_user_entry() {
 
 #[actix_web::test]
 #[ignore]
-async fn get_users_returns_seed_data() {
+async fn get_users_returns_created_data() {
     let client = test_client().await;
-    let (users, _) = db::get_users(&client, 100, 0)
+    let user = create_test_user(&client).await;
+    let (users, total) = db::get_users(&client, 100, 0)
         .await
         .expect("get_users should succeed");
-    assert!(
-        users.len() >= 5,
-        "seed data has 5 users, got {}",
-        users.len()
-    );
+    assert!(total >= 1, "should have at least 1 user, got {}", total);
+    assert!(users.iter().any(|u| u.user_id == user.user_id));
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
@@ -463,16 +540,17 @@ async fn get_team_by_id() {
 
 #[actix_web::test]
 #[ignore]
-async fn get_teams_returns_seed_data() {
+async fn get_teams_returns_created_data() {
     let client = test_client().await;
-    let (teams, _) = db::get_teams(&client, 100, 0)
+    let team = create_test_team(&client).await;
+    let (teams, total) = db::get_teams(&client, 100, 0)
         .await
         .expect("get_teams should succeed");
-    assert!(
-        teams.len() >= 2,
-        "seed data has 2 teams, got {}",
-        teams.len()
-    );
+    assert!(total >= 1, "should have at least 1 team, got {}", total);
+    assert!(teams.iter().any(|t| t.team_id == team.team_id));
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
@@ -594,15 +672,16 @@ async fn get_role_by_id() {
 
 #[actix_web::test]
 #[ignore]
-async fn get_roles_returns_seed_data() {
+async fn get_roles_returns_created_data() {
     let client = test_client().await;
-    let (roles, _) = db::get_roles(&client, 100, 0)
+    ensure_roles(&client).await;
+    let (_roles, total) = db::get_roles(&client, 100, 0)
         .await
         .expect("get_roles should succeed");
     assert!(
-        roles.len() >= 4,
-        "seed data has 4 roles, got {}",
-        roles.len()
+        total >= 4,
+        "should have at least 4 roles after seeding, got {}",
+        total
     );
 }
 
@@ -749,16 +828,25 @@ async fn get_item_by_id() {
 
 #[actix_web::test]
 #[ignore]
-async fn get_items_returns_seed_data() {
+async fn get_items_returns_created_data() {
     let client = test_client().await;
-    let (items, _) = db::get_items(&client, 100, 0)
+    let item = db::create_item(
+        &client,
+        CreateItemEntry {
+            descr: format!("dbtest-item-{}", Uuid::now_v7()),
+            price: Decimal::new(900, 2),
+        },
+    )
+    .await
+    .expect("create_item should succeed");
+    let (items, total) = db::get_items(&client, 100, 0)
         .await
         .expect("get_items should succeed");
-    assert!(
-        items.len() >= 4,
-        "seed data has 4 items, got {}",
-        items.len()
-    );
+    assert!(total >= 1, "should have at least 1 item, got {}", total);
+    assert!(items.iter().any(|i| i.item_id == item.item_id));
+    db::delete_item(&client, item.item_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
@@ -869,14 +957,13 @@ async fn create_duplicate_item_returns_error() {
 #[actix_web::test]
 #[ignore]
 async fn create_team_order_returns_entry() {
-    let client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let mut client = test_client().await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry {
             duedate: Some(NaiveDate::from_ymd_opt(2026, 6, 15).unwrap()),
         },
@@ -884,7 +971,7 @@ async fn create_team_order_returns_entry() {
     .await
     .expect("create_team_order should succeed");
 
-    assert_eq!(order.teamorders_team_id, team_id);
+    assert_eq!(order.teamorders_team_id, team.team_id);
     assert_eq!(
         order.duedate,
         Some(NaiveDate::from_ymd_opt(2026, 6, 15).unwrap())
@@ -892,7 +979,13 @@ async fn create_team_order_returns_entry() {
     assert!(!order.closed);
 
     // Cleanup
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -900,66 +993,94 @@ async fn create_team_order_returns_entry() {
 #[actix_web::test]
 #[ignore]
 async fn create_team_order_with_user_id() {
-    let client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let mut client = test_client().await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
     .expect("create_team_order with user should succeed");
 
-    assert_eq!(order.teamorders_user_id, user_id);
+    assert_eq!(order.teamorders_user_id, user.user_id);
 
     // Cleanup
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
         .await
         .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
-async fn get_team_orders_returns_seed_data() {
-    let client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-
-    let (orders, _) = db::get_team_orders(&client, team_id, 100, 0)
-        .await
-        .expect("get_team_orders should succeed");
-    assert!(
-        !orders.is_empty(),
-        "seed data should have at least 1 order for League of Cool Coders"
-    );
-}
-
-#[actix_web::test]
-#[ignore]
-async fn get_team_order_by_id() {
-    let client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+async fn get_team_orders_returns_created_data() {
+    let mut client = test_client().await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
     .unwrap();
 
-    let fetched = db::get_team_order(&client, team_id, order.teamorders_id)
+    let (orders, total) = db::get_team_orders(&client, team.team_id, 100, 0)
+        .await
+        .expect("get_team_orders should succeed");
+    assert_eq!(total, 1);
+    assert_eq!(orders[0].teamorders_id, order.teamorders_id);
+
+    // Cleanup
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn get_team_order_by_id() {
+    let mut client = test_client().await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
+
+    let order = db::create_team_order(
+        &client,
+        team.team_id,
+        user.user_id,
+        CreateTeamOrderEntry { duedate: None },
+    )
+    .await
+    .unwrap();
+
+    let fetched = db::get_team_order(&client, team.team_id, order.teamorders_id)
         .await
         .expect("get_team_order should succeed");
     assert_eq!(fetched.teamorders_id, order.teamorders_id);
-    assert_eq!(fetched.teamorders_team_id, team_id);
+    assert_eq!(fetched.teamorders_team_id, team.team_id);
 
     // Cleanup
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -967,14 +1088,13 @@ async fn get_team_order_by_id() {
 #[actix_web::test]
 #[ignore]
 async fn update_team_order_changes_fields() {
-    let client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let mut client = test_client().await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
@@ -982,7 +1102,7 @@ async fn update_team_order_changes_fields() {
 
     let updated = db::update_team_order(
         &client,
-        team_id,
+        team.team_id,
         order.teamorders_id,
         UpdateTeamOrderEntry {
             duedate: Some(Some(NaiveDate::from_ymd_opt(2026, 12, 25).unwrap())),
@@ -999,7 +1119,13 @@ async fn update_team_order_changes_fields() {
     assert!(updated.closed);
 
     // Cleanup
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -1007,47 +1133,48 @@ async fn update_team_order_changes_fields() {
 #[actix_web::test]
 #[ignore]
 async fn delete_team_order_returns_true_then_false() {
-    let client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let mut client = test_client().await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
     .unwrap();
 
-    let deleted = db::delete_team_order(&client, team_id, order.teamorders_id)
+    let deleted = db::delete_team_order(&client, team.team_id, order.teamorders_id)
         .await
         .unwrap();
     assert!(deleted);
 
-    let deleted_again = db::delete_team_order(&client, team_id, order.teamorders_id)
+    let deleted_again = db::delete_team_order(&client, team.team_id, order.teamorders_id)
         .await
         .unwrap();
     assert!(!deleted_again);
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn delete_team_orders_bulk() {
-    let client = test_client().await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
-
-    // Create a dedicated team to avoid interfering with seed data orders
-    let tname = format!("dbtest-bulk-del-{}", Uuid::now_v7());
-    let team = db::create_team(&client, CreateTeamEntry { tname, descr: None })
-        .await
-        .unwrap();
+    let mut client = test_client().await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     // Create two orders
     db::create_team_order(
         &client,
         team.team_id,
-        user_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
@@ -1056,7 +1183,7 @@ async fn delete_team_orders_bulk() {
     db::create_team_order(
         &client,
         team.team_id,
-        user_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
@@ -1075,6 +1202,9 @@ async fn delete_team_orders_bulk() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
 }
 
 // ===========================================================================
@@ -1085,8 +1215,7 @@ async fn delete_team_orders_bulk() {
 #[ignore]
 async fn create_order_item_returns_entry() {
     let mut client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     // Create an item and order to work with
     let item_descr = format!("dbtest-oitem-{}", Uuid::now_v7());
@@ -1102,8 +1231,8 @@ async fn create_order_item_returns_entry() {
 
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
@@ -1112,7 +1241,7 @@ async fn create_order_item_returns_entry() {
     let order_item = db::create_order_item(
         &mut client,
         order.teamorders_id,
-        team_id,
+        team.team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
             amt: 5,
@@ -1123,49 +1252,110 @@ async fn create_order_item_returns_entry() {
 
     assert_eq!(order_item.orders_teamorders_id, order.teamorders_id);
     assert_eq!(order_item.orders_item_id, item.item_id);
-    assert_eq!(order_item.orders_team_id, team_id);
+    assert_eq!(order_item.orders_team_id, team.team_id);
     assert_eq!(order_item.amt, 5);
 
     // Cleanup (cascade: deleting order deletes order items)
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
         .await
         .expect("cleanup order");
     db::delete_item(&client, item.item_id)
         .await
         .expect("cleanup item");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn get_order_items_returns_list() {
-    let client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let mut client = test_client().await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
-    // Seed data has at least one team order with items.
-    // Use `last()` because orders are sorted by `created desc` so the seed-data
-    // order (created first) appears last; other concurrently-running tests may
-    // create newer (empty) orders for the same team.
-    let (orders, _) = db::get_team_orders(&client, team_id, 100, 0).await.unwrap();
-    let seed_order = orders
-        .last()
-        .expect("seed data should have at least one order");
+    let order = db::create_team_order(
+        &client,
+        team.team_id,
+        user.user_id,
+        CreateTeamOrderEntry { duedate: None },
+    )
+    .await
+    .unwrap();
 
-    let (items, _) = db::get_order_items(&client, seed_order.teamorders_id, team_id, 100, 0)
+    let item1 = db::create_item(
+        &client,
+        CreateItemEntry {
+            descr: format!("dbtest-oilist1-{}", Uuid::now_v7()),
+            price: Decimal::from_str("1.00").unwrap(),
+        },
+    )
+    .await
+    .unwrap();
+    let item2 = db::create_item(
+        &client,
+        CreateItemEntry {
+            descr: format!("dbtest-oilist2-{}", Uuid::now_v7()),
+            price: Decimal::from_str("2.00").unwrap(),
+        },
+    )
+    .await
+    .unwrap();
+
+    db::create_order_item(
+        &mut client,
+        order.teamorders_id,
+        team.team_id,
+        CreateOrderEntry {
+            orders_item_id: item1.item_id,
+            amt: 1,
+        },
+    )
+    .await
+    .unwrap();
+    db::create_order_item(
+        &mut client,
+        order.teamorders_id,
+        team.team_id,
+        CreateOrderEntry {
+            orders_item_id: item2.item_id,
+            amt: 2,
+        },
+    )
+    .await
+    .unwrap();
+
+    let (items, total) = db::get_order_items(&client, order.teamorders_id, team.team_id, 100, 0)
         .await
         .expect("get_order_items should succeed");
-    assert!(
-        items.len() >= 2,
-        "seed order should have at least 2 items, got {}",
-        items.len()
-    );
+    assert_eq!(total, 2);
+    assert_eq!(items.len(), 2);
+
+    // Cleanup
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
+        .await
+        .expect("cleanup");
+    db::delete_item(&client, item1.item_id)
+        .await
+        .expect("cleanup");
+    db::delete_item(&client, item2.item_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn get_order_item_by_id() {
     let mut client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     let item_descr = format!("dbtest-getoi-{}", Uuid::now_v7());
     let item = db::create_item(
@@ -1180,8 +1370,8 @@ async fn get_order_item_by_id() {
 
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
@@ -1190,7 +1380,7 @@ async fn get_order_item_by_id() {
     db::create_order_item(
         &mut client,
         order.teamorders_id,
-        team_id,
+        team.team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
             amt: 3,
@@ -1199,27 +1389,32 @@ async fn get_order_item_by_id() {
     .await
     .unwrap();
 
-    let fetched = db::get_order_item(&client, order.teamorders_id, item.item_id, team_id)
+    let fetched = db::get_order_item(&client, order.teamorders_id, item.item_id, team.team_id)
         .await
         .expect("get_order_item should succeed");
     assert_eq!(fetched.orders_item_id, item.item_id);
     assert_eq!(fetched.amt, 3);
 
     // Cleanup
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
         .await
         .expect("cleanup order");
     db::delete_item(&client, item.item_id)
         .await
         .expect("cleanup item");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn update_order_item_changes_amt() {
     let mut client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     let item_descr = format!("dbtest-updoi-{}", Uuid::now_v7());
     let item = db::create_item(
@@ -1234,8 +1429,8 @@ async fn update_order_item_changes_amt() {
 
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
@@ -1244,7 +1439,7 @@ async fn update_order_item_changes_amt() {
     db::create_order_item(
         &mut client,
         order.teamorders_id,
-        team_id,
+        team.team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
             amt: 1,
@@ -1257,7 +1452,7 @@ async fn update_order_item_changes_amt() {
         &mut client,
         order.teamorders_id,
         item.item_id,
-        team_id,
+        team.team_id,
         UpdateOrderEntry { amt: 42 },
     )
     .await
@@ -1266,20 +1461,25 @@ async fn update_order_item_changes_amt() {
     assert_eq!(updated.amt, 42);
 
     // Cleanup
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
         .await
         .expect("cleanup order");
     db::delete_item(&client, item.item_id)
         .await
         .expect("cleanup item");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn delete_order_item_returns_true_then_false() {
     let mut client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     let item_descr = format!("dbtest-deloi-{}", Uuid::now_v7());
     let item = db::create_item(
@@ -1294,8 +1494,8 @@ async fn delete_order_item_returns_true_then_false() {
 
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
@@ -1304,7 +1504,7 @@ async fn delete_order_item_returns_true_then_false() {
     db::create_order_item(
         &mut client,
         order.teamorders_id,
-        team_id,
+        team.team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
             amt: 1,
@@ -1313,32 +1513,38 @@ async fn delete_order_item_returns_true_then_false() {
     .await
     .unwrap();
 
-    let deleted = db::delete_order_item(&mut client, order.teamorders_id, item.item_id, team_id)
-        .await
-        .unwrap();
+    let deleted =
+        db::delete_order_item(&mut client, order.teamorders_id, item.item_id, team.team_id)
+            .await
+            .unwrap();
     assert!(deleted);
 
     let deleted_again =
-        db::delete_order_item(&mut client, order.teamorders_id, item.item_id, team_id)
+        db::delete_order_item(&mut client, order.teamorders_id, item.item_id, team.team_id)
             .await
             .unwrap();
     assert!(!deleted_again);
 
     // Cleanup
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
         .await
         .expect("cleanup order");
     db::delete_item(&client, item.item_id)
         .await
         .expect("cleanup item");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn duplicate_order_item_returns_error() {
     let mut client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     let item_descr = format!("dbtest-dupoi-{}", Uuid::now_v7());
     let item = db::create_item(
@@ -1353,8 +1559,8 @@ async fn duplicate_order_item_returns_error() {
 
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
@@ -1363,7 +1569,7 @@ async fn duplicate_order_item_returns_error() {
     db::create_order_item(
         &mut client,
         order.teamorders_id,
-        team_id,
+        team.team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
             amt: 1,
@@ -1376,7 +1582,7 @@ async fn duplicate_order_item_returns_error() {
     let result = db::create_order_item(
         &mut client,
         order.teamorders_id,
-        team_id,
+        team.team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
             amt: 2,
@@ -1387,12 +1593,18 @@ async fn duplicate_order_item_returns_error() {
     assert!(result.is_err(), "duplicate order item should fail");
 
     // Cleanup
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
         .await
         .expect("cleanup order");
     db::delete_item(&client, item.item_id)
         .await
         .expect("cleanup item");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
 }
 
 // ===========================================================================
@@ -1401,26 +1613,51 @@ async fn duplicate_order_item_returns_error() {
 
 #[actix_web::test]
 #[ignore]
-async fn is_admin_returns_true_for_seed_admin() {
-    let client = test_client().await;
-    let admin_id = seed_user_id(&client, "admin@admin.com").await;
+async fn is_admin_returns_true_for_admin() {
+    let mut client = test_client().await;
+    let (admin, team, _roles) = create_admin_setup(&mut client).await;
 
-    let result = db::is_admin(&client, admin_id)
+    let result = db::is_admin(&client, admin.user_id)
         .await
         .expect("is_admin should succeed");
-    assert!(result, "seed admin should be recognized as admin");
+    assert!(result, "user with Admin role should be recognized as admin");
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, admin.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn is_admin_returns_false_for_member() {
-    let client = test_client().await;
-    let member_id = seed_user_id(&client, "U1_F.U1_L@LEGO.com").await;
+    let mut client = test_client().await;
+    let (_admin, _ta, member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
 
-    let result = db::is_admin(&client, member_id)
+    let result = db::is_admin(&client, member.user_id)
         .await
         .expect("is_admin should succeed");
-    assert!(!result, "seed member U1_F should not be admin");
+    assert!(!result, "member should not be admin");
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _ta.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, member.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
@@ -1436,142 +1673,247 @@ async fn is_admin_returns_false_for_nonexistent_user() {
 #[actix_web::test]
 #[ignore]
 async fn is_admin_or_team_admin_returns_true_for_admin() {
-    let client = test_client().await;
-    let admin_id = seed_user_id(&client, "admin@admin.com").await;
+    let mut client = test_client().await;
+    let (admin, team, _roles) = create_admin_setup(&mut client).await;
 
-    let result = db::is_admin_or_team_admin(&client, admin_id)
+    let result = db::is_admin_or_team_admin(&client, admin.user_id)
         .await
         .expect("is_admin_or_team_admin should succeed");
     assert!(result);
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, admin.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn is_admin_or_team_admin_returns_true_for_team_admin() {
-    let client = test_client().await;
-    // U4_F is Team Admin of "League of Cool Coders"
-    let u4_id = seed_user_id(&client, "U4_F.U4_L@LEGO.com").await;
+    let mut client = test_client().await;
+    let (_admin, ta, _member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
 
-    let result = db::is_admin_or_team_admin(&client, u4_id)
+    let result = db::is_admin_or_team_admin(&client, ta.user_id)
         .await
         .expect("is_admin_or_team_admin should succeed");
-    assert!(result, "U4_F is a Team Admin and should return true");
+    assert!(result, "Team Admin should return true");
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, ta.user_id).await.expect("cleanup");
+    db::delete_user(&client, _member.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn is_admin_or_team_admin_returns_false_for_member() {
-    let client = test_client().await;
-    // U1_F is just a Member
-    let u1_id = seed_user_id(&client, "U1_F.U1_L@LEGO.com").await;
+    let mut client = test_client().await;
+    let (_admin, _ta, member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
 
-    let result = db::is_admin_or_team_admin(&client, u1_id)
+    let result = db::is_admin_or_team_admin(&client, member.user_id)
         .await
         .expect("is_admin_or_team_admin should succeed");
-    assert!(!result, "U1_F is a Member and should return false");
+    assert!(!result, "Member should return false");
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _ta.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, member.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn get_member_role_returns_correct_role_for_admin() {
-    let client = test_client().await;
-    let admin_id = seed_user_id(&client, "admin@admin.com").await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let mut client = test_client().await;
+    let (admin, team, _roles) = create_admin_setup(&mut client).await;
 
-    let role = db::get_member_role(&client, team_id, admin_id)
+    let role = db::get_member_role(&client, team.team_id, admin.user_id)
         .await
         .expect("get_member_role should succeed");
     assert_eq!(role, Some("Admin".to_string()));
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, admin.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn get_member_role_returns_correct_role_for_team_admin() {
-    let client = test_client().await;
-    let u4_id = seed_user_id(&client, "U4_F.U4_L@LEGO.com").await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let mut client = test_client().await;
+    let (_admin, ta, _member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
 
-    let role = db::get_member_role(&client, team_id, u4_id)
+    let role = db::get_member_role(&client, team1.team_id, ta.user_id)
         .await
         .expect("get_member_role should succeed");
     assert_eq!(role, Some("Team Admin".to_string()));
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, ta.user_id).await.expect("cleanup");
+    db::delete_user(&client, _member.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn get_member_role_returns_member_for_regular_user() {
-    let client = test_client().await;
-    let u1_id = seed_user_id(&client, "U1_F.U1_L@LEGO.com").await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let mut client = test_client().await;
+    let (_admin, _ta, member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
 
-    let role = db::get_member_role(&client, team_id, u1_id)
+    let role = db::get_member_role(&client, team1.team_id, member.user_id)
         .await
         .expect("get_member_role should succeed");
     assert_eq!(role, Some("Member".to_string()));
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _ta.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, member.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn get_member_role_returns_none_for_non_member() {
-    let client = test_client().await;
-    // U1_F is NOT a member of "Pixel Bakers"
-    let u1_id = seed_user_id(&client, "U1_F.U1_L@LEGO.com").await;
-    let pixel_bakers_id = seed_team_id(&client, "Pixel Bakers").await;
+    let mut client = test_client().await;
+    let (_admin, _ta, _member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
 
-    let role = db::get_member_role(&client, pixel_bakers_id, u1_id)
+    // member is in team1 but not team2
+    let role = db::get_member_role(&client, team2.team_id, _member.user_id)
         .await
         .expect("get_member_role should succeed");
     assert_eq!(role, None);
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _ta.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _member.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn is_team_admin_of_user_returns_true_for_shared_team() {
-    let client = test_client().await;
-    // U4_F is Team Admin of "League of Cool Coders"
-    // U1_F is a Member of "League of Cool Coders"
-    let u4_id = seed_user_id(&client, "U4_F.U4_L@LEGO.com").await;
-    let u1_id = seed_user_id(&client, "U1_F.U1_L@LEGO.com").await;
+    let mut client = test_client().await;
+    let (_admin, ta, member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
 
-    let result = db::is_team_admin_of_user(&client, u4_id, u1_id)
+    // ta is Team Admin of team1, member is Member of team1
+    let result = db::is_team_admin_of_user(&client, ta.user_id, member.user_id)
         .await
         .expect("is_team_admin_of_user should succeed");
     assert!(
         result,
-        "U4_F is Team Admin of a team where U1_F is a member"
+        "Team Admin should be recognized as team admin of a member in the same team"
     );
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, ta.user_id).await.expect("cleanup");
+    db::delete_user(&client, member.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn is_team_admin_of_user_returns_false_for_non_shared_team() {
-    let client = test_client().await;
-    // U4_F is Team Admin of "League of Cool Coders" and Member of "Pixel Bakers"
-    // Create a new user who is NOT in any of U4's teams
-    let email = unique_email();
-    let outsider = db::create_user(
-        &client,
-        CreateUserEntry {
-            firstname: "Outsider".to_string(),
-            lastname: "User".to_string(),
-            email: email.clone(),
-            password: "securepassword123".to_string(),
-        },
-    )
-    .await
-    .unwrap();
+    let mut client = test_client().await;
+    let (_admin, ta, _member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
 
-    let u4_id = seed_user_id(&client, "U4_F.U4_L@LEGO.com").await;
+    // Create a user who is NOT in any of ta's teams
+    let outsider = create_test_user(&client).await;
 
-    let result = db::is_team_admin_of_user(&client, u4_id, outsider.user_id)
+    let result = db::is_team_admin_of_user(&client, ta.user_id, outsider.user_id)
         .await
         .expect("is_team_admin_of_user should succeed");
     assert!(
         !result,
-        "U4_F should not be team admin of a user outside their teams"
+        "Team Admin should not be team admin of a user outside their teams"
     );
 
     // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, ta.user_id).await.expect("cleanup");
+    db::delete_user(&client, _member.user_id)
+        .await
+        .expect("cleanup");
     db::delete_user(&client, outsider.user_id)
         .await
         .expect("cleanup");
@@ -1580,16 +1922,48 @@ async fn is_team_admin_of_user_returns_false_for_non_shared_team() {
 #[actix_web::test]
 #[ignore]
 async fn is_team_admin_of_user_returns_false_for_regular_member() {
-    let client = test_client().await;
-    // U1_F is a Member (not Team Admin) of "League of Cool Coders"
-    // U2_F is also a Member of "League of Cool Coders"
-    let u1_id = seed_user_id(&client, "U1_F.U1_L@LEGO.com").await;
-    let u2_id = seed_user_id(&client, "U2_F.U2_L@LEGO.com").await;
+    let mut client = test_client().await;
+    let (_admin, _ta, member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
 
-    let result = db::is_team_admin_of_user(&client, u1_id, u2_id)
+    // Create another member in team1
+    let member2 = create_test_user(&client).await;
+    db::add_team_member(
+        &mut client,
+        team1.team_id,
+        member2.user_id,
+        _roles["Member"],
+    )
+    .await
+    .expect("add member2");
+
+    // member is not a Team Admin, so should return false
+    let result = db::is_team_admin_of_user(&client, member.user_id, member2.user_id)
         .await
         .expect("is_team_admin_of_user should succeed");
-    assert!(!result, "U1_F is not a Team Admin, so should return false");
+    assert!(
+        !result,
+        "regular member should not be team admin of another member"
+    );
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _ta.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, member.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, member2.user_id)
+        .await
+        .expect("cleanup");
 }
 
 // ===========================================================================
@@ -1620,7 +1994,8 @@ async fn add_team_member_returns_users_in_team() {
     .await
     .unwrap();
 
-    let member_role_id = seed_role_id(&client, "Member").await;
+    let roles = ensure_roles(&client).await;
+    let member_role_id = roles["Member"];
 
     let result = db::add_team_member(&mut client, team.team_id, user.user_id, member_role_id)
         .await
@@ -1662,7 +2037,8 @@ async fn remove_team_member_returns_true_then_false() {
     .await
     .unwrap();
 
-    let member_role_id = seed_role_id(&client, "Member").await;
+    let roles = ensure_roles(&client).await;
+    let member_role_id = roles["Member"];
     db::add_team_member(&mut client, team.team_id, user.user_id, member_role_id)
         .await
         .unwrap();
@@ -1709,8 +2085,9 @@ async fn update_member_role_changes_title() {
     .await
     .unwrap();
 
-    let member_role_id = seed_role_id(&client, "Member").await;
-    let guest_role_id = seed_role_id(&client, "Guest").await;
+    let roles = ensure_roles(&client).await;
+    let member_role_id = roles["Member"];
+    let guest_role_id = roles["Guest"];
 
     db::add_team_member(&mut client, team.team_id, user.user_id, member_role_id)
         .await
@@ -1742,7 +2119,8 @@ async fn update_member_role_returns_not_found_for_non_member() {
         .await
         .unwrap();
 
-    let member_role_id = seed_role_id(&client, "Member").await;
+    let roles = ensure_roles(&client).await;
+    let member_role_id = roles["Member"];
     let random_user_id = Uuid::now_v7();
 
     let result =
@@ -1788,7 +2166,8 @@ async fn add_duplicate_team_member_returns_error() {
     .await
     .unwrap();
 
-    let member_role_id = seed_role_id(&client, "Member").await;
+    let roles = ensure_roles(&client).await;
+    let member_role_id = roles["Member"];
 
     db::add_team_member(&mut client, team.team_id, user.user_id, member_role_id)
         .await
@@ -1817,7 +2196,8 @@ async fn add_team_member_with_nonexistent_user_returns_error() {
         .await
         .unwrap();
 
-    let member_role_id = seed_role_id(&client, "Member").await;
+    let roles = ensure_roles(&client).await;
+    let member_role_id = roles["Member"];
     let fake_user_id = Uuid::now_v7();
 
     let result = db::add_team_member(&mut client, team.team_id, fake_user_id, member_role_id).await;
@@ -1879,21 +2259,29 @@ async fn add_team_member_with_nonexistent_role_returns_error() {
 #[actix_web::test]
 #[ignore]
 async fn get_user_teams_returns_memberships() {
-    let client = test_client().await;
-    let admin_id = seed_user_id(&client, "admin@admin.com").await;
+    let mut client = test_client().await;
+    let (admin, team, _roles) = create_admin_setup(&mut client).await;
 
-    let (teams, _) = db::get_user_teams(&client, admin_id, 100, 0)
+    let (teams, _) = db::get_user_teams(&client, admin.user_id, 100, 0)
         .await
         .expect("get_user_teams should succeed");
     assert!(
         !teams.is_empty(),
-        "seed admin should have at least 1 team membership"
+        "admin should have at least 1 team membership"
     );
     // Verify the structure includes the expected fields
     let first = &teams[0];
     assert!(!first.tname.is_empty());
     assert!(!first.title.is_empty());
     assert!(!first.firstname.is_empty());
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, admin.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
@@ -1931,15 +2319,15 @@ async fn get_user_teams_returns_empty_for_no_memberships() {
 #[actix_web::test]
 #[ignore]
 async fn get_team_users_returns_members() {
-    let client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let mut client = test_client().await;
+    let (_admin, _ta, _member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
 
-    let (users, _) = db::get_team_users(&client, team_id, 100, 0)
+    let (users, _) = db::get_team_users(&client, team1.team_id, 100, 0)
         .await
         .expect("get_team_users should succeed");
     assert!(
-        users.len() >= 4,
-        "League of Cool Coders should have at least 4 members, got {}",
+        users.len() >= 3,
+        "team1 should have at least 3 members, got {}",
         users.len()
     );
     // Verify the structure
@@ -1947,6 +2335,23 @@ async fn get_team_users_returns_members() {
     assert!(!first.firstname.is_empty());
     assert!(!first.email.is_empty());
     assert!(!first.title.is_empty());
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _ta.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _member.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
@@ -1973,29 +2378,44 @@ async fn get_team_users_returns_empty_for_empty_team() {
 #[actix_web::test]
 #[ignore]
 async fn get_user_teams_for_multi_team_user() {
-    let client = test_client().await;
-    // U4_F is a member of both "League of Cool Coders" (Team Admin) and "Pixel Bakers" (Member)
-    let u4_id = seed_user_id(&client, "U4_F.U4_L@LEGO.com").await;
+    let mut client = test_client().await;
+    // create_rbac_setup puts ta in team1 (Team Admin) and team2 (Member)
+    let (_admin, ta, _member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
 
-    let (teams, _) = db::get_user_teams(&client, u4_id, 100, 0)
+    let (teams, _) = db::get_user_teams(&client, ta.user_id, 100, 0)
         .await
         .expect("get_user_teams should succeed");
     assert!(
         teams.len() >= 2,
-        "U4_F should be in at least 2 teams, got {}",
+        "team admin should be in at least 2 teams, got {}",
         teams.len()
     );
 
     // Verify different roles in different teams
     let team_names: Vec<&str> = teams.iter().map(|t| t.tname.as_str()).collect();
     assert!(
-        team_names.contains(&"League of Cool Coders"),
-        "should include League of Cool Coders"
+        team_names.contains(&team1.tname.as_str()),
+        "should include team1"
     );
     assert!(
-        team_names.contains(&"Pixel Bakers"),
-        "should include Pixel Bakers"
+        team_names.contains(&team2.tname.as_str()),
+        "should include team2"
     );
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, ta.user_id).await.expect("cleanup");
+    db::delete_user(&client, _member.user_id)
+        .await
+        .expect("cleanup");
 }
 
 // ===========================================================================
@@ -2332,15 +2752,14 @@ async fn update_user_updates_changed_timestamp() {
 #[actix_web::test]
 #[ignore]
 async fn is_team_order_closed_returns_false_for_open_order() {
-    let client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let mut client = test_client().await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     // Create a new order (defaults to closed = false)
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry {
             duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 25).unwrap()),
         },
@@ -2348,13 +2767,19 @@ async fn is_team_order_closed_returns_false_for_open_order() {
     .await
     .expect("should create team order");
 
-    let closed = db::is_team_order_closed(&client, order.teamorders_id, team_id)
+    let closed = db::is_team_order_closed(&client, order.teamorders_id, team.team_id)
         .await
         .expect("should check closed status");
     assert!(!closed, "newly created order should not be closed");
 
     // Cleanup
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -2362,15 +2787,14 @@ async fn is_team_order_closed_returns_false_for_open_order() {
 #[actix_web::test]
 #[ignore]
 async fn is_team_order_closed_returns_true_for_closed_order() {
-    let client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let mut client = test_client().await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     // Create a new order
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry {
             duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 26).unwrap()),
         },
@@ -2381,7 +2805,7 @@ async fn is_team_order_closed_returns_true_for_closed_order() {
     // Close the order
     db::update_team_order(
         &client,
-        team_id,
+        team.team_id,
         order.teamorders_id,
         UpdateTeamOrderEntry {
             duedate: Some(Some(NaiveDate::from_ymd_opt(2026, 12, 26).unwrap())),
@@ -2391,13 +2815,19 @@ async fn is_team_order_closed_returns_true_for_closed_order() {
     .await
     .expect("should close the order");
 
-    let closed = db::is_team_order_closed(&client, order.teamorders_id, team_id)
+    let closed = db::is_team_order_closed(&client, order.teamorders_id, team.team_id)
         .await
         .expect("should check closed status");
     assert!(closed, "updated order should be closed");
 
     // Cleanup
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -2406,10 +2836,10 @@ async fn is_team_order_closed_returns_true_for_closed_order() {
 #[ignore]
 async fn is_team_order_closed_returns_not_found_for_nonexistent_order() {
     let client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let team = create_test_team(&client).await;
     let fake_order_id = Uuid::now_v7();
 
-    let result = db::is_team_order_closed(&client, fake_order_id, team_id).await;
+    let result = db::is_team_order_closed(&client, fake_order_id, team.team_id).await;
     assert!(result.is_err(), "nonexistent order should return an error");
     let err_msg = result.unwrap_err().to_string();
     assert!(
@@ -2417,6 +2847,11 @@ async fn is_team_order_closed_returns_not_found_for_nonexistent_order() {
         "error should mention 'not found', got: {}",
         err_msg
     );
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
 }
 
 // ===========================================================================
@@ -2426,10 +2861,10 @@ async fn is_team_order_closed_returns_not_found_for_nonexistent_order() {
 #[actix_web::test]
 #[ignore]
 async fn check_team_access_admin_in_own_team() {
-    let client = test_client().await;
-    let admin_id = seed_user_id(&client, "admin@admin.com").await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let (is_admin, team_role) = db::check_team_access(&client, team_id, admin_id)
+    let mut client = test_client().await;
+    let (admin, team, _roles) = create_admin_setup(&mut client).await;
+
+    let (is_admin, team_role) = db::check_team_access(&client, team.team_id, admin.user_id)
         .await
         .expect("check_team_access should succeed");
     assert!(is_admin, "admin should be recognized as global admin");
@@ -2438,55 +2873,108 @@ async fn check_team_access_admin_in_own_team() {
         Some("Admin".to_string()),
         "admin should have Admin role in the team"
     );
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, admin.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn check_team_access_regular_member() {
-    let client = test_client().await;
-    let member_id = seed_user_id(&client, "U1_F.U1_L@LEGO.com").await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let (is_admin, team_role) = db::check_team_access(&client, team_id, member_id)
+    let mut client = test_client().await;
+    let (_admin, _ta, member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
+
+    let (is_admin, team_role) = db::check_team_access(&client, team1.team_id, member.user_id)
         .await
         .expect("check_team_access should succeed");
     assert!(!is_admin, "regular member should not be global admin");
     assert_eq!(
         team_role,
         Some("Member".to_string()),
-        "U1_F should have Member role in the team"
+        "member should have Member role in the team"
     );
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _ta.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, member.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn check_team_access_non_member() {
-    let client = test_client().await;
-    let member_id = seed_user_id(&client, "U1_F.U1_L@LEGO.com").await;
-    let team_id = seed_team_id(&client, "Pixel Bakers").await;
-    let (is_admin, team_role) = db::check_team_access(&client, team_id, member_id)
+    let mut client = test_client().await;
+    let (_admin, _ta, member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
+
+    // member is in team1 but not team2
+    let (is_admin, team_role) = db::check_team_access(&client, team2.team_id, member.user_id)
         .await
         .expect("check_team_access should succeed");
-    assert!(!is_admin, "U1_F should not be global admin");
-    assert!(
-        team_role.is_none(),
-        "U1_F should have no role in Pixel Bakers"
-    );
+    assert!(!is_admin, "member should not be global admin");
+    assert!(team_role.is_none(), "member should have no role in team2");
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _ta.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, member.user_id)
+        .await
+        .expect("cleanup");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn check_team_access_admin_in_unrelated_team() {
-    let client = test_client().await;
-    let admin_id = seed_user_id(&client, "admin@admin.com").await;
-    let team_id = seed_team_id(&client, "Pixel Bakers").await;
-    let (is_admin, team_role) = db::check_team_access(&client, team_id, admin_id)
+    let mut client = test_client().await;
+    let (admin, team, _roles) = create_admin_setup(&mut client).await;
+    // Create a second team where admin is NOT a member
+    let other_team = create_test_team(&client).await;
+
+    let (is_admin, team_role) = db::check_team_access(&client, other_team.team_id, admin.user_id)
         .await
         .expect("check_team_access should succeed");
     assert!(is_admin, "admin should still be recognized as global admin");
     assert!(
         team_role.is_none(),
-        "admin should have no role in Pixel Bakers (not a member)"
+        "admin should have no role in unrelated team (not a member)"
     );
+
+    // Cleanup
+    db::delete_team(&client, other_team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, admin.user_id)
+        .await
+        .expect("cleanup");
 }
 
 // ===========================================================================
@@ -2531,7 +3019,8 @@ async fn delete_team_cascades_membership_and_orders() {
     .unwrap();
 
     // Add user as member
-    let member_role_id = seed_role_id(&client, "Member").await;
+    let roles = ensure_roles(&client).await;
+    let member_role_id = roles["Member"];
     db::add_team_member(&mut client, team.team_id, user.user_id, member_role_id)
         .await
         .unwrap();
@@ -2583,8 +3072,7 @@ async fn delete_team_cascades_membership_and_orders() {
 #[ignore]
 async fn delete_team_order_cascades_order_items() {
     let mut client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     let item = db::create_item(
         &client,
@@ -2598,8 +3086,8 @@ async fn delete_team_order_cascades_order_items() {
 
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
@@ -2608,7 +3096,7 @@ async fn delete_team_order_cascades_order_items() {
     db::create_order_item(
         &mut client,
         order.teamorders_id,
-        team_id,
+        team.team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
             amt: 3,
@@ -2618,16 +3106,22 @@ async fn delete_team_order_cascades_order_items() {
     .unwrap();
 
     // Delete the order — items should cascade
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
         .await
         .unwrap();
 
-    let (items, _) = db::get_order_items(&client, order.teamorders_id, team_id, 100, 0)
+    let (items, _) = db::get_order_items(&client, order.teamorders_id, team.team_id, 100, 0)
         .await
         .unwrap();
     assert!(items.is_empty(), "order items should be cascade-deleted");
 
     db::delete_item(&client, item.item_id).await.unwrap();
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
 }
 
 /// Deleting a user cascades to memberof but is restricted by teamorders FK.
@@ -2657,7 +3151,8 @@ async fn delete_user_cascades_membership() {
     .await
     .unwrap();
 
-    let member_role_id = seed_role_id(&client, "Member").await;
+    let roles = ensure_roles(&client).await;
+    let member_role_id = roles["Member"];
     db::add_team_member(&mut client, team.team_id, user.user_id, member_role_id)
         .await
         .unwrap();
@@ -2687,8 +3182,7 @@ async fn delete_user_cascades_membership() {
 #[ignore]
 async fn delete_item_with_order_reference_is_restricted() {
     let mut client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     let item = db::create_item(
         &client,
@@ -2702,8 +3196,8 @@ async fn delete_item_with_order_reference_is_restricted() {
 
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await
@@ -2712,7 +3206,7 @@ async fn delete_item_with_order_reference_is_restricted() {
     db::create_order_item(
         &mut client,
         order.teamorders_id,
-        team_id,
+        team.team_id,
         CreateOrderEntry {
             orders_item_id: item.item_id,
             amt: 1,
@@ -2729,10 +3223,16 @@ async fn delete_item_with_order_reference_is_restricted() {
     );
 
     // Cleanup: delete order first (cascades order items), then item
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
         .await
         .unwrap();
     db::delete_item(&client, item.item_id).await.unwrap();
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
 }
 
 // ===========================================================================
@@ -2744,15 +3244,14 @@ async fn delete_item_with_order_reference_is_restricted() {
 #[actix_web::test]
 #[ignore]
 async fn update_team_order_partial_preserves_existing_values() {
-    let client = test_client().await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let mut client = test_client().await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
 
     // Create with a duedate
     let order = db::create_team_order(
         &client,
-        team_id,
-        user_id,
+        team.team_id,
+        user.user_id,
         CreateTeamOrderEntry {
             duedate: Some(NaiveDate::from_ymd_opt(2026, 8, 1).unwrap()),
         },
@@ -2763,7 +3262,7 @@ async fn update_team_order_partial_preserves_existing_values() {
     // Close the order first so we have a non-default value for `closed`
     let _ = db::update_team_order(
         &client,
-        team_id,
+        team.team_id,
         order.teamorders_id,
         UpdateTeamOrderEntry {
             duedate: None,
@@ -2776,7 +3275,7 @@ async fn update_team_order_partial_preserves_existing_values() {
     // Now update with None for both fields — values should be preserved
     let updated = db::update_team_order(
         &client,
-        team_id,
+        team.team_id,
         order.teamorders_id,
         UpdateTeamOrderEntry {
             duedate: None,
@@ -2797,7 +3296,13 @@ async fn update_team_order_partial_preserves_existing_values() {
     );
 
     // Cleanup
-    db::delete_team_order(&client, team_id, order.teamorders_id)
+    db::delete_team_order(&client, team.team_id, order.teamorders_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -2808,13 +3313,13 @@ async fn update_team_order_partial_preserves_existing_values() {
 #[ignore]
 async fn create_team_order_with_nonexistent_team_id_fails() {
     let client = test_client().await;
-    let user_id = seed_user_id(&client, "admin@admin.com").await;
+    let user = create_test_user(&client).await;
     let fake_team_id = Uuid::now_v7();
 
     let result = db::create_team_order(
         &client,
         fake_team_id,
-        user_id,
+        user.user_id,
         CreateTeamOrderEntry { duedate: None },
     )
     .await;
@@ -2823,6 +3328,11 @@ async fn create_team_order_with_nonexistent_team_id_fails() {
         result.is_err(),
         "creating a team order with non-existent team_id should fail (FK violation)"
     );
+
+    // Cleanup
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
 }
 
 // ===========================================================================
@@ -2886,11 +3396,21 @@ async fn get_password_hash_returns_not_found_for_nonexistent_user() {
 #[actix_web::test]
 #[ignore]
 async fn count_admins_returns_at_least_one() {
-    let client = test_client().await;
+    let mut client = test_client().await;
+    let (admin, team, _roles) = create_admin_setup(&mut client).await;
+
     let count = db::count_admins(&client)
         .await
         .expect("count_admins should succeed");
-    assert!(count >= 1, "seed data should have at least one admin");
+    assert!(count >= 1, "should have at least one admin after setup");
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, admin.user_id)
+        .await
+        .expect("cleanup");
 }
 
 // ===========================================================================
@@ -2901,9 +3421,10 @@ async fn count_admins_returns_at_least_one() {
 #[ignore]
 async fn create_team_with_duplicate_name_fails() {
     let client = test_client().await;
+    let unique_name = format!("DuplicateTeam-{}", Uuid::now_v7());
 
     let entry = CreateTeamEntry {
-        tname: "DuplicateTeamDB436".to_string(),
+        tname: unique_name.clone(),
         descr: Some("first".to_string()),
     };
 
@@ -2914,7 +3435,7 @@ async fn create_team_with_duplicate_name_fails() {
 
     // Second insert with the same name should fail (unique constraint violation)
     let duplicate = CreateTeamEntry {
-        tname: "DuplicateTeamDB436".to_string(),
+        tname: unique_name,
         descr: Some("duplicate".to_string()),
     };
     let result = db::create_team(&client, duplicate).await;
@@ -2937,9 +3458,10 @@ async fn create_team_with_duplicate_name_fails() {
 #[ignore]
 async fn create_role_with_duplicate_title_fails() {
     let client = test_client().await;
+    let unique_title = format!("DuplicateRole-{}", Uuid::now_v7());
 
     let entry = CreateRoleEntry {
-        title: "DuplicateRoleDB437".to_string(),
+        title: unique_title.clone(),
     };
 
     // First insert should succeed
@@ -2949,7 +3471,7 @@ async fn create_role_with_duplicate_title_fails() {
 
     // Second insert with the same title should fail (unique constraint violation)
     let duplicate = CreateRoleEntry {
-        title: "DuplicateRoleDB437".to_string(),
+        title: unique_title,
     };
     let result = db::create_role(&client, duplicate).await;
     assert!(
@@ -2970,11 +3492,10 @@ async fn create_role_with_duplicate_title_fails() {
 #[actix_web::test]
 #[ignore]
 async fn check_team_access_team_admin() {
-    let client = test_client().await;
-    // U4_F is Team Admin in "League of Cool Coders"
-    let user_id = seed_user_id(&client, "U4_F.U4_L@LEGO.com").await;
-    let team_id = seed_team_id(&client, "League of Cool Coders").await;
-    let (is_admin, team_role) = db::check_team_access(&client, team_id, user_id)
+    let mut client = test_client().await;
+    let (_admin, ta, _member, team1, team2, _roles) = create_rbac_setup(&mut client).await;
+
+    let (is_admin, team_role) = db::check_team_access(&client, team1.team_id, ta.user_id)
         .await
         .expect("check_team_access should succeed");
     assert!(
@@ -2984,6 +3505,21 @@ async fn check_team_access_team_admin() {
     assert_eq!(
         team_role,
         Some("Team Admin".to_string()),
-        "U4_F should have Team Admin role in League of Cool Coders"
+        "team admin should have Team Admin role"
     );
+
+    // Cleanup
+    db::delete_team(&client, team1.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&client, team2.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, _admin.user_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&client, ta.user_id).await.expect("cleanup");
+    db::delete_user(&client, _member.user_id)
+        .await
+        .expect("cleanup");
 }

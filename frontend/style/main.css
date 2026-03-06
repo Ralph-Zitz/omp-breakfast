@@ -386,6 +386,13 @@ img.user-avatar {
 
 /* ── LEGO brand bar (yellow accent stripe) ────────────────────────────────── */
 
+.login-checking {
+    display: flex;
+    justify-content: center;
+    padding: var(--ds-layout-spacing-400) 0;
+    color: var(--ds-color-content-muted);
+}
+
 .brand-bar {
     width: 48px;
     height: 4px;

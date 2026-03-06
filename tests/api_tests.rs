@@ -1,13 +1,16 @@
 //! Integration tests for the breakfast API.
 //!
 //! These tests require a running PostgreSQL instance initialized via Refinery
-//! migrations and seeded with `database_seed.sql`.
+//! migrations (empty schema, no seed data).
 //! The easiest way to run them:
 //!   make test-integration
 //!
 //! Or manually:
 //!   docker compose up -d postgres && docker compose run --rm postgres-setup
 //!   cargo test --test api_tests -- --ignored
+//!
+//! The first admin user is bootstrapped via `POST /auth/register` by the
+//! `register_admin` helper.  Subsequent calls are idempotent (404→ login).
 
 use actix_web::{App, test, web::Data};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -89,8 +92,42 @@ macro_rules! test_app {
     };
 }
 
-/// Helper: authenticate the seed admin user and return the `Auth` response.
-async fn login_admin(
+/// Fixed admin credentials used by all integration tests.
+const ADMIN_EMAIL: &str = "admin@test.local";
+const ADMIN_PASSWORD: &str = "Very Secret";
+
+/// Generic login helper: authenticate with email + password via Basic Auth.
+async fn login_as(
+    app: &impl actix_web::dev::Service<
+        actix_http::Request,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+    >,
+    email: &str,
+    password: &str,
+) -> Auth {
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:{}", email, password))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(app, req).await;
+    assert_eq!(resp.status(), 200, "login should succeed for {}", email);
+    test::read_body_json(resp).await
+}
+
+/// Bootstrap the admin user via `POST /auth/register` (idempotent).
+///
+/// On first call (empty DB) the registration endpoint creates the user,
+/// default roles, and a bootstrap team. Subsequent calls get 403
+/// ("users already exist") and fall back to Basic Auth login.
+async fn register_admin(
     app: &impl actix_web::dev::Service<
         actix_http::Request,
         Response = actix_web::dev::ServiceResponse,
@@ -98,17 +135,157 @@ async fn login_admin(
     >,
 ) -> Auth {
     let req = test::TestRequest::post()
-        .uri("/auth")
+        .uri("/auth/register")
         .peer_addr(PEER)
-        .insert_header((
-            "Authorization",
-            format!("Basic {}", STANDARD.encode("admin@admin.com:Very Secret")),
-        ))
+        .set_json(json!({
+            "firstname": "Test",
+            "lastname": "Admin",
+            "email": ADMIN_EMAIL,
+            "password": ADMIN_PASSWORD
+        }))
         .to_request();
-
     let resp = test::call_service(app, req).await;
-    assert_eq!(resp.status(), 200, "admin login should succeed");
-    test::read_body_json(resp).await
+    // 201 = first user registered; 403 = users already exist → login instead
+    if resp.status() == 201 {
+        // Registration succeeded — now login to obtain JWT tokens
+        return login_as(app, ADMIN_EMAIL, ADMIN_PASSWORD).await;
+    }
+    // Already registered — just login
+    login_as(app, ADMIN_EMAIL, ADMIN_PASSWORD).await
+}
+
+/// Create a user via the admin API and return their auth tokens + user_id.
+async fn create_and_login_user(
+    app: &impl actix_web::dev::Service<
+        actix_http::Request,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+    >,
+    admin_token: &str,
+    firstname: &str,
+    lastname: &str,
+    email: &str,
+    password: &str,
+) -> (Auth, String) {
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": firstname,
+            "lastname": lastname,
+            "email": email,
+            "password": password,
+        }))
+        .to_request();
+    let resp = test::call_service(app, req).await;
+    assert_eq!(resp.status(), 201, "creating user {} should succeed", email);
+    let user: Value = test::read_body_json(resp).await;
+    let user_id = user["user_id"].as_str().unwrap().to_string();
+
+    let auth = login_as(app, email, password).await;
+    (auth, user_id)
+}
+
+/// Look up a role ID by title (e.g. "Admin", "Member", "Team Admin", "Guest").
+async fn find_role_id(
+    app: &impl actix_web::dev::Service<
+        actix_http::Request,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+    >,
+    token: &str,
+    title: &str,
+) -> String {
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(app, req).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
+    roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some(title))
+        .unwrap_or_else(|| panic!("role '{}' not found", title))["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+/// Create a team and return its ID.
+async fn create_test_team(
+    app: &impl actix_web::dev::Service<
+        actix_http::Request,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+    >,
+    admin_token: &str,
+    name: &str,
+) -> String {
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({"tname": name, "descr": "test team"}))
+        .to_request();
+    let resp = test::call_service(app, req).await;
+    assert_eq!(
+        resp.status(),
+        201,
+        "creating team '{}' should succeed",
+        name
+    );
+    let team: Value = test::read_body_json(resp).await;
+    team["team_id"].as_str().unwrap().to_string()
+}
+
+/// Add a user to a team with a given role and return the membership record.
+async fn add_member(
+    app: &impl actix_web::dev::Service<
+        actix_http::Request,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+    >,
+    token: &str,
+    team_id: &str,
+    user_id: &str,
+    role_id: &str,
+) {
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"user_id": user_id, "role_id": role_id}))
+        .to_request();
+    let resp = test::call_service(app, req).await;
+    assert_eq!(resp.status(), 201, "adding member to team should succeed");
+}
+
+/// Create a test item (breakfast item) and return its ID.
+async fn create_test_item(
+    app: &impl actix_web::dev::Service<
+        actix_http::Request,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+    >,
+    admin_token: &str,
+    name: &str,
+    price: f64,
+) -> String {
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "descr": name,
+            "price": price,
+        }))
+        .to_request();
+    let resp = test::call_service(app, req).await;
+    assert_eq!(
+        resp.status(),
+        201,
+        "creating item '{}' should succeed",
+        name
+    );
+    let item: Value = test::read_body_json(resp).await;
+    item["item_id"].as_str().unwrap().to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +316,7 @@ async fn auth_returns_token_pair() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     assert!(!auth.access_token.is_empty());
     assert!(!auth.refresh_token.is_empty());
     assert_eq!(auth.token_type, "Bearer");
@@ -152,6 +329,9 @@ async fn auth_rejects_wrong_password() {
     let state = test_state().await;
     let app = test_app!(state);
 
+    // Ensure admin exists
+    register_admin(&app).await;
+
     let req = test::TestRequest::post()
         .uri("/auth")
         .peer_addr(PEER)
@@ -159,7 +339,7 @@ async fn auth_rejects_wrong_password() {
             "Authorization",
             format!(
                 "Basic {}",
-                STANDARD.encode("admin@admin.com:wrong-password")
+                STANDARD.encode(format!("{}:wrong-password", ADMIN_EMAIL))
             ),
         ))
         .to_request();
@@ -227,7 +407,7 @@ async fn get_users_with_valid_token() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let req = test::TestRequest::get()
         .uri("/api/v1.0/users")
@@ -238,8 +418,8 @@ async fn get_users_with_valid_token() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert!(
-        body["items"].as_array().unwrap().len() >= 5,
-        "seed data has 5 users"
+        !body["items"].as_array().unwrap().is_empty(),
+        "should have at least the admin user"
     );
 }
 
@@ -249,7 +429,7 @@ async fn get_teams_with_valid_token() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let req = test::TestRequest::get()
         .uri("/api/v1.0/teams")
@@ -260,8 +440,8 @@ async fn get_teams_with_valid_token() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert!(
-        body["items"].as_array().unwrap().len() >= 2,
-        "seed data has 2 teams"
+        !body["items"].as_array().unwrap().is_empty(),
+        "should have at least the bootstrap team"
     );
 }
 
@@ -271,7 +451,7 @@ async fn get_roles_with_valid_token() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let req = test::TestRequest::get()
         .uri("/api/v1.0/roles")
@@ -282,8 +462,8 @@ async fn get_roles_with_valid_token() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert!(
-        body["items"].as_array().unwrap().len() >= 3,
-        "seed data has 3 roles"
+        body["items"].as_array().unwrap().len() >= 4,
+        "registration creates 4 default roles"
     );
 }
 
@@ -293,7 +473,7 @@ async fn refresh_token_rejects_access_token() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     // Try using the access token on /auth/refresh — should be rejected
     let req = test::TestRequest::post()
@@ -320,7 +500,7 @@ async fn refresh_token_issues_new_pair() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     // Use the refresh token to get a new pair
     let req = test::TestRequest::post()
@@ -347,7 +527,7 @@ async fn old_refresh_token_is_revoked_after_rotation() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     // Use refresh token → old one should be revoked
     let req = test::TestRequest::post()
@@ -380,7 +560,7 @@ async fn revoke_endpoint_invalidates_access_token() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     // Revoke the access token via /auth/revoke
     let req = test::TestRequest::post()
@@ -409,7 +589,7 @@ async fn revoke_endpoint_rejects_invalid_token() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let req = test::TestRequest::post()
         .uri("/auth/revoke")
@@ -433,7 +613,7 @@ async fn full_lifecycle() {
     let app = test_app!(state);
 
     // 1. Login
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     // 2. Access a protected resource
     let req = test::TestRequest::get()
@@ -481,56 +661,40 @@ async fn full_lifecycle() {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: authenticate a seed user by email
-// ---------------------------------------------------------------------------
-
-async fn login_user(
-    app: &impl actix_web::dev::Service<
-        actix_http::Request,
-        Response = actix_web::dev::ServiceResponse,
-        Error = actix_web::Error,
-    >,
-    email: &str,
-) -> Auth {
-    let req = test::TestRequest::post()
-        .uri("/auth")
-        .peer_addr(PEER)
-        .insert_header((
-            "Authorization",
-            format!(
-                "Basic {}",
-                STANDARD.encode(format!("{}:Very Secret", email))
-            ),
-        ))
-        .to_request();
-    let resp = test::call_service(app, req).await;
-    assert_eq!(resp.status(), 200, "login should succeed for {}", email);
-    test::read_body_json(resp).await
-}
-
-// ---------------------------------------------------------------------------
 // Items CRUD
 // ---------------------------------------------------------------------------
 
 #[actix_web::test]
 #[ignore]
-async fn get_items_returns_seed_data() {
+async fn get_items_returns_created_data() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
+
+    // Create a test item so there is at least one
+    let suffix = Uuid::now_v7();
+    let item_id = create_test_item(&app, token, &format!("TestItem-{}", suffix), 2.50).await;
 
     let req = test::TestRequest::get()
         .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
 
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert!(
-        body["items"].as_array().unwrap().len() >= 4,
-        "seed data has 4 items"
+        !body["items"].as_array().unwrap().is_empty(),
+        "should have at least one item"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -538,7 +702,7 @@ async fn get_items_returns_seed_data() {
 async fn create_update_delete_item() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     // Create
@@ -589,29 +753,47 @@ async fn create_update_delete_item() {
 async fn delete_other_user_returns_forbidden() {
     let state = test_state().await;
     let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // U1_F is a Member, not a global Admin
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    // Create a non-admin user (Member with no team = no special role)
+    let suffix = Uuid::now_v7();
+    let member_email = format!("member-del-{suffix}@test.local");
+    let (member_auth, _member_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Member",
+        "Del",
+        &member_email,
+        "securepassword",
+    )
+    .await;
 
     // Get list of users to find another user's ID
     let req = test::TestRequest::get()
         .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", member_auth.access_token),
+        ))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users = paginated_items(test::read_body_json(resp).await);
 
-    // Find a user that is not U1_F
+    // Find a user that is not the member
     let other_user = users
         .iter()
-        .find(|u| u["email"].as_str() != Some("U1_F.U1_L@LEGO.com"))
+        .find(|u| u["email"].as_str() != Some(member_email.as_str()))
         .unwrap();
     let other_id = other_user["user_id"].as_str().unwrap();
 
     // Try to delete the other user → should be 403
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/users/{}", other_id))
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", member_auth.access_token),
+        ))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -619,6 +801,13 @@ async fn delete_other_user_returns_forbidden() {
         403,
         "should not be able to delete another user"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", _member_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -626,28 +815,46 @@ async fn delete_other_user_returns_forbidden() {
 async fn update_other_user_returns_forbidden() {
     let state = test_state().await;
     let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // U1_F is a Member, not a global Admin
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    // Create a non-admin user
+    let suffix = Uuid::now_v7();
+    let member_email = format!("member-upd-{suffix}@test.local");
+    let (member_auth, member_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Member",
+        "Upd",
+        &member_email,
+        "securepassword",
+    )
+    .await;
 
     // Get list of users to find another user's ID
     let req = test::TestRequest::get()
         .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", member_auth.access_token),
+        ))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users = paginated_items(test::read_body_json(resp).await);
 
     let other_user = users
         .iter()
-        .find(|u| u["email"].as_str() != Some("U1_F.U1_L@LEGO.com"))
+        .find(|u| u["email"].as_str() != Some(member_email.as_str()))
         .unwrap();
     let other_id = other_user["user_id"].as_str().unwrap();
 
     // Try to update the other user → should be 403
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1.0/users/{}", other_id))
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", member_auth.access_token),
+        ))
         .set_json(json!({
             "firstname": "Hacked",
             "lastname": "Name",
@@ -660,6 +867,13 @@ async fn update_other_user_returns_forbidden() {
         403,
         "should not be able to update another user"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", member_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -671,44 +885,16 @@ async fn update_other_user_returns_forbidden() {
 async fn create_and_list_team_orders() {
     let state = test_state().await;
     let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // Login as U4_F who is Admin of "League of Cool Coders"
-    let auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
-    let token = &auth.access_token;
-
-    // Get teams to find the team ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    // Get user ID for the logged-in user
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let _user_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap();
+    let suffix = Uuid::now_v7();
+    let team_id = create_test_team(&app, admin_token, &format!("OrderTeam-{suffix}")).await;
 
     // Create a new team order
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .set_json(json!({"duedate": "2026-03-15"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -719,7 +905,7 @@ async fn create_and_list_team_orders() {
     // List orders — should include the new one
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -733,10 +919,17 @@ async fn create_and_list_team_orders() {
     // Delete the order
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+
+    // Cleanup team
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -744,30 +937,16 @@ async fn create_and_list_team_orders() {
 async fn get_single_team_order_returns_details() {
     let state = test_state().await;
     let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // Login as U4_F who is Admin of "League of Cool Coders"
-    let auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
-    let token = &auth.access_token;
-
-    // Get teams to find the team ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let suffix = Uuid::now_v7();
+    let team_id = create_test_team(&app, admin_token, &format!("OrderDetail-{suffix}")).await;
 
     // Create a new team order
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .set_json(json!({"duedate": "2026-03-20"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -778,7 +957,7 @@ async fn get_single_team_order_returns_details() {
     // GET single order by ID
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200, "GET single order should return 200");
@@ -802,7 +981,7 @@ async fn get_single_team_order_returns_details() {
     let fake_id = uuid::Uuid::now_v7();
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, fake_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404, "nonexistent order should return 404");
@@ -810,10 +989,14 @@ async fn get_single_team_order_returns_details() {
     // Cleanup
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -825,43 +1008,30 @@ async fn get_single_team_order_returns_details() {
 async fn non_member_cannot_create_team_order() {
     let state = test_state().await;
     let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // U1_F is a member of "League of Cool Coders" but NOT "Pixel Bakers"
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
-    let token = &auth.access_token;
+    let suffix = Uuid::now_v7();
+    // Create a team and a user that is NOT a member of it
+    let team_id = create_test_team(&app, admin_token, &format!("NoMemberTeam-{suffix}")).await;
+    let outsider_email = format!("outsider-nmo-{suffix}@test.local");
+    let (outsider_auth, outsider_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Out",
+        "Sider",
+        &outsider_email,
+        "securepassword",
+    )
+    .await;
 
-    // Get teams to find "Pixel Bakers"
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap();
-
-    // Get user ID for the logged-in user
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let _user_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("U1_F.U1_L@LEGO.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap();
-
-    // Try to create order → should be 403 (not a member of Pixel Bakers)
+    // Try to create order → should be 403 (not a member)
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", outsider_auth.access_token),
+        ))
         .set_json(json!({"duedate": "2026-03-15"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -870,6 +1040,18 @@ async fn non_member_cannot_create_team_order() {
         403,
         "non-member should not create team orders"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", outsider_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -881,14 +1063,28 @@ async fn non_member_cannot_create_team_order() {
 async fn non_admin_cannot_create_team() {
     let state = test_state().await;
     let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // U1_F is a Member, not an Admin
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
-    let token = &auth.access_token;
+    // Create a non-admin user
+    let suffix = Uuid::now_v7();
+    let email = format!("nonadmin-ct-{suffix}@test.local");
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "NonAdmin",
+        "CT",
+        &email,
+        "securepassword",
+    )
+    .await;
 
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", user_auth.access_token),
+        ))
         .set_json(json!({"tname": "Forbidden Team", "descr": "Should not be created"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -897,6 +1093,13 @@ async fn non_admin_cannot_create_team() {
         403,
         "non-admin should not be able to create teams"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -904,23 +1107,31 @@ async fn non_admin_cannot_create_team() {
 async fn non_admin_cannot_delete_team() {
     let state = test_state().await;
     let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // U1_F is a Member, not an Admin
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
-    let token = &auth.access_token;
+    // Create a non-admin user
+    let suffix = Uuid::now_v7();
+    let email = format!("nonadmin-dt-{suffix}@test.local");
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "NonAdmin",
+        "DT",
+        &email,
+        "securepassword",
+    )
+    .await;
 
-    // Get teams
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams[0]["team_id"].as_str().unwrap();
+    // Create a team to try to delete
+    let team_id = create_test_team(&app, admin_token, &format!("DelTarget-{suffix}")).await;
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", user_auth.access_token),
+        ))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -928,6 +1139,18 @@ async fn non_admin_cannot_delete_team() {
         403,
         "non-admin should not be able to delete teams"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -936,15 +1159,16 @@ async fn admin_can_create_and_delete_team() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // admin@admin.com is an Admin of "League of Cool Coders"
-    let auth: Auth = login_admin(&app).await;
+    // Admin can create and delete teams
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
+    let suffix = Uuid::now_v7();
 
     // Create a team
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"tname": "Temp Admin Team", "descr": "Created by admin"}))
+        .set_json(json!({"tname": format!("TempAdminTeam-{suffix}"), "descr": "Created by admin"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201, "admin should be able to create teams");
@@ -969,7 +1193,7 @@ async fn admin_can_create_and_delete_team() {
 async fn create_user_with_invalid_email_returns_422() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
@@ -990,7 +1214,7 @@ async fn create_user_with_invalid_email_returns_422() {
 async fn create_item_with_empty_descr_returns_422() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let req = test::TestRequest::post()
         .uri("/api/v1.0/items")
@@ -1010,7 +1234,7 @@ async fn create_item_with_empty_descr_returns_422() {
 async fn get_nonexistent_user_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let fake_id = Uuid::new_v4();
     let req = test::TestRequest::get()
@@ -1026,7 +1250,7 @@ async fn get_nonexistent_user_returns_404() {
 async fn get_nonexistent_team_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let fake_id = Uuid::new_v4();
     let req = test::TestRequest::get()
@@ -1042,7 +1266,7 @@ async fn get_nonexistent_team_returns_404() {
 async fn get_nonexistent_item_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let fake_id = Uuid::new_v4();
     let req = test::TestRequest::get()
@@ -1058,7 +1282,7 @@ async fn get_nonexistent_item_returns_404() {
 async fn get_nonexistent_role_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let fake_id = Uuid::new_v4();
     let req = test::TestRequest::get()
@@ -1078,7 +1302,7 @@ async fn get_nonexistent_role_returns_404() {
 async fn create_duplicate_item_returns_409() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     // Create an item
@@ -1128,17 +1352,17 @@ async fn create_duplicate_item_returns_409() {
 async fn create_duplicate_user_returns_409() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
-    // Try to create a user with the same email as the seed admin → 409
+    // Try to create a user with the same email as the admin → 409
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .set_json(json!({
             "firstname": "Duplicate",
             "lastname": "Admin",
-            "email": "admin@admin.com",
+            "email": ADMIN_EMAIL,
             "password": "securepassword"
         }))
         .to_request();
@@ -1155,7 +1379,7 @@ async fn create_duplicate_user_returns_409() {
 async fn admin_can_update_other_user() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     // Create a temporary user to update
@@ -1206,7 +1430,7 @@ async fn admin_can_update_other_user() {
 async fn admin_can_delete_other_user() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     // Create a temporary user to delete
@@ -1247,11 +1471,20 @@ async fn admin_can_delete_other_user() {
 async fn non_admin_cannot_create_item() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let suffix = Uuid::now_v7();
+    let email = format!("nonadmin-ci-{suffix}@test.local");
+    let (user_auth, user_id) =
+        create_and_login_user(&app, admin_token, "NA", "CI", &email, "securepassword").await;
 
     let req = test::TestRequest::post()
         .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", user_auth.access_token),
+        ))
         .set_json(json!({"descr": "forbidden item", "price": "1.00"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1260,6 +1493,12 @@ async fn non_admin_cannot_create_item() {
         403,
         "non-admin should not be able to create items"
     );
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -1267,20 +1506,17 @@ async fn non_admin_cannot_create_item() {
 async fn non_admin_cannot_update_item() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
-    let user_auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // Get an existing item ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    let item_id = items[0]["item_id"].as_str().unwrap();
+    let suffix = Uuid::now_v7();
+    let email = format!("nonadmin-ui-{suffix}@test.local");
+    let (user_auth, user_id) =
+        create_and_login_user(&app, admin_token, "NA", "UI", &email, "securepassword").await;
+
+    // Create an item to test against
+    let item_id =
+        create_test_item(&app, admin_token, &format!("NAUpdateItem-{suffix}"), 1.00).await;
 
     // Non-admin tries to update → 403
     let req = test::TestRequest::put()
@@ -1297,6 +1533,18 @@ async fn non_admin_cannot_update_item() {
         403,
         "non-admin should not be able to update items"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -1304,20 +1552,17 @@ async fn non_admin_cannot_update_item() {
 async fn non_admin_cannot_delete_item() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
-    let user_auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // Get an existing item ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    let item_id = items[0]["item_id"].as_str().unwrap();
+    let suffix = Uuid::now_v7();
+    let email = format!("nonadmin-di-{suffix}@test.local");
+    let (user_auth, user_id) =
+        create_and_login_user(&app, admin_token, "NA", "DI", &email, "securepassword").await;
+
+    // Create an item to test against
+    let item_id =
+        create_test_item(&app, admin_token, &format!("NADeleteItem-{suffix}"), 1.00).await;
 
     // Non-admin tries to delete → 403
     let req = test::TestRequest::delete()
@@ -1333,6 +1578,18 @@ async fn non_admin_cannot_delete_item() {
         403,
         "non-admin should not be able to delete items"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -1340,11 +1597,20 @@ async fn non_admin_cannot_delete_item() {
 async fn non_admin_cannot_create_role() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let suffix = Uuid::now_v7();
+    let email = format!("nonadmin-cr-{suffix}@test.local");
+    let (user_auth, user_id) =
+        create_and_login_user(&app, admin_token, "NA", "CR", &email, "securepassword").await;
 
     let req = test::TestRequest::post()
         .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", user_auth.access_token),
+        ))
         .set_json(json!({"title": "Forbidden Role"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1353,6 +1619,12 @@ async fn non_admin_cannot_create_role() {
         403,
         "non-admin should not be able to create roles"
     );
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -1360,24 +1632,16 @@ async fn non_admin_cannot_create_role() {
 async fn non_admin_cannot_delete_role() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
-    let user_auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // Get an existing role ID (use "Guest" role which is safe to test against)
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let guest_role = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Guest"))
-        .unwrap();
-    let role_id = guest_role["role_id"].as_str().unwrap();
+    let suffix = Uuid::now_v7();
+    let email = format!("nonadmin-dr-{suffix}@test.local");
+    let (user_auth, user_id) =
+        create_and_login_user(&app, admin_token, "NA", "DR", &email, "securepassword").await;
+
+    // Get the "Guest" role ID (safe to test against)
+    let role_id = find_role_id(&app, admin_token, "Guest").await;
 
     // Non-admin tries to delete → 403
     let req = test::TestRequest::delete()
@@ -1393,6 +1657,12 @@ async fn non_admin_cannot_delete_role() {
         403,
         "non-admin should not be able to delete roles"
     );
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1404,13 +1674,28 @@ async fn non_admin_cannot_delete_role() {
 async fn team_admin_cannot_create_team() {
     let state = test_state().await;
     let app = test_app!(state);
+    let admin = register_admin(&app).await;
+    let admin_token = &admin.access_token;
 
-    // U4_F is a Team Admin of "League of Cool Coders", not a global Admin
-    let auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    // Create a user and make them Team Admin of a team
+    let suffix = Uuid::now_v7();
+    let (ta_auth, ta_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "NoCreate",
+        &format!("ta-nocreate-{}@test.local", suffix),
+        "password123",
+    )
+    .await;
+    let team_id = create_test_team(&app, admin_token, &format!("TATeam-{}", suffix)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_user_id, &ta_role_id).await;
 
+    // Team Admin tries to create a team → 403
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header(("Authorization", format!("Bearer {}", ta_auth.access_token)))
         .set_json(json!({"tname": "Forbidden Team", "descr": "Should not be created"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1419,6 +1704,18 @@ async fn team_admin_cannot_create_team() {
         403,
         "team admin should not be able to create teams (requires global admin)"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -1426,13 +1723,28 @@ async fn team_admin_cannot_create_team() {
 async fn team_admin_cannot_create_item() {
     let state = test_state().await;
     let app = test_app!(state);
+    let admin = register_admin(&app).await;
+    let admin_token = &admin.access_token;
 
-    // U4_F is a Team Admin, not a global Admin
-    let auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    // Create a user and make them Team Admin
+    let suffix = Uuid::now_v7();
+    let (ta_auth, ta_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "NoItem",
+        &format!("ta-noitem-{}@test.local", suffix),
+        "password123",
+    )
+    .await;
+    let team_id = create_test_team(&app, admin_token, &format!("TAItemTeam-{}", suffix)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_user_id, &ta_role_id).await;
 
+    // Team Admin tries to create an item → 403
     let req = test::TestRequest::post()
         .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header(("Authorization", format!("Bearer {}", ta_auth.access_token)))
         .set_json(json!({"descr": "forbidden item", "price": "1.00"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1441,6 +1753,18 @@ async fn team_admin_cannot_create_item() {
         403,
         "team admin should not be able to create items (requires global admin)"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -1448,67 +1772,44 @@ async fn team_admin_cannot_create_item() {
 async fn team_admin_can_manage_team_members() {
     let state = test_state().await;
     let app = test_app!(state);
+    let admin = register_admin(&app).await;
+    let admin_token = &admin.access_token;
 
-    // U4_F is Team Admin of "League of Cool Coders"
-    let auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
-    let token = &auth.access_token;
+    let suffix = Uuid::now_v7();
 
-    // Get teams to find LoCC
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // Create a Team Admin user and a team
+    let (ta_auth, ta_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "Manager",
+        &format!("ta-mgr-{}@test.local", suffix),
+        "password123",
+    )
+    .await;
+    let ta_token = &ta_auth.access_token;
+    let team_id = create_test_team(&app, admin_token, &format!("TAMgrTeam-{}", suffix)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_user_id, &ta_role_id).await;
 
     // Create a temporary user to add as member
-    let admin_auth: Auth = login_admin(&app).await;
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
-        .set_json(json!({
-            "firstname": "TempMember",
-            "lastname": "Test",
-            "email": "tempmember@test.com",
-            "password": "securepassword"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let new_user: Value = test::read_body_json(resp).await;
-    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
-
-    // Get the "Member" role ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let member_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Member"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let (_member_auth, member_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TempMember",
+        "Test",
+        &format!("tempmember-{}@test.local", suffix),
+        "password123",
+    )
+    .await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
 
     // Team Admin adds the new user to the team → should succeed
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/users", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .set_json(json!({
-            "user_id": new_user_id,
+            "user_id": member_user_id,
             "role_id": member_role_id
         }))
         .to_request();
@@ -1523,9 +1824,9 @@ async fn team_admin_can_manage_team_members() {
     let req = test::TestRequest::delete()
         .uri(&format!(
             "/api/v1.0/teams/{}/users/{}",
-            team_id, new_user_id
+            team_id, member_user_id
         ))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -1534,13 +1835,20 @@ async fn team_admin_can_manage_team_members() {
         "team admin should be able to remove members"
     );
 
-    // Clean up: delete the temp user
+    // Cleanup
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1.0/users/{}", new_user_id))
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
+        .uri(&format!("/api/v1.0/users/{}", member_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     test::call_service(&app, req).await;
 }
@@ -1555,40 +1863,15 @@ async fn admin_can_manage_any_team_orders() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // admin@admin.com is Admin of "League of Cool Coders" but NOT a member of "Pixel Bakers"
-    let auth: Auth = login_admin(&app).await;
+    // Admin is NOT a member of the target team — bypass should allow order management
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
+    let suffix = Uuid::now_v7();
 
-    // Get "Pixel Bakers" team ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // Create a team the admin is NOT a member of
+    let team_id = create_test_team(&app, token, &format!("OrderBypass {}", suffix)).await;
 
-    // Get admin user ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let _admin_user_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap();
-
-    // Admin creates order on Pixel Bakers (not a member) → should succeed via bypass
+    // Admin creates order on that team (not a member) → should succeed via bypass
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
@@ -1614,6 +1897,13 @@ async fn admin_can_manage_any_team_orders() {
         200,
         "admin should delete orders on any team via bypass"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -1622,57 +1912,23 @@ async fn admin_can_manage_any_team_members() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // admin@admin.com is NOT a member of "Pixel Bakers"
-    let auth: Auth = login_admin(&app).await;
+    // Admin is NOT a member of the target team — bypass should allow member management
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
+    let suffix = Uuid::now_v7();
 
-    // Get "Pixel Bakers" team ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // Create a team the admin is NOT a member of
+    let team_id = create_test_team(&app, token, &format!("MemberBypass {}", suffix)).await;
 
     // Create a temp user
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({
-            "firstname": "TempPB",
-            "lastname": "Test",
-            "email": "temppb@test.com",
-            "password": "securepassword"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let new_user: Value = test::read_body_json(resp).await;
-    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
+    let email = format!("tempmb-{}@test.local", suffix);
+    let (_, new_user_id) =
+        create_and_login_user(&app, token, "TempMB", "Test", &email, "securepassword").await;
 
     // Get "Member" role ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let member_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Member"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let member_role_id = find_role_id(&app, token, "Member").await;
 
-    // Admin adds member to Pixel Bakers (not a member themselves) → should succeed
+    // Admin adds member to team (not a member themselves) → should succeed
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/users", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
@@ -1703,9 +1959,14 @@ async fn admin_can_manage_any_team_members() {
         "admin should remove members from any team via bypass"
     );
 
-    // Clean up: delete the temp user
+    // Cleanup
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/users/{}", new_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     test::call_service(&app, req).await;
@@ -1721,16 +1982,38 @@ async fn non_admin_non_team_admin_cannot_create_user() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U1_F is a regular Member (not Admin, not Team Admin)
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
+    // Create a regular Member user
+    let uid = Uuid::now_v7();
+    let email = format!("member-{}@test.local", uid);
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Regular",
+        "Member",
+        &email,
+        "securepassword",
+    )
+    .await;
+
+    // Give them a team with the Member role
+    let team_id = create_test_team(&app, admin_token, &format!("MemberTeam-{}", uid)).await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    add_member(&app, admin_token, &team_id, &user_id, &member_role_id).await;
+
+    // Regular Member tries to create a user → should be 403
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", user_auth.access_token),
+        ))
         .set_json(json!({
             "firstname": "Blocked",
             "lastname": "User",
-            "email": "blocked@example.com",
+            "email": format!("blocked-{}@test.local", Uuid::now_v7()),
             "password": "securepassword"
         }))
         .to_request();
@@ -1740,6 +2023,19 @@ async fn non_admin_non_team_admin_cannot_create_user() {
         403,
         "regular member should not be able to create users"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -1748,17 +2044,36 @@ async fn team_admin_can_create_user() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U4_F is a Team Admin of "League of Cool Coders"
-    let auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
-    let token = &auth.access_token;
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
+    // Create a Team Admin user
+    let uid = Uuid::now_v7();
+    let ta_email = format!("ta-create-{}@test.local", uid);
+    let (ta_auth, ta_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TeamAdmin",
+        "Creator",
+        &ta_email,
+        "securepassword",
+    )
+    .await;
+    let ta_token = &ta_auth.access_token;
+
+    let team_id = create_test_team(&app, admin_token, &format!("TACreateTeam-{}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_user_id, &ta_role_id).await;
+
+    // Team Admin creates a user → should succeed
+    let new_email = format!("created-by-ta-{}@test.local", Uuid::now_v7());
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .set_json(json!({
             "firstname": "Created",
             "lastname": "ByTeamAdmin",
-            "email": "created.by.teamadmin@example.com",
+            "email": new_email,
             "password": "securepassword"
         }))
         .to_request();
@@ -1771,17 +2086,24 @@ async fn team_admin_can_create_user() {
     let user: Value = test::read_body_json(resp).await;
     let new_user_id = user["user_id"].as_str().unwrap();
 
-    // Clean up: admin deletes the created user
-    let admin_auth: Auth = login_admin(&app).await;
+    // Cleanup
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/users/{}", new_user_id))
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200, "cleanup: admin should delete temp user");
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1794,32 +2116,58 @@ async fn team_admin_can_update_user_in_their_team() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U4_F is Team Admin of "League of Cool Coders"
-    // U1_F is a Member of "League of Cool Coders"
-    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
-    let token = &ta_auth.access_token;
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // Find U1_F's user_id
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let u1 = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("U1_F.U1_L@LEGO.com"))
-        .unwrap();
-    let u1_id = u1["user_id"].as_str().unwrap();
+    let uid = Uuid::now_v7();
 
-    // Team Admin updates U1_F → should succeed (same team)
+    // Create Team Admin user
+    let ta_email = format!("ta-upd-{}@test.local", uid);
+    let (ta_auth, ta_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "Updater",
+        &ta_email,
+        "securepassword",
+    )
+    .await;
+    let ta_token = &ta_auth.access_token;
+
+    // Create team and add TA as Team Admin
+    let team_id = create_test_team(&app, admin_token, &format!("UpdTeam-{}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_user_id, &ta_role_id).await;
+
+    // Create target user and add as Member of the same team
+    let target_email = format!("target-upd-{}@test.local", uid);
+    let (_target_auth, target_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Target",
+        "User",
+        &target_email,
+        "securepassword",
+    )
+    .await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    add_member(
+        &app,
+        admin_token,
+        &team_id,
+        &target_user_id,
+        &member_role_id,
+    )
+    .await;
+
+    // Team Admin updates target user → should succeed (same team)
     let req = test::TestRequest::put()
-        .uri(&format!("/api/v1.0/users/{}", u1_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .uri(&format!("/api/v1.0/users/{}", target_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .set_json(json!({
-            "firstname": "U1_F_Updated",
-            "lastname": "U1_L",
-            "email": "U1_F.U1_L@LEGO.com"
+            "firstname": "Updated",
+            "lastname": "User",
+            "email": target_email
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1829,22 +2177,24 @@ async fn team_admin_can_update_user_in_their_team() {
         "team admin should be able to update a user in their team"
     );
 
-    // Restore original name
-    let admin_auth: Auth = login_admin(&app).await;
-    let req = test::TestRequest::put()
-        .uri(&format!("/api/v1.0/users/{}", u1_id))
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
-        .set_json(json!({
-            "firstname": "U1_F",
-            "lastname": "U1_L",
-            "email": "U1_F.U1_L@LEGO.com"
-        }))
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", target_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200, "cleanup: admin restores original name");
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -1853,79 +2203,70 @@ async fn team_admin_cannot_update_user_outside_their_team() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U4_F is Team Admin of "League of Cool Coders" and Member of "Pixel Bakers"
-    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
-    let token = &ta_auth.access_token;
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    // Create a temp user who will NOT be in any of U4_F's administered teams
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .set_json(json!({
-            "firstname": "Outside",
-            "lastname": "User",
-            "email": "outside.user@example.com",
-            "password": "securepassword"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let new_user: Value = test::read_body_json(resp).await;
-    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
+    let uid = Uuid::now_v7();
 
-    // Find "Pixel Bakers" team ID (U4_F is only a Member here, not Team Admin)
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let pb_team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // Create Team Admin user
+    let ta_email = format!("ta-noext-{}@test.local", uid);
+    let (ta_auth, ta_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "NoExt",
+        &ta_email,
+        "securepassword",
+    )
+    .await;
+    let ta_token = &ta_auth.access_token;
 
-    // Get the "Member" role ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let member_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Member"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // Team where TA is Team Admin
+    let admin_team_id = create_test_team(&app, admin_token, &format!("TATeam-{}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &admin_team_id, &ta_user_id, &ta_role_id).await;
 
-    // Admin adds the temp user to "Pixel Bakers" (where U4_F is only a Member)
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1.0/teams/{}/users", pb_team_id))
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .set_json(json!({
-            "user_id": new_user_id,
-            "role_id": member_role_id
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201, "admin adds temp user to Pixel Bakers");
+    // Team where TA is only a Member
+    let member_team_id =
+        create_test_team(&app, admin_token, &format!("MemberOnlyTeam-{}", uid)).await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    add_member(
+        &app,
+        admin_token,
+        &member_team_id,
+        &ta_user_id,
+        &member_role_id,
+    )
+    .await;
 
-    // U4_F tries to update the temp user → should be 403
-    // (temp user is only in Pixel Bakers where U4_F is Member, not Team Admin)
+    // Create a temp user and add only to the member-only team
+    let temp_email = format!("outside-{}@test.local", uid);
+    let (_temp_auth, temp_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Outside",
+        "User",
+        &temp_email,
+        "securepassword",
+    )
+    .await;
+    add_member(
+        &app,
+        admin_token,
+        &member_team_id,
+        &temp_user_id,
+        &member_role_id,
+    )
+    .await;
+
+    // TA tries to update the temp user → should be 403
     let req = test::TestRequest::put()
-        .uri(&format!("/api/v1.0/users/{}", new_user_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .uri(&format!("/api/v1.0/users/{}", temp_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .set_json(json!({
             "firstname": "Hacked",
             "lastname": "Name",
-            "email": "outside.user@example.com"
+            "email": temp_email
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1935,22 +2276,30 @@ async fn team_admin_cannot_update_user_outside_their_team() {
         "team admin should not update a user outside their administered teams"
     );
 
-    // Clean up: remove from Pixel Bakers, then delete user
+    // Cleanup
     let req = test::TestRequest::delete()
-        .uri(&format!(
-            "/api/v1.0/teams/{}/users/{}",
-            pb_team_id, new_user_id
-        ))
+        .uri(&format!("/api/v1.0/users/{}", temp_user_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     test::call_service(&app, req).await;
 
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1.0/users/{}", new_user_id))
+        .uri(&format!("/api/v1.0/users/{}", ta_user_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200, "cleanup: admin deletes temp user");
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", admin_team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", member_team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -1959,74 +2308,47 @@ async fn team_admin_can_delete_user_in_their_team() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    // U4_F is Team Admin of "League of Cool Coders"
-    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
-    let token = &ta_auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // Create a temp user
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .set_json(json!({
-            "firstname": "Deletable",
-            "lastname": "ByTA",
-            "email": "deletable.byta@example.com",
-            "password": "securepassword"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let new_user: Value = test::read_body_json(resp).await;
-    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
+    // Create Team Admin user
+    let ta_email = format!("ta-del-{}@test.local", uid);
+    let (ta_auth, ta_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "Deleter",
+        &ta_email,
+        "securepassword",
+    )
+    .await;
+    let ta_token = &ta_auth.access_token;
 
-    // Find "League of Cool Coders" team ID and "Member" role ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let locc_team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // Create team and add TA as Team Admin
+    let team_id = create_test_team(&app, admin_token, &format!("DelTeam-{}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_user_id, &ta_role_id).await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let member_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Member"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    // Team Admin adds user to their team
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1.0/teams/{}/users", locc_team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({
-            "user_id": new_user_id,
-            "role_id": member_role_id
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201, "team admin adds user to their team");
+    // Create a temp user and add as Member to the same team
+    let temp_email = format!("deletable-{}@test.local", uid);
+    let (_temp_auth, temp_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Deletable",
+        "ByTA",
+        &temp_email,
+        "securepassword",
+    )
+    .await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    add_member(&app, admin_token, &team_id, &temp_user_id, &member_role_id).await;
 
     // Team Admin deletes the user → should succeed (user is in their team)
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1.0/users/{}", new_user_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .uri(&format!("/api/v1.0/users/{}", temp_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -2034,6 +2356,19 @@ async fn team_admin_can_delete_user_in_their_team() {
         200,
         "team admin should be able to delete a user in their team"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -2042,33 +2377,44 @@ async fn team_admin_cannot_delete_user_outside_their_team() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    // U4_F is Team Admin of "League of Cool Coders", Member of "Pixel Bakers"
-    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
-    let token = &ta_auth.access_token;
+    let uid = Uuid::now_v7();
+
+    // Create a Team Admin user with a team
+    let ta_email = format!("ta-nodelo-{}@test.local", uid);
+    let (ta_auth, ta_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "NoDelo",
+        &ta_email,
+        "securepassword",
+    )
+    .await;
+    let ta_token = &ta_auth.access_token;
+
+    let team_id = create_test_team(&app, admin_token, &format!("NoDelTeam-{}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_user_id, &ta_role_id).await;
 
     // Create a temp user with no team membership at all
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .set_json(json!({
-            "firstname": "Orphan",
-            "lastname": "User",
-            "email": "orphan.user@example.com",
-            "password": "securepassword"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let new_user: Value = test::read_body_json(resp).await;
-    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
+    let orphan_email = format!("orphan-{}@test.local", uid);
+    let (_orphan_auth, orphan_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Orphan",
+        "User",
+        &orphan_email,
+        "securepassword",
+    )
+    .await;
 
-    // U4_F tries to delete the orphan user → should be 403
+    // TA tries to delete the orphan user → should be 403
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1.0/users/{}", new_user_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .uri(&format!("/api/v1.0/users/{}", orphan_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -2077,13 +2423,24 @@ async fn team_admin_cannot_delete_user_outside_their_team() {
         "team admin should not delete a user not in any of their teams"
     );
 
-    // Clean up
+    // Cleanup
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1.0/users/{}", new_user_id))
+        .uri(&format!("/api/v1.0/users/{}", orphan_user_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200, "cleanup: admin deletes orphan user");
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -2092,31 +2449,32 @@ async fn user_can_still_update_self() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U1_F is a regular Member — should be able to update their own account
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
-    let token = &auth.access_token;
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // Find U1_F's user_id
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let u1 = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("U1_F.U1_L@LEGO.com"))
-        .unwrap();
-    let u1_id = u1["user_id"].as_str().unwrap();
+    // Create a regular user
+    let uid = Uuid::now_v7();
+    let email = format!("selfupd-{}@test.local", uid);
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Self",
+        "Updater",
+        &email,
+        "securepassword",
+    )
+    .await;
+    let token = &user_auth.access_token;
 
     // Self-update → should succeed
+    let new_email = format!("selfupd-new-{}@test.local", uid);
     let req = test::TestRequest::put()
-        .uri(&format!("/api/v1.0/users/{}", u1_id))
+        .uri(&format!("/api/v1.0/users/{}", user_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .set_json(json!({
-            "firstname": "U1_F_Self",
-            "lastname": "U1_L",
-            "email": "U1_F.U1_L@LEGO.com"
+            "firstname": "SelfUpdated",
+            "lastname": "Updater",
+            "email": new_email
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2126,22 +2484,12 @@ async fn user_can_still_update_self() {
         "user should be able to update their own account"
     );
 
-    // Restore original name
-    let admin_auth: Auth = login_admin(&app).await;
-    let req = test::TestRequest::put()
-        .uri(&format!("/api/v1.0/users/{}", u1_id))
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
-        .set_json(json!({
-            "firstname": "U1_F",
-            "lastname": "U1_L",
-            "email": "U1_F.U1_L@LEGO.com"
-        }))
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200, "cleanup: admin restores original name");
+    test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -2154,48 +2502,30 @@ async fn create_get_update_delete_order_item() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // Login as U4_F who is Team Admin of "League of Cool Coders"
-    let auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
-    let token = &auth.access_token;
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // Get "League of Cool Coders" team ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let uid = Uuid::now_v7();
 
-    // Get an item ID from the catalog (seed data has items)
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    assert!(!items.is_empty(), "seed data should have items");
-    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
+    // Create a Team Admin user with a team
+    let ta_email = format!("ta-oi-{}@test.local", uid);
+    let (ta_auth, ta_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "OrderItems",
+        &ta_email,
+        "securepassword",
+    )
+    .await;
+    let token = &ta_auth.access_token;
 
-    // Get user ID for the logged-in user
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let _user_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap();
+    let team_id = create_test_team(&app, admin_token, &format!("OITeam-{}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_user_id, &ta_role_id).await;
+
+    // Create a catalog item
+    let item_id = create_test_item(&app, admin_token, &format!("OIItem-{}", uid), 5.50).await;
 
     // Create a team order to hold items
     let req = test::TestRequest::post()
@@ -2294,13 +2624,30 @@ async fn create_get_update_delete_order_item() {
         "deleted order item should no longer exist"
     );
 
-    // Cleanup: delete the team order
+    // Cleanup: delete order, item, user, team
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200, "cleanup: delete team order");
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -2309,45 +2656,29 @@ async fn duplicate_order_item_returns_409() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
-    let token = &auth.access_token;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // Get team and item IDs
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let uid = Uuid::now_v7();
+    let ta_email = format!("ta-dup-oi-{}@test.local", uid);
+    let (ta_auth, ta_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "DupOI",
+        &ta_email,
+        "securepassword",
+    )
+    .await;
+    let token = &ta_auth.access_token;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
+    let team_name = format!("DupOI-Team-{}", uid);
+    let team_id = create_test_team(&app, admin_token, &team_name).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_user_id, &ta_role_id).await;
 
-    // Get user ID for the logged-in user
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let _user_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap();
+    let item_name = format!("DupOI-Item-{}", uid);
+    let item_id = create_test_item(&app, admin_token, &item_name, 3.50).await;
 
     // Create a team order
     let req = test::TestRequest::post()
@@ -2391,7 +2722,22 @@ async fn duplicate_order_item_returns_409() {
     // Cleanup
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let _ = test::call_service(&app, req).await;
 }
@@ -2402,51 +2748,34 @@ async fn non_member_cannot_create_order_item() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U4_F is Team Admin of "League of Cool Coders" and Member of "Pixel Bakers"
-    // Create an order on "League of Cool Coders" first
-    let auth_u4: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
-    let token_u4 = &auth_u4.access_token;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token_u4)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let uid = Uuid::now_v7();
+    let ta_email = format!("ta-nonmem-oi-{}@test.local", uid);
+    let (ta_auth, ta_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "NonMemOI",
+        &ta_email,
+        "securepassword",
+    )
+    .await;
+    let token_ta = &ta_auth.access_token;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", token_u4)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
+    let team_name = format!("NonMemOI-Team-{}", uid);
+    let team_id = create_test_team(&app, admin_token, &team_name).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_user_id, &ta_role_id).await;
 
-    // Get user ID for U4_F
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token_u4)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let _u4_user_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("U4_F.U4_L@LEGO.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap();
+    let item_name = format!("NonMemOI-Item-{}", uid);
+    let item_id = create_test_item(&app, admin_token, &item_name, 4.00).await;
 
-    // Create order as U4_F (team admin)
+    // Create order as team admin
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token_u4)))
+        .insert_header(("Authorization", format!("Bearer {}", token_ta)))
         .set_json(json!({"duedate": "2026-09-01"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2454,26 +2783,17 @@ async fn non_member_cannot_create_order_item() {
     let order: Value = test::read_body_json(resp).await;
     let order_id = order["teamorders_id"].as_str().unwrap().to_string();
 
-    // Now create a user who is NOT a member of this team
-    let admin_auth: Auth = login_admin(&app).await;
-    let admin_token = &admin_auth.access_token;
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .set_json(json!({
-            "firstname": "Outsider",
-            "lastname": "User",
-            "email": "outsider@test.com",
-            "password": "Very Secret"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let outsider: Value = test::read_body_json(resp).await;
-    let outsider_id = outsider["user_id"].as_str().unwrap().to_string();
-
-    // Login as the outsider
-    let outsider_auth: Auth = login_user(&app, "outsider@test.com").await;
+    // Create a user who is NOT a member of this team
+    let outsider_email = format!("outsider-oi-{}@test.local", uid);
+    let (outsider_auth, outsider_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Outsider",
+        "User",
+        &outsider_email,
+        "securepassword",
+    )
+    .await;
     let outsider_token = &outsider_auth.access_token;
 
     // Outsider tries to add an item to the order → should be forbidden
@@ -2523,15 +2843,29 @@ async fn non_member_cannot_create_order_item() {
         "non-member should not be able to delete order items"
     );
 
-    // Cleanup: delete order (cascades order items) and outsider user
+    // Cleanup
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
-        .insert_header(("Authorization", format!("Bearer {}", token_u4)))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let _ = test::call_service(&app, req).await;
-
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/users/{}", outsider_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_user_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let _ = test::call_service(&app, req).await;
@@ -2543,49 +2877,19 @@ async fn admin_can_manage_order_items_on_any_team() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // Admin is member of "League of Cool Coders" but NOT "Pixel Bakers"
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
-    // Get "Pixel Bakers" team ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let uid = Uuid::now_v7();
 
-    // Get an item
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
+    // Create a team that the admin is NOT a member of
+    let team_name = format!("AdminBypass-Team-{}", uid);
+    let team_id = create_test_team(&app, token, &team_name).await;
 
-    // Get admin user ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let _admin_user_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap();
+    let item_name = format!("AdminBypass-Item-{}", uid);
+    let item_id = create_test_item(&app, token, &item_name, 5.00).await;
 
-    // Admin creates order on Pixel Bakers (not a member) → bypass
+    // Admin creates order on a team (not a member) → bypass
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
@@ -2643,9 +2947,19 @@ async fn admin_can_manage_order_items_on_any_team() {
         "admin should delete order items on any team via bypass"
     );
 
-    // Cleanup: delete the team order
+    // Cleanup
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let _ = test::call_service(&app, req).await;
@@ -2660,37 +2974,15 @@ async fn admin_can_manage_order_items_on_any_team() {
 async fn closed_order_rejects_add_item() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
-    // Find the "League of Cool Coders" team
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let uid = Uuid::now_v7();
+    let team_name = format!("ClosedAdd-Team-{}", uid);
+    let team_id = create_test_team(&app, token, &team_name).await;
 
-    // Get admin user ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let _admin_user_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap();
+    let item_name = format!("ClosedAdd-Item-{}", uid);
+    let item_id = create_test_item(&app, token, &item_name, 2.50).await;
 
     // Create a team order
     let req = test::TestRequest::post()
@@ -2714,15 +3006,6 @@ async fn closed_order_rejects_add_item() {
     let updated: Value = test::read_body_json(resp).await;
     assert_eq!(updated["closed"], json!(true));
 
-    // Get an item ID from the catalog
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
-
     // Try to add an item to the closed order → should be 403
     let req = test::TestRequest::post()
         .uri(&format!(
@@ -2739,9 +3022,19 @@ async fn closed_order_rejects_add_item() {
         "adding items to a closed order should return 403"
     );
 
-    // Cleanup: delete the order
+    // Cleanup
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let _ = test::call_service(&app, req).await;
@@ -2752,37 +3045,15 @@ async fn closed_order_rejects_add_item() {
 async fn closed_order_rejects_update_item() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
-    // Find the "League of Cool Coders" team
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let uid = Uuid::now_v7();
+    let team_name = format!("ClosedUpd-Team-{}", uid);
+    let team_id = create_test_team(&app, token, &team_name).await;
 
-    // Get admin user ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let _admin_user_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap();
+    let item_name = format!("ClosedUpd-Item-{}", uid);
+    let item_id = create_test_item(&app, token, &item_name, 2.50).await;
 
     // Create a team order
     let req = test::TestRequest::post()
@@ -2794,15 +3065,6 @@ async fn closed_order_rejects_update_item() {
     assert_eq!(resp.status(), 201);
     let order: Value = test::read_body_json(resp).await;
     let order_id = order["teamorders_id"].as_str().unwrap().to_string();
-
-    // Get an item ID from the catalog
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
     // Add an item while the order is still open
     let req = test::TestRequest::post()
@@ -2841,15 +3103,19 @@ async fn closed_order_rejects_update_item() {
         "updating items on a closed order should return 403"
     );
 
-    // Cleanup: reopen and delete
-    let req = test::TestRequest::put()
+    // Cleanup
+    let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"closed": false}))
         .to_request();
     let _ = test::call_service(&app, req).await;
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let _ = test::call_service(&app, req).await;
@@ -2860,37 +3126,15 @@ async fn closed_order_rejects_update_item() {
 async fn closed_order_rejects_delete_item() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
-    // Find the "League of Cool Coders" team
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let uid = Uuid::now_v7();
+    let team_name = format!("ClosedDel-Team-{}", uid);
+    let team_id = create_test_team(&app, token, &team_name).await;
 
-    // Get admin user ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let _admin_user_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap();
+    let item_name = format!("ClosedDel-Item-{}", uid);
+    let item_id = create_test_item(&app, token, &item_name, 2.50).await;
 
     // Create a team order
     let req = test::TestRequest::post()
@@ -2902,15 +3146,6 @@ async fn closed_order_rejects_delete_item() {
     assert_eq!(resp.status(), 201);
     let order: Value = test::read_body_json(resp).await;
     let order_id = order["teamorders_id"].as_str().unwrap().to_string();
-
-    // Get an item ID from the catalog
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
 
     // Add an item while the order is still open
     let req = test::TestRequest::post()
@@ -2948,15 +3183,19 @@ async fn closed_order_rejects_delete_item() {
         "deleting items from a closed order should return 403"
     );
 
-    // Cleanup: reopen and delete
-    let req = test::TestRequest::put()
+    // Cleanup
+    let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"closed": false}))
         .to_request();
     let _ = test::call_service(&app, req).await;
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let _ = test::call_service(&app, req).await;
@@ -2967,37 +3206,15 @@ async fn closed_order_rejects_delete_item() {
 async fn reopened_order_allows_item_mutations() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
-    // Find the "League of Cool Coders" team
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let uid = Uuid::now_v7();
+    let team_name = format!("Reopen-Team-{}", uid);
+    let team_id = create_test_team(&app, token, &team_name).await;
 
-    // Get admin user ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let _admin_user_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap();
+    let item_name = format!("Reopen-Item-{}", uid);
+    let item_id = create_test_item(&app, token, &item_name, 2.50).await;
 
     // Create a team order
     let req = test::TestRequest::post()
@@ -3028,15 +3245,6 @@ async fn reopened_order_allows_item_mutations() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    // Get an item ID from the catalog
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
-
     // Adding items to the reopened order should succeed
     let req = test::TestRequest::post()
         .uri(&format!(
@@ -3049,9 +3257,19 @@ async fn reopened_order_allows_item_mutations() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201, "should add items to a reopened order");
 
-    // Cleanup: delete the order (cascades to order items)
+    // Cleanup
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let _ = test::call_service(&app, req).await;
@@ -3067,32 +3285,46 @@ async fn team_admin_can_update_user_in_shared_team() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U4_F is Team Admin of "League of Cool Coders"
-    // U1_F is Member of "League of Cool Coders" — shared team
-    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
+
+    let (ta_auth, ta_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "User",
+        &format!("ta.shared.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
     let ta_token = &ta_auth.access_token;
 
-    // Get U1_F's user ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let u1 = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("U1_F.U1_L@LEGO.com"))
-        .expect("seed user U1_F should exist");
-    let u1_id = u1["user_id"].as_str().unwrap();
+    let u1_email = format!("u1.shared.{}@test.local", uid);
+    let (_, u1_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "U1",
+        "Target",
+        &u1_email,
+        "securepassword",
+    )
+    .await;
 
-    // Team Admin updates U1_F → should succeed (shared team)
+    let team_id = create_test_team(&app, admin_token, &format!("SharedTeam {}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    add_member(&app, admin_token, &team_id, &ta_id, &ta_role_id).await;
+    add_member(&app, admin_token, &team_id, &u1_id, &member_role_id).await;
+
+    // Team Admin updates U1 → should succeed (shared team)
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1.0/users/{}", u1_id))
         .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .set_json(json!({
-            "firstname": "U1_F",
-            "lastname": "U1_L",
-            "email": "U1_F.U1_L@LEGO.com"
+            "firstname": "U1",
+            "lastname": "Target",
+            "email": u1_email
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -3101,6 +3333,23 @@ async fn team_admin_can_update_user_in_shared_team() {
         200,
         "team admin should update users in their team"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", u1_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -3109,37 +3358,46 @@ async fn team_admin_cannot_update_user_outside_shared_team() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U4_F is Team Admin of "League of Cool Coders" and Member of "Pixel Bakers"
-    // Create a user that is NOT in any of U4_F's teams
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .set_json(json!({
-            "firstname": "Isolated",
-            "lastname": "User",
-            "email": "isolated.user@test.com",
-            "password": "securepassword"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let isolated_user: Value = test::read_body_json(resp).await;
-    let isolated_id = isolated_user["user_id"].as_str().unwrap().to_string();
-
-    // U4_F tries to update isolated user → should be 403
-    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    // Create TA user and add to a team as Team Admin
+    let (ta_auth, ta_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "Outside",
+        &format!("ta.outside.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
     let ta_token = &ta_auth.access_token;
 
+    let team_id = create_test_team(&app, admin_token, &format!("OutsideTeam {}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_id, &ta_role_id).await;
+
+    // Create an isolated user NOT in any of TA's teams
+    let isolated_email = format!("isolated.{}@test.local", uid);
+    let (_, isolated_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Isolated",
+        "User",
+        &isolated_email,
+        "securepassword",
+    )
+    .await;
+
+    // TA tries to update isolated user → should be 403
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1.0/users/{}", isolated_id))
         .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .set_json(json!({
             "firstname": "Hacked",
             "lastname": "User",
-            "email": "isolated.user@test.com"
+            "email": isolated_email
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -3155,6 +3413,16 @@ async fn team_admin_cannot_update_user_outside_shared_team() {
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -3167,16 +3435,35 @@ async fn member_cannot_create_user() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U1_F is a regular Member
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
 
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Member",
+        "Create",
+        &format!("member.create.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+
+    let team_id = create_test_team(&app, admin_token, &format!("MemberCreateTeam {}", uid)).await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    add_member(&app, admin_token, &team_id, &user_id, &member_role_id).await;
+
+    // Member tries to create a user → 403
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", user_auth.access_token),
+        ))
         .set_json(json!({
             "firstname": "Forbidden",
             "lastname": "User",
-            "email": "forbidden.create@test.com",
+            "email": format!("forbidden.create.{}@test.local", uid),
             "password": "securepassword"
         }))
         .to_request();
@@ -3186,6 +3473,18 @@ async fn member_cannot_create_user() {
         403,
         "regular member should not be able to create users"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -3199,12 +3498,26 @@ async fn non_admin_delete_by_email_nonexistent_returns_403() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U1_F is a regular Member, not an Admin
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
+
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "NonAdmin",
+        "Delete",
+        &format!("nonadmin.del.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
 
     let req = test::TestRequest::delete()
         .uri("/api/v1.0/users/email/nonexistent@example.com")
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", user_auth.access_token),
+        ))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -3212,6 +3525,13 @@ async fn non_admin_delete_by_email_nonexistent_returns_403() {
         403,
         "non-admin should get 403 even when email does not exist (prevents info leakage)"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -3219,7 +3539,7 @@ async fn non_admin_delete_by_email_nonexistent_returns_403() {
 async fn admin_delete_by_email_nonexistent_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let req = test::TestRequest::delete()
         .uri("/api/v1.0/users/email/nonexistent@example.com")
@@ -3243,7 +3563,7 @@ async fn create_user_then_authenticate_round_trip() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     let test_email = "roundtrip.test@example.com";
@@ -3329,22 +3649,29 @@ async fn non_admin_cannot_update_team() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U1_F is a Member, not an Admin
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
-    let token = &auth.access_token;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // Get teams
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams[0]["team_id"].as_str().unwrap();
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "NonAdmin",
+        "Team",
+        &format!("nonadmin.team.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
 
+    let team_id = create_test_team(&app, admin_token, &format!("NoUpdateTeam {}", uid)).await;
+
+    // Non-admin tries to update the team → 403
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1.0/teams/{}", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", user_auth.access_token),
+        ))
         .set_json(json!({"tname": "Forbidden Update", "descr": "Should not work"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -3353,6 +3680,18 @@ async fn non_admin_cannot_update_team() {
         403,
         "non-admin should not be able to update teams"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -3360,24 +3699,22 @@ async fn non_admin_cannot_update_team() {
 async fn non_admin_cannot_update_role() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
-    let user_auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
 
-    // Get an existing role ID (use "Guest" role which is safe to test against)
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let guest_role = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Guest"))
-        .unwrap();
-    let role_id = guest_role["role_id"].as_str().unwrap();
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
+
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "NonAdmin",
+        "Role",
+        &format!("nonadmin.role.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+
+    let role_id = find_role_id(&app, admin_token, "Guest").await;
 
     // Non-admin tries to update → 403
     let req = test::TestRequest::put()
@@ -3394,6 +3731,13 @@ async fn non_admin_cannot_update_role() {
         403,
         "non-admin should not be able to update roles"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -3406,66 +3750,45 @@ async fn team_admin_cannot_assign_admin_role_via_add_member() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U4_F is Team Admin of "League of Cool Coders"
-    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
+
+    // Create TA user and team
+    let (ta_auth, ta_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "EscAdd",
+        &format!("ta.esc.add.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
     let ta_token = &ta_auth.access_token;
 
-    // Get the LoCC team ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let team_id = create_test_team(&app, admin_token, &format!("EscAddTeam {}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_id, &ta_role_id).await;
 
-    // Get the "Admin" role ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let admin_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Admin"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // Create target user
+    let (_, target_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "EscGuard",
+        "Add",
+        &format!("escguard.add.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
 
-    // Create a temp user to use as the target
-    let admin_auth: Auth = login_admin(&app).await;
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
-        .set_json(json!({
-            "firstname": "EscGuard",
-            "lastname": "Test",
-            "email": "escguard.add@test.com",
-            "password": "securepassword"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let new_user: Value = test::read_body_json(resp).await;
-    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
+    let admin_role_id = find_role_id(&app, admin_token, "Admin").await;
 
     // Team Admin tries to add user with Admin role → should be 403
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/users", team_id))
         .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .set_json(json!({
-            "user_id": new_user_id,
+            "user_id": target_id,
             "role_id": admin_role_id
         }))
         .to_request();
@@ -3476,15 +3799,22 @@ async fn team_admin_cannot_assign_admin_role_via_add_member() {
         "team admin must not assign global Admin role via add_team_member"
     );
 
-    // Clean up: delete the temp user
+    // Cleanup
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1.0/users/{}", new_user_id))
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
+        .uri(&format!("/api/v1.0/users/{}", target_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    test::call_service(&app, req).await;
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -3493,85 +3823,43 @@ async fn team_admin_cannot_assign_admin_role_via_update_role() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U4_F is Team Admin of "League of Cool Coders"
-    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
+
+    // Create TA user and team
+    let (ta_auth, ta_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "EscUpd",
+        &format!("ta.esc.upd.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
     let ta_token = &ta_auth.access_token;
 
-    // Get the LoCC team ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let team_id = create_test_team(&app, admin_token, &format!("EscUpdTeam {}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    let admin_role_id = find_role_id(&app, admin_token, "Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_id, &ta_role_id).await;
 
-    // Get role IDs for "Member" and "Admin"
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let member_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Member"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let admin_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Admin"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    // Create a temp user and add as Member first
-    let admin_auth: Auth = login_admin(&app).await;
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
-        .set_json(json!({
-            "firstname": "EscGuard",
-            "lastname": "Update",
-            "email": "escguard.update@test.com",
-            "password": "securepassword"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let new_user: Value = test::read_body_json(resp).await;
-    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
-
-    // Add user as Member (Team Admin can do this)
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
-        .set_json(json!({
-            "user_id": new_user_id,
-            "role_id": member_role_id
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201, "team admin should add user as Member");
+    // Create target user and add as Member
+    let (_, target_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "EscGuard",
+        "Update",
+        &format!("escguard.upd.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+    add_member(&app, ta_token, &team_id, &target_id, &member_role_id).await;
 
     // Team Admin tries to update user's role to Admin → should be 403
     let req = test::TestRequest::put()
-        .uri(&format!(
-            "/api/v1.0/teams/{}/users/{}",
-            team_id, new_user_id
-        ))
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, target_id))
         .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .set_json(json!({
             "role_id": admin_role_id
@@ -3584,24 +3872,27 @@ async fn team_admin_cannot_assign_admin_role_via_update_role() {
         "team admin must not escalate a member to global Admin via update_member_role"
     );
 
-    // Clean up: remove member then delete user
+    // Cleanup
     let req = test::TestRequest::delete()
-        .uri(&format!(
-            "/api/v1.0/teams/{}/users/{}",
-            team_id, new_user_id
-        ))
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, target_id))
         .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .to_request();
-    test::call_service(&app, req).await;
-
+    let _ = test::call_service(&app, req).await;
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1.0/users/{}", new_user_id))
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
+        .uri(&format!("/api/v1.0/users/{}", target_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    test::call_service(&app, req).await;
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -3614,7 +3905,7 @@ async fn update_user_password_then_reauthenticate() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     let test_email = "pwchange.test@example.com";
@@ -3719,11 +4010,16 @@ async fn update_user_password_then_reauthenticate() {
 
 #[actix_web::test]
 #[ignore]
-async fn user_teams_returns_teams_for_seed_admin() {
+async fn user_teams_returns_admin_teams() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
+    let uid = Uuid::now_v7();
+
+    // Create a team and add admin to it
+    let team_name = format!("AdminTeams {}", uid);
+    let team_id = create_test_team(&app, token, &team_name).await;
 
     // Get admin user_id
     let req = test::TestRequest::get()
@@ -3734,9 +4030,12 @@ async fn user_teams_returns_teams_for_seed_admin() {
     let users = paginated_items(test::read_body_json(resp).await);
     let admin = users
         .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .find(|u| u["email"].as_str() == Some(ADMIN_EMAIL))
         .expect("admin user should exist");
     let admin_id = admin["user_id"].as_str().unwrap();
+
+    let admin_role_id = find_role_id(&app, token, "Admin").await;
+    add_member(&app, token, &team_id, admin_id, &admin_role_id).await;
 
     // GET /api/v1.0/users/{admin_id}/teams
     let req = test::TestRequest::get()
@@ -3747,19 +4046,31 @@ async fn user_teams_returns_teams_for_seed_admin() {
     assert_eq!(resp.status(), 200, "user_teams should return 200");
     let teams = paginated_items(test::read_body_json(resp).await);
     assert!(
-        teams.iter().any(|t| t["tname"] == "League of Cool Coders"),
-        "admin should be member of League of Cool Coders"
+        teams
+            .iter()
+            .any(|t| t["tname"].as_str() == Some(&*team_name)),
+        "admin should be member of the created team"
     );
     // Verify membership timestamps are present (#115)
-    let team = &teams[0];
+    let team_entry = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some(&*team_name))
+        .unwrap();
     assert!(
-        team["joined"].is_string(),
+        team_entry["joined"].is_string(),
         "joined timestamp should be present"
     );
     assert!(
-        team["role_changed"].is_string(),
+        team_entry["role_changed"].is_string(),
         "role_changed timestamp should be present"
     );
+
+    // Clean up
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -3767,7 +4078,7 @@ async fn user_teams_returns_teams_for_seed_admin() {
 async fn user_teams_returns_empty_for_user_with_no_teams() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let token = &admin_auth.access_token;
 
     // Create a temp user (not added to any team)
@@ -3813,7 +4124,7 @@ async fn user_teams_returns_empty_for_user_with_no_teams() {
 async fn malformed_uuid_path_returns_400() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let req = test::TestRequest::get()
         .uri("/api/v1.0/users/not-a-valid-uuid")
@@ -3836,7 +4147,7 @@ async fn malformed_uuid_path_returns_400() {
 async fn wrong_content_type_returns_415() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     // POST with text/plain instead of application/json
     let req = test::TestRequest::post()
@@ -3858,7 +4169,7 @@ async fn wrong_content_type_returns_415() {
 async fn invalid_json_body_returns_error() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     // POST with Content-Type: application/json but invalid JSON
     let req = test::TestRequest::post()
@@ -3885,7 +4196,7 @@ async fn invalid_json_body_returns_error() {
 async fn admin_can_update_team() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     // Create a temp team
@@ -3924,7 +4235,7 @@ async fn admin_can_update_team() {
 async fn admin_can_update_role() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     // Create a temp role
@@ -3966,7 +4277,7 @@ async fn admin_can_update_role() {
 async fn create_item_returns_location_header() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     let req = test::TestRequest::post()
@@ -4007,14 +4318,23 @@ async fn create_item_returns_location_header() {
 async fn auth_endpoint_rate_limits_after_burst() {
     let state = test_state().await;
     let app = test_app!(state);
+    register_admin(&app).await;
 
-    let creds = format!("Basic {}", STANDARD.encode("admin@admin.com:Very Secret"));
+    // Use a separate peer address so register_admin's requests don't consume our burst quota
+    let rate_peer: SocketAddr = SocketAddr::new(
+        std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1)),
+        12345,
+    );
+    let creds = format!(
+        "Basic {}",
+        STANDARD.encode(format!("{}:{}", ADMIN_EMAIL, ADMIN_PASSWORD))
+    );
 
     // Send requests up to burst size (10)
     for i in 0..10 {
         let req = test::TestRequest::post()
             .uri("/auth")
-            .peer_addr(PEER)
+            .peer_addr(rate_peer)
             .insert_header(("Authorization", creds.clone()))
             .to_request();
         let resp = test::call_service(&app, req).await;
@@ -4029,7 +4349,7 @@ async fn auth_endpoint_rate_limits_after_burst() {
     // 11th request should be rate limited
     let req = test::TestRequest::post()
         .uri("/auth")
-        .peer_addr(PEER)
+        .peer_addr(rate_peer)
         .insert_header(("Authorization", creds.clone()))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -4049,29 +4369,15 @@ async fn auth_endpoint_rate_limits_after_burst() {
 async fn admin_can_bulk_delete_team_orders() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
-
-    // Get admin user_id
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let _admin_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let uid = Uuid::now_v7();
 
     // Create a temp team
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"tname": "BulkDeleteOrders Team", "descr": "temp"}))
+        .set_json(json!({"tname": format!("BulkDeleteOrders {}", uid), "descr": "temp"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -4125,68 +4431,26 @@ async fn admin_can_bulk_delete_team_orders() {
 async fn admin_can_update_member_role() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // Get seed IDs
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let member_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Member"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let guest_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Guest"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // Create a team and look up roles
+    let team_id = create_test_team(&app, token, &format!("RoleChangeTeam {}", uid)).await;
+    let member_role_id = find_role_id(&app, token, "Member").await;
+    let guest_role_id = find_role_id(&app, token, "Guest").await;
 
     // Create a temp user and add them to the team as Member
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({
-            "firstname": "RoleChange",
-            "lastname": "Test",
-            "email": "rolechange@test.local",
-            "password": "securepassword"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let user: Value = test::read_body_json(resp).await;
-    let user_id = user["user_id"].as_str().unwrap().to_string();
-
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"user_id": user_id, "role_id": member_role_id}))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
+    let (_, user_id) = create_and_login_user(
+        &app,
+        token,
+        "RoleChange",
+        "Test",
+        &format!("rolechange.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+    add_member(&app, token, &team_id, &user_id, &member_role_id).await;
 
     // Update their role to Guest
     let req = test::TestRequest::put()
@@ -4199,7 +4463,7 @@ async fn admin_can_update_member_role() {
     let updated: Value = test::read_body_json(resp).await;
     assert_eq!(updated["title"], "Guest", "role should be updated to Guest");
 
-    // Clean up: remove member, delete user
+    // Clean up: remove member, delete user, delete team
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, user_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
@@ -4208,6 +4472,12 @@ async fn admin_can_update_member_role() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     test::call_service(&app, req).await;
@@ -4222,7 +4492,7 @@ async fn admin_can_update_member_role() {
 async fn admin_can_delete_user_by_email() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     // Create a temp user
@@ -4261,11 +4531,21 @@ async fn non_admin_cannot_revoke_another_users_token() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // Login as two different users
-    let admin_auth: Auth = login_admin(&app).await;
-    let user_auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // U1_F tries to revoke admin's access token → should fail with 403
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "NonAdmin",
+        "Revoke",
+        &format!("nonadmin.revoke.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+
+    // Non-admin tries to revoke admin's access token → should fail with 403
     let req = test::TestRequest::post()
         .uri("/auth/revoke")
         .peer_addr(PEER)
@@ -4281,6 +4561,13 @@ async fn non_admin_cannot_revoke_another_users_token() {
         403,
         "non-admin should not revoke another user's token"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -4289,10 +4576,21 @@ async fn admin_can_revoke_another_users_token() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let admin_auth: Auth = login_admin(&app).await;
-    let user_auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // Admin revokes U1_F's token → should succeed
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Revokee",
+        "User",
+        &format!("revokee.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+
+    // Admin revokes user's token → should succeed
     let req = test::TestRequest::post()
         .uri("/auth/revoke")
         .peer_addr(PEER)
@@ -4319,6 +4617,13 @@ async fn admin_can_revoke_another_users_token() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 401, "revoked token should be rejected");
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 // ===========================================================================
@@ -4327,25 +4632,34 @@ async fn admin_can_revoke_another_users_token() {
 
 #[actix_web::test]
 #[ignore]
-async fn team_users_returns_members_of_seed_team() {
+async fn team_users_returns_members_of_team() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // Find "League of Cool Coders" team_id
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap();
+    // Create a team and add 3 members
+    let team_id = create_test_team(&app, token, &format!("TeamUsersTest {}", uid)).await;
+    let member_role_id = find_role_id(&app, token, "Member").await;
+
+    let mut user_ids = Vec::new();
+    let mut expected_emails = Vec::new();
+    for i in 1..=3 {
+        let email = format!("teamuser{}.{}@test.local", i, uid);
+        let (_, user_id) = create_and_login_user(
+            &app,
+            token,
+            &format!("TU{}", i),
+            "Test",
+            &email,
+            "securepassword",
+        )
+        .await;
+        add_member(&app, token, &team_id, &user_id, &member_role_id).await;
+        user_ids.push(user_id);
+        expected_emails.push(email);
+    }
 
     // GET /api/v1.0/teams/{team_id}/users
     let req = test::TestRequest::get()
@@ -4356,26 +4670,19 @@ async fn team_users_returns_members_of_seed_team() {
     assert_eq!(resp.status(), 200);
     let users = paginated_items(test::read_body_json(resp).await);
 
-    // Seed data has 5 members in LoCC: admin, U1_F, U2_F, U3_F, U4_F
-    // Use >= because other tests may temporarily add members in parallel
-    assert!(
-        users.len() >= 5,
-        "LoCC should have at least 5 seed members, got {}",
+    assert_eq!(
+        users.len(),
+        3,
+        "team should have exactly 3 members, got {}",
         users.len()
     );
 
-    // Verify all 5 seed members are present
+    // Verify all 3 members are present
     let emails: Vec<&str> = users.iter().filter_map(|u| u["email"].as_str()).collect();
-    for expected in &[
-        "admin@admin.com",
-        "U1_F.U1_L@LEGO.com",
-        "U2_F.U2_L@LEGO.com",
-        "U3_F.U3_L@LEGO.com",
-        "U4_F.U4_L@LEGO.com",
-    ] {
+    for expected in &expected_emails {
         assert!(
-            emails.contains(expected),
-            "seed member {} should be in LoCC",
+            emails.contains(&expected.as_str()),
+            "member {} should be in team",
             expected
         );
     }
@@ -4390,6 +4697,27 @@ async fn team_users_returns_members_of_seed_team() {
         first["role_changed"].is_string(),
         "role_changed timestamp should be present"
     );
+
+    // Clean up: remove members, delete users, delete team
+    for user_id in &user_ids {
+        let req = test::TestRequest::delete()
+            .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, user_id))
+            .insert_header(("Authorization", format!("Bearer {}", token)))
+            .to_request();
+        test::call_service(&app, req).await;
+
+        let req = test::TestRequest::delete()
+            .uri(&format!("/api/v1.0/users/{}", user_id))
+            .insert_header(("Authorization", format!("Bearer {}", token)))
+            .to_request();
+        test::call_service(&app, req).await;
+    }
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -4397,7 +4725,7 @@ async fn team_users_returns_members_of_seed_team() {
 async fn team_users_returns_empty_for_team_with_no_members() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     // Create a fresh team with no members
@@ -4438,7 +4766,7 @@ async fn revoked_refresh_token_is_rejected_by_refresh_endpoint() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     // Explicitly revoke the refresh token
     let req = test::TestRequest::post()
@@ -4474,28 +4802,29 @@ async fn empty_order_items_returns_200_with_empty_list() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
-    let token = &auth.access_token;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // Get "League of Cool Coders" team ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let (ta_auth, ta_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "EmptyOI",
+        &format!("ta.emptyoi.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+    let ta_token = &ta_auth.access_token;
+
+    let team_id = create_test_team(&app, admin_token, &format!("EmptyOITeam {}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_id, &ta_role_id).await;
 
     // Create a fresh order (no items)
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .set_json(json!({"duedate": "2026-09-01"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -4509,7 +4838,7 @@ async fn empty_order_items_returns_200_with_empty_list() {
             "/api/v1.0/teams/{}/orders/{}/items",
             team_id, order_id
         ))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -4519,9 +4848,19 @@ async fn empty_order_items_returns_200_with_empty_list() {
     // Cleanup
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    test::call_service(&app, req).await;
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -4534,44 +4873,36 @@ async fn add_team_member_with_nonexistent_role_id_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U4_F is Team Admin of "League of Cool Coders"
-    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
+
+    // Create a Team Admin user and team
+    let (ta_auth, ta_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "TA",
+        "FakeRole",
+        &format!("ta.fakerole.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
     let ta_token = &ta_auth.access_token;
 
-    // Get the team ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let team_id = create_test_team(&app, admin_token, &format!("FakeRoleTeam {}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    add_member(&app, admin_token, &team_id, &ta_id, &ta_role_id).await;
 
-    // Create a temp user
-    let admin_auth: Auth = login_admin(&app).await;
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
-        .set_json(json!({
-            "firstname": "RoleTest",
-            "lastname": "User",
-            "email": "roletest.nonexistent@test.com",
-            "password": "securepassword"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let new_user: Value = test::read_body_json(resp).await;
-    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
+    // Create a temp user to add
+    let (_, new_user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "RoleTest",
+        "User",
+        &format!("roletest.nonexistent.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
 
     // Try to add user with a non-existent role_id
     let fake_role_id = Uuid::now_v7().to_string();
@@ -4593,12 +4924,19 @@ async fn add_team_member_with_nonexistent_role_id_returns_404() {
     // Cleanup
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/users/{}", new_user_id))
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    test::call_service(&app, req).await;
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -4611,66 +4949,42 @@ async fn member_cannot_add_team_member() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U1_F is "Member" in "League of Cool Coders"
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
-    let token = &auth.access_token;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // Get team ID for "League of Cool Coders"
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let (member_auth, member_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Member",
+        "Add",
+        &format!("member.add.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+    let member_token = &member_auth.access_token;
 
-    // Get a role ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let member_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Member"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let team_id = create_test_team(&app, admin_token, &format!("MemberAddTeam {}", uid)).await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    add_member(&app, admin_token, &team_id, &member_id, &member_role_id).await;
 
-    // Create a temp user as admin
-    let admin_auth: Auth = login_admin(&app).await;
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
-        .set_json(json!({
-            "firstname": "TempMember",
-            "lastname": "Test",
-            "email": "tempmember.test289@test.com",
-            "password": "securepassword"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let new_user: Value = test::read_body_json(resp).await;
-    let new_user_id = new_user["user_id"].as_str().unwrap().to_string();
+    // Create a target user
+    let (_, target_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Target",
+        "Add",
+        &format!("target.add.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
 
     // Member tries to add a team member → 403
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/users", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", member_token)))
         .set_json(json!({
-            "user_id": new_user_id,
+            "user_id": target_id,
             "role_id": member_role_id
         }))
         .to_request();
@@ -4683,13 +4997,20 @@ async fn member_cannot_add_team_member() {
 
     // Cleanup
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1.0/users/{}", new_user_id))
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
+        .uri(&format!("/api/v1.0/users/{}", target_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    test::call_service(&app, req).await;
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", member_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -4698,44 +5019,40 @@ async fn member_cannot_remove_team_member() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U1_F is "Member" in "League of Cool Coders"
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
-    let token = &auth.access_token;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // Get team and users
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let (member_auth, member_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Member",
+        "Remove",
+        &format!("member.remove.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+    let member_token = &member_auth.access_token;
 
-    // Get U2_F's user_id (another member)
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let u2_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("U2_F.U2_L@LEGO.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let (_, target_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Target",
+        "Remove",
+        &format!("target.remove.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+
+    let team_id = create_test_team(&app, admin_token, &format!("MemberRemoveTeam {}", uid)).await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    add_member(&app, admin_token, &team_id, &member_id, &member_role_id).await;
+    add_member(&app, admin_token, &team_id, &target_id, &member_role_id).await;
 
     // Member tries to remove another member → 403
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, u2_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, target_id))
+        .insert_header(("Authorization", format!("Bearer {}", member_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -4743,6 +5060,23 @@ async fn member_cannot_remove_team_member() {
         403,
         "Member should not be able to remove team members"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", target_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", member_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -4751,58 +5085,40 @@ async fn member_cannot_update_member_role() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U1_F is "Member" in "League of Cool Coders"
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
-    let token = &auth.access_token;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // Get team
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let (member_auth, member_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Member",
+        "UpdRole",
+        &format!("member.updrole.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+    let member_token = &member_auth.access_token;
 
-    // Get U2_F and Member role ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let users = paginated_items(test::read_body_json(resp).await);
-    let u2_id = users
-        .iter()
-        .find(|u| u["email"].as_str() == Some("U2_F.U2_L@LEGO.com"))
-        .unwrap()["user_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let (_, target_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Target",
+        "UpdRole",
+        &format!("target.updrole.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let member_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Member"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let team_id = create_test_team(&app, admin_token, &format!("MemberUpdRoleTeam {}", uid)).await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    add_member(&app, admin_token, &team_id, &member_id, &member_role_id).await;
+    add_member(&app, admin_token, &team_id, &target_id, &member_role_id).await;
 
     // Member tries to update another member's role → 403
     let req = test::TestRequest::put()
-        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, u2_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, target_id))
+        .insert_header(("Authorization", format!("Bearer {}", member_token)))
         .set_json(json!({ "role_id": member_role_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -4811,6 +5127,23 @@ async fn member_cannot_update_member_role() {
         403,
         "Member should not be able to update member roles"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", target_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", member_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -4823,29 +5156,29 @@ async fn member_cannot_bulk_delete_team_orders() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U1_F is "Member" in "League of Cool Coders"
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
-    let token = &auth.access_token;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // Get team
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let (member_auth, member_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Member",
+        "BulkDel",
+        &format!("member.bulkdel.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+    let member_token = &member_auth.access_token;
+
+    let team_id = create_test_team(&app, admin_token, &format!("MemberBulkDelTeam {}", uid)).await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    add_member(&app, admin_token, &team_id, &member_id, &member_role_id).await;
 
     // Member tries to bulk-delete all team orders → 403
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", member_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -4853,6 +5186,18 @@ async fn member_cannot_bulk_delete_team_orders() {
         403,
         "Member should not be able to bulk-delete team orders"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", member_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -4865,28 +5210,26 @@ async fn non_member_cannot_update_team_order() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U1_F is NOT a member of "Pixel Bakers"
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
-    let token = &auth.access_token;
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // Get team ID for "Pixel Bakers"
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // Create a non-member user
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "NonMember",
+        "Order",
+        &format!("nonmember.order.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+    let user_token = &user_auth.access_token;
 
-    // Create a real order via admin so the lookup succeeds
+    // Create a team the user is NOT a member of
+    let team_id = create_test_team(&app, admin_token, &format!("NonMemberOrderTeam {}", uid)).await;
+
+    // Create an order via admin
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
@@ -4900,7 +5243,7 @@ async fn non_member_cannot_update_team_order() {
     // Non-member tries PUT → 403
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", user_token)))
         .set_json(json!({"closed": true}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -4915,7 +5258,17 @@ async fn non_member_cannot_update_team_order() {
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    test::call_service(&app, req).await;
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -4924,28 +5277,27 @@ async fn non_member_cannot_delete_team_order() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U1_F is NOT a member of "Pixel Bakers"
-    let auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
-    let token = &auth.access_token;
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
+    let uid = Uuid::now_v7();
 
-    // Get team ID for "Pixel Bakers"
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // Create a non-member user
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "NonMember",
+        "DelOrder",
+        &format!("nonmember.delorder.{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+    let user_token = &user_auth.access_token;
 
-    // Create a real order via admin
+    // Create a team the user is NOT a member of
+    let team_id =
+        create_test_team(&app, admin_token, &format!("NonMemberDelOrderTeam {}", uid)).await;
+
+    // Create an order via admin
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
@@ -4959,7 +5311,7 @@ async fn non_member_cannot_delete_team_order() {
     // Non-member tries DELETE → 403
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
-        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .insert_header(("Authorization", format!("Bearer {}", user_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -4973,7 +5325,17 @@ async fn non_member_cannot_delete_team_order() {
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
-    test::call_service(&app, req).await;
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -4985,7 +5347,7 @@ async fn non_member_cannot_delete_team_order() {
 async fn create_user_returns_location_header() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     let req = test::TestRequest::post()
@@ -5024,7 +5386,7 @@ async fn create_user_returns_location_header() {
 async fn create_team_returns_location_header() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     let req = test::TestRequest::post()
@@ -5058,7 +5420,7 @@ async fn create_team_returns_location_header() {
 async fn create_role_returns_location_header() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     let req = test::TestRequest::post()
@@ -5092,7 +5454,7 @@ async fn create_role_returns_location_header() {
 async fn create_team_order_returns_location_header() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     // Create temp team
@@ -5138,19 +5500,12 @@ async fn create_team_order_returns_location_header() {
 async fn create_order_item_returns_location_header() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
+    let suffix = Uuid::now_v7();
 
     // Create temp team + order
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"tname": "LocHdr OItem Team 294", "descr": "temp"}))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let team: Value = test::read_body_json(resp).await;
-    let team_id = team["team_id"].as_str().unwrap().to_string();
+    let team_id = create_test_team(&app, token, &format!("LocHdrTeam-{suffix}")).await;
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
@@ -5162,14 +5517,8 @@ async fn create_order_item_returns_location_header() {
     let order: Value = test::read_body_json(resp).await;
     let order_id = order["teamorders_id"].as_str().unwrap().to_string();
 
-    // Get a seed item
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
+    // Create a test item
+    let item_id = create_test_item(&app, token, &format!("LocHdrItem-{}", team_id), 2.50).await;
 
     // Create order item
     let req = test::TestRequest::post()
@@ -5198,6 +5547,11 @@ async fn create_order_item_returns_location_header() {
 
     // Cleanup
     let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
@@ -5209,7 +5563,7 @@ async fn create_order_item_returns_location_header() {
 async fn add_team_member_returns_location_header() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     // Create temp team
@@ -5298,7 +5652,7 @@ async fn add_team_member_returns_location_header() {
 async fn get_orders_for_nonexistent_team_returns_empty_list() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     let fake_team_id = Uuid::now_v7();
@@ -5323,7 +5677,7 @@ async fn get_orders_for_nonexistent_team_returns_empty_list() {
 async fn self_password_change_without_current_password_returns_422() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     let test_email = "selfpw-no-current@example.com";
@@ -5393,7 +5747,7 @@ async fn self_password_change_without_current_password_returns_422() {
 async fn self_password_change_with_wrong_current_password_returns_403() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     let test_email = "selfpw-wrong@example.com";
@@ -5464,7 +5818,7 @@ async fn self_password_change_with_wrong_current_password_returns_403() {
 async fn self_password_change_with_correct_current_password_succeeds() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     let test_email = "selfpw-correct@example.com";
@@ -5555,7 +5909,7 @@ async fn self_password_change_with_correct_current_password_succeeds() {
 async fn lockout_lifecycle_5_failures_then_429_then_success_clears() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     let test_email = "lockout-lifecycle@example.com";
@@ -5657,7 +6011,7 @@ async fn lockout_lifecycle_5_failures_then_429_then_success_clears() {
 async fn non_admin_user_can_delete_own_account() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     let test_email = "self-delete@example.com";
@@ -5728,10 +6082,10 @@ async fn non_admin_user_can_delete_own_account() {
 async fn last_admin_cannot_delete_own_account() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    // The seed admin is the only admin. Attempting self-delete should fail.
+    // The admin is the only admin. Attempting self-delete should fail.
     // First, find the admin's user_id from the token.
     let req = test::TestRequest::get()
         .uri("/api/v1.0/users")
@@ -5743,8 +6097,8 @@ async fn last_admin_cannot_delete_own_account() {
     let users = paginated_items(body);
     let admin_user = users
         .iter()
-        .find(|u| u["email"] == "admin@admin.com")
-        .expect("seed admin should exist");
+        .find(|u| u["email"].as_str() == Some(ADMIN_EMAIL))
+        .expect("admin user should exist");
     let admin_id = admin_user["user_id"].as_str().unwrap();
 
     // Attempt to delete self
@@ -5769,7 +6123,7 @@ async fn last_admin_cannot_delete_own_account() {
 async fn jwt_protected_endpoint_rejects_refresh_token() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     // Use the refresh token (token_type = Refresh) against a JWT-gated endpoint.
     // jwt_validator checks token_type == Access and rejects anything else.
@@ -5795,7 +6149,7 @@ async fn jwt_protected_endpoint_rejects_refresh_token() {
 async fn team_admin_can_bulk_delete_own_team_orders() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     let suffix = Uuid::now_v7().to_string();
@@ -5925,7 +6279,7 @@ async fn team_admin_can_bulk_delete_own_team_orders() {
 async fn team_admin_can_update_order_by_another_member() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     let suffix = Uuid::now_v7().to_string();
@@ -6098,7 +6452,7 @@ async fn team_admin_can_update_order_by_another_member() {
 async fn member_can_update_and_delete_own_order() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     let suffix = Uuid::now_v7().to_string();
@@ -6234,7 +6588,7 @@ async fn member_can_update_and_delete_own_order() {
 async fn create_team_with_duplicate_name_returns_409() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     // Create first team
@@ -6278,15 +6632,14 @@ async fn create_team_with_duplicate_name_returns_409() {
 async fn create_item_with_negative_price_returns_422() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     let req = test::TestRequest::post()
         .uri("/api/v1.0/items")
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .set_json(json!({
-            "iname": "negative price item",
-            "descr": "should fail",
+            "descr": "negative price item",
             "price": "-1.00"
         }))
         .to_request();
@@ -6307,7 +6660,7 @@ async fn create_item_with_negative_price_returns_422() {
 async fn pagination_clamps_limit_and_treats_negative_offset_as_zero() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
     // limit=200 should be clamped to 100
@@ -6356,7 +6709,7 @@ async fn pagination_clamps_limit_and_treats_negative_offset_as_zero() {
 async fn user_can_delete_own_account_by_email() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     // Create a regular (non-admin) user
@@ -6426,54 +6779,37 @@ async fn team_admin_cannot_demote_global_admin() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U4_F is Team Admin of "League of Cool Coders"
-    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let tag = Uuid::now_v7();
+    let ta_email = format!("ta-demote-{}@test.local", tag);
+    let (ta_auth, ta_id) =
+        create_and_login_user(&app, admin_token, "TA", "Demote", &ta_email, "password123").await;
     let ta_token = &ta_auth.access_token;
 
-    // Get admin user ID (global Admin in LoCC)
-    let admin_auth: Auth = login_admin(&app).await;
+    let team_id = create_test_team(&app, admin_token, &format!("DemoteGuard-{}", tag)).await;
+    let admin_role_id = find_role_id(&app, admin_token, "Admin").await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+
+    // Get admin user ID
     let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .uri("/api/v1.0/users?limit=100")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users = paginated_items(test::read_body_json(resp).await);
     let admin_id = users
         .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
-        .unwrap()["user_id"]
+        .find(|u| u["email"].as_str() == Some(ADMIN_EMAIL))
+        .expect("admin user not found")["user_id"]
         .as_str()
         .unwrap()
         .to_string();
 
-    // Get team ID and Member role ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let member_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Member"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    add_member(&app, admin_token, &team_id, &admin_id, &admin_role_id).await;
+    add_member(&app, admin_token, &team_id, &ta_id, &ta_role_id).await;
 
     // Team Admin tries to demote global Admin to Member → 403
     let req = test::TestRequest::put()
@@ -6497,23 +6833,42 @@ async fn team_admin_cannot_demote_global_admin() {
     // Ensure admin still has Admin role (unchanged)
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1.0/teams/{}/users", team_id))
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let members = paginated_items(test::read_body_json(resp).await);
     let admin_member = members
         .iter()
-        .find(|m| m["email"].as_str() == Some("admin@admin.com"))
+        .find(|m| m["email"].as_str() == Some(ADMIN_EMAIL))
         .expect("admin should still be in team");
     assert_eq!(
         admin_member["title"].as_str().unwrap(),
         "Admin",
         "admin's role should be unchanged"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, ta_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, admin_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -6522,39 +6877,36 @@ async fn team_admin_cannot_remove_global_admin_from_team() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    // U4_F is Team Admin of "League of Cool Coders"
-    let ta_auth: Auth = login_user(&app, "U4_F.U4_L@LEGO.com").await;
+    let admin_auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let tag = Uuid::now_v7();
+    let ta_email = format!("ta-remove-{}@test.local", tag);
+    let (ta_auth, ta_id) =
+        create_and_login_user(&app, admin_token, "TA", "Remove", &ta_email, "password123").await;
     let ta_token = &ta_auth.access_token;
+
+    let team_id = create_test_team(&app, admin_token, &format!("RemoveGuard-{}", tag)).await;
+    let admin_role_id = find_role_id(&app, admin_token, "Admin").await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
 
     // Get admin user ID
     let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .uri("/api/v1.0/users?limit=100")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users = paginated_items(test::read_body_json(resp).await);
     let admin_id = users
         .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
-        .unwrap()["user_id"]
+        .find(|u| u["email"].as_str() == Some(ADMIN_EMAIL))
+        .expect("admin user not found")["user_id"]
         .as_str()
         .unwrap()
         .to_string();
 
-    // Get team ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    add_member(&app, admin_token, &team_id, &admin_id, &admin_role_id).await;
+    add_member(&app, admin_token, &team_id, &ta_id, &ta_role_id).await;
 
     // Team Admin tries to remove global Admin from team → 403
     let req = test::TestRequest::delete()
@@ -6567,6 +6919,28 @@ async fn team_admin_cannot_remove_global_admin_from_team() {
         403,
         "team admin must not remove a global Admin from a team"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, ta_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, admin_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -6575,53 +6949,23 @@ async fn global_admin_can_demote_another_global_admin() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    // Get team and role IDs
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let admin_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Admin"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let member_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Member"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let tag = Uuid::now_v7();
+    let team_id = create_test_team(&app, admin_token, &format!("AdminDemote-{}", tag)).await;
+    let admin_role_id = find_role_id(&app, admin_token, "Admin").await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
 
     // Create a second admin: create user, add as Admin in the team
+    let email2 = format!("second-admin-demotion-{}@test.local", tag);
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .set_json(json!({
             "firstname": "SecondAdmin",
             "lastname": "Test",
-            "email": "second.admin.demotion@test.com",
+            "email": email2,
             "password": "securepassword"
         }))
         .to_request();
@@ -6630,16 +6974,7 @@ async fn global_admin_can_demote_another_global_admin() {
     let new_admin: Value = test::read_body_json(resp).await;
     let new_admin_id = new_admin["user_id"].as_str().unwrap().to_string();
 
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .set_json(json!({
-            "user_id": new_admin_id,
-            "role_id": admin_role_id
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201, "admin should add second admin");
+    add_member(&app, admin_token, &team_id, &new_admin_id, &admin_role_id).await;
 
     // First admin demotes second admin to Member → should succeed
     let req = test::TestRequest::put()
@@ -6657,7 +6992,7 @@ async fn global_admin_can_demote_another_global_admin() {
         "global admin should be able to demote another global admin"
     );
 
-    // Clean up: remove from team and delete user
+    // Clean up
     let req = test::TestRequest::delete()
         .uri(&format!(
             "/api/v1.0/teams/{}/users/{}",
@@ -6666,7 +7001,11 @@ async fn global_admin_can_demote_another_global_admin() {
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     test::call_service(&app, req).await;
-
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/users/{}", new_admin_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
@@ -6684,52 +7023,38 @@ async fn last_admin_cannot_demote_self() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     // Get admin user ID
     let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
+        .uri("/api/v1.0/users?limit=100")
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users = paginated_items(test::read_body_json(resp).await);
     let admin_id = users
         .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
-        .unwrap()["user_id"]
+        .find(|u| u["email"].as_str() == Some(ADMIN_EMAIL))
+        .expect("admin user not found")["user_id"]
         .as_str()
         .unwrap()
         .to_string();
 
-    // Get team ID and Member role ID
+    // Get the bootstrap team where admin has Admin role
     let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
+        .uri(&format!("/api/v1.0/users/{}/teams", admin_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
+    let user_teams = paginated_items(test::read_body_json(resp).await);
+    let admin_team = user_teams
         .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+        .find(|t| t["title"].as_str() == Some("Admin"))
+        .expect("admin should be Admin in at least one team");
+    let team_id = admin_team["team_id"].as_str().unwrap().to_string();
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let member_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Member"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
 
     // Admin tries to demote self to Member → 403 (last admin)
     let req = test::TestRequest::put()
@@ -6760,37 +7085,36 @@ async fn last_admin_cannot_remove_self_from_admin_team() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    // Get admin user ID and team ID
+    // Get admin user ID
     let req = test::TestRequest::get()
-        .uri("/api/v1.0/users")
+        .uri("/api/v1.0/users?limit=100")
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let users = paginated_items(test::read_body_json(resp).await);
     let admin_id = users
         .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
-        .unwrap()["user_id"]
+        .find(|u| u["email"].as_str() == Some(ADMIN_EMAIL))
+        .expect("admin user not found")["user_id"]
         .as_str()
         .unwrap()
         .to_string();
 
+    // Get the bootstrap team where admin has Admin role
     let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
+        .uri(&format!("/api/v1.0/users/{}/teams", admin_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
+    let user_teams = paginated_items(test::read_body_json(resp).await);
+    let admin_team = user_teams
         .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+        .find(|t| t["title"].as_str() == Some("Admin"))
+        .expect("admin should be Admin in at least one team");
+    let team_id = admin_team["team_id"].as_str().unwrap().to_string();
 
     // Admin tries to remove self from team → 403 (last admin)
     let req = test::TestRequest::delete()
@@ -6811,53 +7135,23 @@ async fn demoting_admin_allowed_when_another_admin_exists() {
     let state = test_state().await;
     let app = test_app!(state);
 
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    // Get team and role IDs
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let admin_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Admin"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let member_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Member"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let tag = Uuid::now_v7();
+    let team_id = create_test_team(&app, admin_token, &format!("LastGuard-{}", tag)).await;
+    let admin_role_id = find_role_id(&app, admin_token, "Admin").await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
 
     // Create a second admin
+    let email2 = format!("second-admin-lastguard-{}@test.local", tag);
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .set_json(json!({
             "firstname": "SecondAdmin",
             "lastname": "LastGuard",
-            "email": "second.admin.lastguard@test.com",
+            "email": email2,
             "password": "securepassword"
         }))
         .to_request();
@@ -6867,16 +7161,7 @@ async fn demoting_admin_allowed_when_another_admin_exists() {
     let new_admin_id = new_admin["user_id"].as_str().unwrap().to_string();
 
     // Add second user as Admin in the team
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .set_json(json!({
-            "user_id": new_admin_id,
-            "role_id": admin_role_id
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
+    add_member(&app, admin_token, &team_id, &new_admin_id, &admin_role_id).await;
 
     // Now demoting the second admin to Member should succeed (first admin still exists)
     let req = test::TestRequest::put()
@@ -6903,7 +7188,11 @@ async fn demoting_admin_allowed_when_another_admin_exists() {
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     test::call_service(&app, req).await;
-
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/users/{}", new_admin_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
@@ -6920,7 +7209,7 @@ async fn demoting_admin_allowed_when_another_admin_exists() {
 async fn delete_nonexistent_item_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let fake_id = Uuid::now_v7();
 
     let req = test::TestRequest::delete()
@@ -6936,7 +7225,7 @@ async fn delete_nonexistent_item_returns_404() {
 async fn delete_nonexistent_role_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let fake_id = Uuid::now_v7();
 
     let req = test::TestRequest::delete()
@@ -6952,15 +7241,10 @@ async fn delete_nonexistent_role_returns_404() {
 async fn delete_nonexistent_team_order_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams[0]["team_id"].as_str().unwrap();
+    let team_id = create_test_team(&app, token, &format!("DelOrder404-{}", Uuid::now_v7())).await;
     let fake_order_id = Uuid::now_v7();
 
     let req = test::TestRequest::delete()
@@ -6968,7 +7252,7 @@ async fn delete_nonexistent_team_order_returns_404() {
             "/api/v1.0/teams/{}/orders/{}",
             team_id, fake_order_id
         ))
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -6976,6 +7260,13 @@ async fn delete_nonexistent_team_order_returns_404() {
         404,
         "DELETE nonexistent team order should be 404"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -6983,22 +7274,10 @@ async fn delete_nonexistent_team_order_returns_404() {
 async fn delete_nonexistent_order_item_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let team_id = create_test_team(&app, token, &format!("DelOrdItem404-{}", Uuid::now_v7())).await;
 
     // Create a team order
     let req = test::TestRequest::post()
@@ -7032,6 +7311,11 @@ async fn delete_nonexistent_order_item_returns_404() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -7039,15 +7323,10 @@ async fn delete_nonexistent_order_item_returns_404() {
 async fn remove_nonexistent_team_member_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams[0]["team_id"].as_str().unwrap();
+    let team_id = create_test_team(&app, token, &format!("RemMem404-{}", Uuid::now_v7())).await;
     let fake_user_id = Uuid::now_v7();
 
     let req = test::TestRequest::delete()
@@ -7055,7 +7334,7 @@ async fn remove_nonexistent_team_member_returns_404() {
             "/api/v1.0/teams/{}/users/{}",
             team_id, fake_user_id
         ))
-        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -7063,6 +7342,13 @@ async fn remove_nonexistent_team_member_returns_404() {
         404,
         "removing nonexistent member should be 404"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 // ===========================================================================
@@ -7074,7 +7360,7 @@ async fn remove_nonexistent_team_member_returns_404() {
 async fn update_nonexistent_user_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let fake_id = Uuid::now_v7();
 
     let req = test::TestRequest::put()
@@ -7091,7 +7377,7 @@ async fn update_nonexistent_user_returns_404() {
 async fn update_nonexistent_team_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let fake_id = Uuid::now_v7();
 
     let req = test::TestRequest::put()
@@ -7108,7 +7394,7 @@ async fn update_nonexistent_team_returns_404() {
 async fn update_nonexistent_role_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let fake_id = Uuid::now_v7();
 
     let req = test::TestRequest::put()
@@ -7125,7 +7411,7 @@ async fn update_nonexistent_role_returns_404() {
 async fn update_nonexistent_item_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let fake_id = Uuid::now_v7();
 
     let req = test::TestRequest::put()
@@ -7142,16 +7428,10 @@ async fn update_nonexistent_item_returns_404() {
 async fn update_nonexistent_team_order_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams[0]["team_id"].as_str().unwrap();
+    let team_id = create_test_team(&app, token, &format!("UpdOrder404-{}", Uuid::now_v7())).await;
     let fake_order_id = Uuid::now_v7();
 
     let req = test::TestRequest::put()
@@ -7168,6 +7448,13 @@ async fn update_nonexistent_team_order_returns_404() {
         404,
         "PUT nonexistent team order should be 404"
     );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -7175,22 +7462,10 @@ async fn update_nonexistent_team_order_returns_404() {
 async fn update_nonexistent_order_item_returns_404() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let team_id = create_test_team(&app, token, &format!("UpdOrdItem404-{}", Uuid::now_v7())).await;
 
     // Create a team order
     let req = test::TestRequest::post()
@@ -7225,6 +7500,11 @@ async fn update_nonexistent_order_item_returns_404() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
 }
 
 // ===========================================================================
@@ -7236,7 +7516,7 @@ async fn update_nonexistent_order_item_returns_404() {
 async fn revoke_already_revoked_token_is_idempotent() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     // Revoke once
     let req = test::TestRequest::post()
@@ -7249,7 +7529,7 @@ async fn revoke_already_revoked_token_is_idempotent() {
     assert_eq!(resp.status(), 200, "first revoke should succeed");
 
     // Login again to get a fresh token (the old one is now revoked)
-    let auth2: Auth = login_admin(&app).await;
+    let auth2: Auth = register_admin(&app).await;
 
     // Revoke the same (already-revoked) token again
     let req = test::TestRequest::post()
@@ -7271,13 +7551,17 @@ async fn revoke_already_revoked_token_is_idempotent() {
 async fn auth_response_has_cache_control_no_store() {
     let state = test_state().await;
     let app = test_app!(state);
+    let _admin_auth: Auth = register_admin(&app).await;
 
     let req = test::TestRequest::post()
         .uri("/auth")
         .peer_addr(PEER)
         .insert_header((
             "Authorization",
-            format!("Basic {}", STANDARD.encode("admin@admin.com:Very Secret")),
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:{}", ADMIN_EMAIL, ADMIN_PASSWORD))
+            ),
         ))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -7299,7 +7583,7 @@ async fn auth_response_has_cache_control_no_store() {
 async fn refresh_response_has_cache_control_no_store() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let req = test::TestRequest::post()
         .uri("/auth/refresh")
@@ -7325,28 +7609,20 @@ async fn refresh_response_has_cache_control_no_store() {
 async fn refresh_token_after_user_deleted_returns_error() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    // Create a temporary user
-    let test_email = "refresh-deleted@test.local";
-    let req = test::TestRequest::post()
-        .uri("/api/v1.0/users")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .set_json(json!({
-            "firstname": "Temp",
-            "lastname": "User",
-            "email": test_email,
-            "password": "Very Secret"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let user: Value = test::read_body_json(resp).await;
-    let user_id = user["user_id"].as_str().unwrap().to_string();
-
-    // Login as temporary user
-    let user_auth: Auth = login_user(&app, test_email).await;
+    // Create a temporary user and login
+    let test_email = format!("refresh-deleted-{}@test.local", Uuid::now_v7());
+    let (user_auth, user_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Temp",
+        "User",
+        &test_email,
+        "Very Secret",
+    )
+    .await;
 
     // Delete the user via admin
     let req = test::TestRequest::delete()
@@ -7382,34 +7658,40 @@ async fn refresh_token_after_user_deleted_returns_error() {
 async fn member_cannot_update_another_members_order_item() {
     let state = test_state().await;
     let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    // U1_F creates an order and order item
-    let u1_auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    // Create team, item, and two members
+    let uid = Uuid::now_v7();
+    let team_id = create_test_team(&app, admin_token, &format!("OrdItemRBAC-{}", uid)).await;
+    let item_id = create_test_item(&app, admin_token, &format!("OrdItem-{}", uid), 3.50).await;
+    let member_role = find_role_id(&app, admin_token, "Member").await;
+
+    let (u1_auth, u1_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "U1",
+        "OrdItem",
+        &format!("u1-orditem-{}@test.local", uid),
+        "Very Secret",
+    )
+    .await;
     let u1_token = &u1_auth.access_token;
+    add_member(&app, admin_token, &team_id, &u1_id, &member_role).await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", u1_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let (u2_auth, u2_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "U2",
+        "OrdItem",
+        &format!("u2-orditem-{}@test.local", uid),
+        "Very Secret",
+    )
+    .await;
+    let u2_token = &u2_auth.access_token;
+    add_member(&app, admin_token, &team_id, &u2_id, &member_role).await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
-        .insert_header(("Authorization", format!("Bearer {}", u1_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
-
-    // U1_F creates a team order
+    // U1 creates a team order
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", u1_token)))
@@ -7420,7 +7702,7 @@ async fn member_cannot_update_another_members_order_item() {
     let order: Value = test::read_body_json(resp).await;
     let order_id = order["teamorders_id"].as_str().unwrap().to_string();
 
-    // U1_F creates an order item
+    // U1 creates an order item
     let req = test::TestRequest::post()
         .uri(&format!(
             "/api/v1.0/teams/{}/orders/{}/items",
@@ -7432,10 +7714,7 @@ async fn member_cannot_update_another_members_order_item() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
 
-    // U2_F (another member) tries to update U1_F's order item → 403
-    let u2_auth: Auth = login_user(&app, "U2_F.U2_L@LEGO.com").await;
-    let u2_token = &u2_auth.access_token;
-
+    // U2 (another member) tries to update U1's order item → 403
     let req = test::TestRequest::put()
         .uri(&format!(
             "/api/v1.0/teams/{}/orders/{}/items/{}",
@@ -7451,7 +7730,7 @@ async fn member_cannot_update_another_members_order_item() {
         "member should not update another member's order item"
     );
 
-    // U2_F tries to delete U1_F's order item → 403
+    // U2 tries to delete U1's order item → 403
     let req = test::TestRequest::delete()
         .uri(&format!(
             "/api/v1.0/teams/{}/orders/{}/items/{}",
@@ -7466,14 +7745,40 @@ async fn member_cannot_update_another_members_order_item() {
         "member should not delete another member's order item"
     );
 
-    // Cleanup via admin
-    let admin_auth: Auth = login_admin(&app).await;
+    // Cleanup
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, u1_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, u2_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", u1_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", u2_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     test::call_service(&app, req).await;
 }
@@ -7483,25 +7788,39 @@ async fn member_cannot_update_another_members_order_item() {
 async fn member_cannot_update_or_delete_team_order_they_did_not_create() {
     let state = test_state().await;
     let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
 
-    let u1_auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    // Create team and two members
+    let uid = Uuid::now_v7();
+    let team_id = create_test_team(&app, admin_token, &format!("OrdRBAC-{}", uid)).await;
+    let member_role = find_role_id(&app, admin_token, "Member").await;
+
+    let (u1_auth, u1_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "U1",
+        "OrdOwner",
+        &format!("u1-ordrbac-{}@test.local", uid),
+        "Very Secret",
+    )
+    .await;
     let u1_token = &u1_auth.access_token;
+    add_member(&app, admin_token, &team_id, &u1_id, &member_role).await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", u1_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let (u2_auth, u2_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "U2",
+        "OrdOwner",
+        &format!("u2-ordrbac-{}@test.local", uid),
+        "Very Secret",
+    )
+    .await;
+    let u2_token = &u2_auth.access_token;
+    add_member(&app, admin_token, &team_id, &u2_id, &member_role).await;
 
-    // U1_F creates a team order
+    // U1 creates a team order
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", u1_token)))
@@ -7512,10 +7831,7 @@ async fn member_cannot_update_or_delete_team_order_they_did_not_create() {
     let order: Value = test::read_body_json(resp).await;
     let order_id = order["teamorders_id"].as_str().unwrap().to_string();
 
-    // U2_F tries to update U1_F's order → 403
-    let u2_auth: Auth = login_user(&app, "U2_F.U2_L@LEGO.com").await;
-    let u2_token = &u2_auth.access_token;
-
+    // U2 tries to update U1's order → 403
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", u2_token)))
@@ -7528,7 +7844,7 @@ async fn member_cannot_update_or_delete_team_order_they_did_not_create() {
         "member should not update another member's order"
     );
 
-    // U2_F tries to delete U1_F's order → 403
+    // U2 tries to delete U1's order → 403
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", u2_token)))
@@ -7540,14 +7856,35 @@ async fn member_cannot_update_or_delete_team_order_they_did_not_create() {
         "member should not delete another member's order"
     );
 
-    // Cleanup via admin
-    let admin_auth: Auth = login_admin(&app).await;
+    // Cleanup
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
-        .insert_header((
-            "Authorization",
-            format!("Bearer {}", admin_auth.access_token),
-        ))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, u1_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, u2_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", u1_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", u2_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     test::call_service(&app, req).await;
 }
@@ -7557,11 +7894,12 @@ async fn member_cannot_update_or_delete_team_order_they_did_not_create() {
 async fn admin_can_assign_admin_role_via_add_member() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    // Create a temp user
-    let test_email = "admin-assign-test@test.local";
+    // Create a temp user and a team
+    let uid = Uuid::now_v7();
+    let test_email = format!("admin-assign-{}@test.local", uid);
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
@@ -7577,34 +7915,8 @@ async fn admin_can_assign_admin_role_via_add_member() {
     let user: Value = test::read_body_json(resp).await;
     let user_id = user["user_id"].as_str().unwrap().to_string();
 
-    // Get Pixel Bakers team ID (avoid LoCC to prevent race with member-count test)
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/teams")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let teams = paginated_items(test::read_body_json(resp).await);
-    let team_id = teams
-        .iter()
-        .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
-        .unwrap()["team_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/roles")
-        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let roles = paginated_items(test::read_body_json(resp).await);
-    let admin_role_id = roles
-        .iter()
-        .find(|r| r["title"].as_str() == Some("Admin"))
-        .unwrap()["role_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let team_id = create_test_team(&app, admin_token, &format!("AdminAssign-{}", uid)).await;
+    let admin_role_id = find_role_id(&app, admin_token, "Admin").await;
 
     // Admin adds user as Admin role → should succeed
     let req = test::TestRequest::post()
@@ -7625,7 +7937,11 @@ async fn admin_can_assign_admin_role_via_add_member() {
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     test::call_service(&app, req).await;
-
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/users/{}", user_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
@@ -7642,7 +7958,7 @@ async fn admin_can_assign_admin_role_via_add_member() {
 async fn delete_user_by_email_invalid_format_returns_422() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
 
     let req = test::TestRequest::delete()
         .uri("/api/v1.0/users/email/not-an-email")
@@ -7657,7 +7973,7 @@ async fn delete_user_by_email_invalid_format_returns_422() {
 async fn get_team_users_for_nonexistent_team_returns_empty() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let fake_team_id = Uuid::now_v7();
 
     let req = test::TestRequest::get()
@@ -7686,7 +8002,7 @@ async fn get_team_users_for_nonexistent_team_returns_empty() {
 async fn revoke_expired_token_succeeds() {
     let state = test_state().await;
     let app = test_app!(state);
-    let auth: Auth = login_admin(&app).await;
+    let auth: Auth = register_admin(&app).await;
     let admin_token = &auth.access_token;
 
     // Get admin's user_id from the JWT
@@ -7698,7 +8014,7 @@ async fn revoke_expired_token_succeeds() {
     let users = paginated_items(test::read_body_json(resp).await);
     let admin_id = users
         .iter()
-        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .find(|u| u["email"].as_str() == Some(ADMIN_EMAIL))
         .unwrap()["user_id"]
         .as_str()
         .unwrap()
@@ -7746,12 +8062,13 @@ async fn revoke_expired_token_succeeds() {
 async fn update_user_email_invalidates_both_cache_keys() {
     let state = test_state().await;
     let app = test_app!(state);
-    let admin_auth: Auth = login_admin(&app).await;
+    let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
     // Create a temp user
-    let original_email = "cache-test-original@test.local";
-    let new_email = "cache-test-new@test.local";
+    let uid = Uuid::now_v7();
+    let original_email = format!("cache-orig-{}@test.local", uid);
+    let new_email = format!("cache-new-{}@test.local", uid);
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
@@ -7768,7 +8085,7 @@ async fn update_user_email_invalidates_both_cache_keys() {
     let user_id = user["user_id"].as_str().unwrap().to_string();
 
     // Login with original email to populate cache
-    let _user_auth: Auth = login_user(&app, original_email).await;
+    let _user_auth: Auth = login_as(&app, &original_email, "Very Secret").await;
 
     // Update the user's email
     let req = test::TestRequest::put()
@@ -7803,7 +8120,7 @@ async fn update_user_email_invalidates_both_cache_keys() {
     );
 
     // Login with new email should succeed
-    let _new_auth: Auth = login_user(&app, new_email).await;
+    let _new_auth: Auth = login_as(&app, &new_email, "Very Secret").await;
 
     // Cleanup
     let req = test::TestRequest::delete()

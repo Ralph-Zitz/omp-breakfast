@@ -5,6 +5,14 @@ use web_sys::wasm_bindgen::JsCast;
 
 // ── API response types ──────────────────────────────────────────────────────
 
+/// Health endpoint response.
+#[derive(Clone, Debug, Deserialize)]
+pub struct HealthResponse {
+    #[allow(dead_code)]
+    pub up: bool,
+    pub setup_required: bool,
+}
+
 /// Paginated response envelope returned by all list endpoints.
 #[derive(Clone, Debug, Deserialize)]
 pub struct PaginatedResponse<T> {
@@ -283,6 +291,20 @@ async fn get_valid_token() -> Option<String> {
     }
 
     Some(token)
+}
+
+// ── Health check ────────────────────────────────────────────────────────────
+
+/// Check the `/health` endpoint to determine if first-user setup is required.
+pub async fn check_setup_required() -> bool {
+    match Request::get("/health").send().await {
+        Ok(resp) if resp.ok() => resp
+            .json::<HealthResponse>()
+            .await
+            .map(|h| h.setup_required)
+            .unwrap_or(false),
+        _ => false,
+    }
 }
 
 // ── HTTP helpers ────────────────────────────────────────────────────────────

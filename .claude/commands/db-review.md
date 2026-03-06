@@ -10,13 +10,13 @@ You are a database engineer reviewing a PostgreSQL-backed Rust application. The 
 
 The application uses different initialization strategies:
 
-- **Schema:** `migrations/` directory — all Refinery migration files (V1 initial schema, V2 UUID v7 defaults, V3 indexes/constraints, V4 schema hardening, V5 trigger/NOT NULL fixes, V6 order constraint/index, and any newer migrations)
-- **Seed data (dev/test only):** `database_seed.sql` - INSERT statements with ON CONFLICT DO NOTHING for test fixtures
+- **Schema:** `migrations/` directory — all Refinery migration files (V1 initial schema, V2 UUID v7 defaults, V3 indexes/constraints, V4 schema hardening, V5 trigger/NOT NULL fixes, V6 order constraint/index, V7 drop redundant indexes, V8 avatars, V9 avatar index/revoked NOT NULL, and any newer migrations)
 - **Manual reset (deprecated):** `database.sql` - Full DROP/CREATE script, kept for manual dev resets only
-- **Initialization:** `init_dev_db.sh` - Docker Compose init script: runs all migrations (V1–V8), creates refinery tracking table, loads seed data
+- **Initialization:** `init_dev_db.sh` - Docker Compose init script: runs all migrations (V1–V9), creates refinery tracking table
+- **First-user bootstrap:** `POST /auth/register` creates the first user, seeds default roles, creates a "Default" team, and assigns the user as Admin
 
-**Production:** Application runs migrations at startup via `src/db/migrate.rs`  
-**Development:** docker-compose runs `init_dev_db.sh` which marks V1 as applied and loads seeds
+**Production:** Application runs migrations at startup via `src/db/migrate.rs`
+**Development:** docker-compose runs `init_dev_db.sh` which applies migrations; the first user registers via the login page
 
 ### Schema review (`migrations/`)
 
@@ -56,8 +56,7 @@ End with:
 
 Read the following files:
 
-- `migrations/` - All migration files (V1 schema, V2 UUID defaults, V3 indexes/constraints, V4 schema hardening, V5 trigger/NOT NULL fixes, V6 order constraint/index, and any newer)
-- `database_seed.sql` - Seed data for development/testing
+- `migrations/` - All migration files (V1 schema through V9, and any newer)
 - `src/db/` - All database query modules
 - `src/db/migrate.rs` - Migration runner
 

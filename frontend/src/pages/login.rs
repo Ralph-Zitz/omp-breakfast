@@ -1,9 +1,22 @@
-use crate::api::{AuthResponse, UserContext, build_user_context, session_storage};
+use crate::api::{
+    AuthResponse, UserContext, build_user_context, check_setup_required, session_storage,
+};
 use crate::app::Page;
 use base64::Engine;
 use gloo_net::http::Request;
 use leptos::prelude::*;
+use serde::Serialize;
 use web_sys::wasm_bindgen::JsCast;
+
+// ── Registration request body ───────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct RegisterRequest {
+    firstname: String,
+    lastname: String,
+    email: String,
+    password: String,
+}
 
 // ── Login page ──────────────────────────────────────────────────────────────
 
@@ -14,110 +27,284 @@ pub fn LoginPage() -> impl IntoView {
 
     let (username, set_username) = signal(String::new());
     let (password, set_password) = signal(String::new());
+    let (firstname, set_firstname) = signal(String::new());
+    let (lastname, set_lastname) = signal(String::new());
     let (error, set_error) = signal(Option::<String>::None);
     let (loading, set_loading) = signal(false);
+    let (setup_required, set_setup_required) = signal(false);
+    let (checking, set_checking) = signal(true);
+
+    // Check if first-user registration is needed
+    leptos::task::spawn_local_scoped(async move {
+        let required = check_setup_required().await;
+        set_setup_required.set(required);
+        set_checking.set(false);
+    });
+
+    // ── Shared post-auth handler ────────────────────────────────────────────
+    async fn finish_login(
+        auth: AuthResponse,
+        set_page: WriteSignal<Page>,
+        set_user: WriteSignal<Option<UserContext>>,
+        set_error: WriteSignal<Option<String>>,
+        set_loading: WriteSignal<bool>,
+    ) {
+        if let Some(storage) = session_storage() {
+            let _ = storage.set_item("access_token", &auth.access_token);
+            let _ = storage.set_item("refresh_token", &auth.refresh_token);
+        }
+        match build_user_context(&auth.access_token).await {
+            Some(ctx) => {
+                set_user.set(Some(ctx));
+                set_page.set(Page::Dashboard);
+            }
+            None => {
+                if let Some(storage) = session_storage() {
+                    let _ = storage.remove_item("access_token");
+                    let _ = storage.remove_item("refresh_token");
+                }
+                set_error.set(Some(
+                    "Login succeeded but your session could not be verified. Please try again."
+                        .into(),
+                ));
+            }
+        }
+        set_loading.set(false);
+    }
 
     let on_submit = move |ev: web_sys::SubmitEvent| {
         ev.prevent_default();
 
         let username_val = username.get();
         let password_val = password.get();
+        let is_setup = setup_required.get();
 
+        // Validate common fields
         if username_val.is_empty() || password_val.is_empty() {
-            set_error.set(Some("Please enter both username and password.".into()));
+            set_error.set(Some(if is_setup {
+                "Please fill in all fields.".into()
+            } else {
+                "Please enter both username and password.".into()
+            }));
             return;
+        }
+
+        // Validate registration-specific fields
+        if is_setup {
+            let first = firstname.get();
+            let last = lastname.get();
+            if first.is_empty() || last.is_empty() {
+                set_error.set(Some("Please fill in all fields.".into()));
+                return;
+            }
+            if first.len() < 2 || first.len() > 50 {
+                set_error.set(Some(
+                    "First name must be between 2 and 50 characters.".into(),
+                ));
+                return;
+            }
+            if last.len() < 2 || last.len() > 50 {
+                set_error.set(Some(
+                    "Last name must be between 2 and 50 characters.".into(),
+                ));
+                return;
+            }
+            if password_val.len() < 8 {
+                set_error.set(Some("Password must be at least 8 characters.".into()));
+                return;
+            }
         }
 
         set_error.set(None);
         set_loading.set(true);
 
-        leptos::task::spawn_local_scoped(async move {
-            let credentials = base64::engine::general_purpose::STANDARD
-                .encode(format!("{}:{}", username_val, password_val));
+        if is_setup {
+            let first = firstname.get();
+            let last = lastname.get();
+            leptos::task::spawn_local_scoped(async move {
+                let body = RegisterRequest {
+                    firstname: first,
+                    lastname: last,
+                    email: username_val.clone(),
+                    password: password_val.clone(),
+                };
 
-            let result = Request::post("/auth")
-                .header("Authorization", &format!("Basic {}", credentials))
-                .send()
-                .await;
+                let result = Request::post("/auth/register")
+                    .json(&body)
+                    .map(|r| r.send());
 
-            match result {
-                Ok(response) if response.ok() => match response.json::<AuthResponse>().await {
-                    Ok(auth) => {
-                        if let Some(storage) = session_storage() {
-                            let _ = storage.set_item("access_token", &auth.access_token);
-                            let _ = storage.set_item("refresh_token", &auth.refresh_token);
-                        }
+                match result {
+                    Ok(fut) => match fut.await {
+                        Ok(response) if response.status() == 201 => {
+                            // Registration succeeded — now login
+                            let credentials = base64::engine::general_purpose::STANDARD
+                                .encode(format!("{}:{}", username_val, password_val));
 
-                        match build_user_context(&auth.access_token).await {
-                            Some(ctx) => {
-                                set_user.set(Some(ctx));
-                                set_page.set(Page::Dashboard);
-                            }
-                            None => {
-                                if let Some(storage) = session_storage() {
-                                    let _ = storage.remove_item("access_token");
-                                    let _ = storage.remove_item("refresh_token");
+                            match Request::post("/auth")
+                                .header("Authorization", &format!("Basic {}", credentials))
+                                .send()
+                                .await
+                            {
+                                Ok(login_resp) if login_resp.ok() => {
+                                    match login_resp.json::<AuthResponse>().await {
+                                        Ok(auth) => {
+                                            finish_login(
+                                                auth,
+                                                set_page,
+                                                set_user,
+                                                set_error,
+                                                set_loading,
+                                            )
+                                            .await;
+                                        }
+                                        Err(_) => {
+                                            set_error.set(Some(
+                                                "Account created but login failed. Please sign in manually.".into(),
+                                            ));
+                                            set_setup_required.set(false);
+                                            set_loading.set(false);
+                                        }
+                                    }
                                 }
-                                set_error.set(Some(
-                                    "Login succeeded but your session could not be verified. Please try again.".into(),
-                                ));
+                                _ => {
+                                    set_error.set(Some(
+                                        "Account created but login failed. Please sign in manually."
+                                            .into(),
+                                    ));
+                                    set_setup_required.set(false);
+                                    set_loading.set(false);
+                                }
                             }
                         }
+                        Ok(response) => {
+                            let status = response.status();
+                            let msg = match status {
+                                400 => "Invalid registration data. Please check all fields.".to_string(),
+                                403 => "Registration is no longer available. An admin account already exists.".to_string(),
+                                422 => "Validation failed. Please check your input (email format, password length, name length).".to_string(),
+                                429 => "Too many requests. Please wait a moment and try again.".to_string(),
+                                _ => format!("Registration failed (HTTP {}). Please try again.", status),
+                            };
+                            if status == 403 {
+                                set_setup_required.set(false);
+                            }
+                            set_error.set(Some(msg));
+                            set_loading.set(false);
+                        }
+                        Err(_) => {
+                            set_error.set(Some(
+                                "Unable to reach the server. Please check your connection and try again.".into(),
+                            ));
+                            set_loading.set(false);
+                        }
+                    },
+                    Err(_) => {
+                        set_error.set(Some("Failed to build request.".into()));
+                        set_loading.set(false);
+                    }
+                }
+            });
+        } else {
+            leptos::task::spawn_local_scoped(async move {
+                let credentials = base64::engine::general_purpose::STANDARD
+                    .encode(format!("{}:{}", username_val, password_val));
+
+                let result = Request::post("/auth")
+                    .header("Authorization", &format!("Basic {}", credentials))
+                    .send()
+                    .await;
+
+                match result {
+                    Ok(response) if response.ok() => match response.json::<AuthResponse>().await {
+                        Ok(auth) => {
+                            finish_login(auth, set_page, set_user, set_error, set_loading).await;
+                        }
+                        Err(_) => {
+                            set_error
+                                .set(Some("Unexpected server response. Please try again.".into()));
+                            set_loading.set(false);
+                        }
+                    },
+                    Ok(response) => {
+                        let status = response.status();
+                        let msg = match status {
+                            401 => "Invalid username or password. Please check your credentials and try again.".to_string(),
+                            429 => "Too many login attempts. Please wait a few minutes and try again.".to_string(),
+                            500 => "An unexpected server error occurred. Please try again later.".to_string(),
+                            503 => "The service is temporarily unavailable. Please try again later.".to_string(),
+                            _ => format!("Login failed (HTTP {}). Please try again.", status),
+                        };
+                        set_error.set(Some(msg));
+                        set_loading.set(false);
                     }
                     Err(_) => {
-                        set_error.set(Some("Unexpected server response. Please try again.".into()));
+                        set_error.set(Some(
+                            "Unable to reach the server. Please check your connection and try again."
+                                .into(),
+                        ));
+                        set_loading.set(false);
                     }
-                },
-                Ok(response) => {
-                    let status = response.status();
-                    let msg = match status {
-                        401 => "Invalid username or password. Please check your credentials and try again.".to_string(),
-                        429 => "Too many login attempts. Please wait a few minutes and try again.".to_string(),
-                        500 => "An unexpected server error occurred. Please try again later.".to_string(),
-                        503 => "The service is temporarily unavailable. Please try again later.".to_string(),
-                        _ => format!("Login failed (HTTP {}). Please try again.", status),
-                    };
-                    set_error.set(Some(msg));
                 }
-                Err(_) => {
-                    set_error.set(Some(
-                        "Unable to reach the server. Please check your connection and try again."
-                            .into(),
-                    ));
-                }
-            }
-
-            set_loading.set(false);
-        });
+            });
+        }
     };
 
     view! {
         <div class="page login-page">
             <div class="card login-card">
-                <LoginHeader />
-                <LoginForm
-                    on_submit
-                    error
-                    username
-                    set_username
-                    password
-                    set_password
-                    loading
-                />
+                <LoginHeader setup_required />
+                {move || {
+                    if checking.get() {
+                        view! {
+                            <div class="login-checking">
+                                <span class="connect-progress-circle connect-progress-circle--indeterminate" style="display: inline-block; width: 24px; height: 24px;">
+                                    <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                        <circle cx="20" cy="20" r="16" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="75 25" stroke-linecap="round"/>
+                                    </svg>
+                                </span>
+                            </div>
+                        }.into_any()
+                    } else {
+                        view! {
+                            <LoginForm
+                                on_submit
+                                error
+                                username
+                                set_username
+                                password
+                                set_password
+                                loading
+                                setup_required
+                                firstname
+                                set_firstname
+                                lastname
+                                set_lastname
+                            />
+                        }.into_any()
+                    }
+                }}
             </div>
         </div>
     }
 }
 
 #[component]
-fn LoginHeader() -> impl IntoView {
+fn LoginHeader(setup_required: ReadSignal<bool>) -> impl IntoView {
     view! {
         <header class="card-header">
             <img src="lego-logo.svg" alt="LEGO" class="login-logo" />
             <h1 class="brand">
                 "OMP "<span class="brand-accent">"Breakfast"</span>
             </h1>
-            <p class="subtitle">"Sign in to continue"</p>
+            <p class="subtitle">
+                {move || {
+                    if setup_required.get() {
+                        "Create the first admin account"
+                    } else {
+                        "Sign in to continue"
+                    }
+                }}
+            </p>
             <div class="brand-bar"></div>
         </header>
     }
@@ -132,6 +319,11 @@ fn LoginForm(
     password: ReadSignal<String>,
     set_password: WriteSignal<String>,
     loading: ReadSignal<bool>,
+    setup_required: ReadSignal<bool>,
+    firstname: ReadSignal<String>,
+    set_firstname: WriteSignal<String>,
+    lastname: ReadSignal<String>,
+    set_lastname: WriteSignal<String>,
 ) -> impl IntoView {
     let form_ref = NodeRef::<leptos::html::Form>::new();
 
@@ -146,9 +338,31 @@ fn LoginForm(
     view! {
         <form node_ref=form_ref on:submit=on_submit on:keydown=on_keydown>
             <ErrorAlert error />
+            {move || {
+                if setup_required.get() {
+                    view! {
+                        <NameField
+                            id="firstname"
+                            label="First Name"
+                            placeholder="Enter your first name"
+                            value=firstname
+                            set_value=set_firstname
+                        />
+                        <NameField
+                            id="lastname"
+                            label="Last Name"
+                            placeholder="Enter your last name"
+                            value=lastname
+                            set_value=set_lastname
+                        />
+                    }.into_any()
+                } else {
+                    view! {}.into_any()
+                }
+            }}
             <UsernameField username set_username />
             <PasswordField password set_password />
-            <SubmitButton loading />
+            <SubmitButton loading setup_required />
         </form>
     }
 }
@@ -266,7 +480,53 @@ fn PasswordField(password: ReadSignal<String>, set_password: WriteSignal<String>
 }
 
 #[component]
-fn SubmitButton(loading: ReadSignal<bool>) -> impl IntoView {
+fn NameField(
+    id: &'static str,
+    label: &'static str,
+    placeholder: &'static str,
+    value: ReadSignal<String>,
+    set_value: WriteSignal<String>,
+) -> impl IntoView {
+    let (focused, set_focused) = signal(false);
+
+    let wrapper_class = move || {
+        if focused.get() {
+            "connect-text-field__input-wrapper connect-text-field__input-wrapper--is-focused"
+        } else {
+            "connect-text-field__input-wrapper"
+        }
+    };
+
+    view! {
+        <div class="connect-text-field">
+            <div class="connect-label">
+                <label class="connect-label__text" for=id>{label}</label>
+            </div>
+            <div class=wrapper_class>
+                <input
+                    class="connect-text-field__input"
+                    id=id
+                    type="text"
+                    maxlength=50
+                    placeholder=placeholder
+                    autocomplete="off"
+                    prop:value=move || value.get()
+                    on:input=move |ev| {
+                        let Some(target) = ev.target() else { return; };
+                        let target = target
+                            .unchecked_into::<web_sys::HtmlInputElement>();
+                        set_value.set(target.value());
+                    }
+                    on:focus=move |_| set_focused.set(true)
+                    on:blur=move |_| set_focused.set(false)
+                />
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn SubmitButton(loading: ReadSignal<bool>, setup_required: ReadSignal<bool>) -> impl IntoView {
     view! {
         <button
             type="submit"
@@ -278,17 +538,19 @@ fn SubmitButton(loading: ReadSignal<bool>) -> impl IntoView {
             <span class="connect-button__content">
                 {move || {
                     if loading.get() {
+                        let text = if setup_required.get() { "Creating account\u{2026}" } else { "Signing in\u{2026}" };
                         view! {
                             <span class="connect-button__icon">
                                 <svg class="connect-progress-circle connect-progress-circle--indeterminate" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="width: 20px; height: 20px;">
                                     <circle cx="20" cy="20" r="16" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="75 25" stroke-linecap="round"/>
                                 </svg>
                             </span>
-                            <span class="connect-button__label">"Signing in\u{2026}"</span>
+                            <span class="connect-button__label">{text}</span>
                         }.into_any()
                     } else {
+                        let text = if setup_required.get() { "Create Account" } else { "Sign In" };
                         view! {
-                            <span class="connect-button__label">"Sign In"</span>
+                            <span class="connect-button__label">{text}</span>
                         }.into_any()
                     }
                 }}

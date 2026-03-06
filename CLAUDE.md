@@ -53,14 +53,14 @@ src/
     healthcheck.rs – Minimal TLS healthcheck binary for distroless Docker containers
   config.rs        – Settings loaded from config/*.yml + env vars
   from_row.rs      – Custom FromRow trait and FromRowError enum (manual row mapping)
-  models.rs        – All data structs (User, Team, Role, Order, Claims, State, PaginationParams, PaginatedResponse)
+  models.rs        – All data structs (User, Team, Role, Order, Claims, State, StatusResponse, PaginationParams, PaginatedResponse)
   db/
     mod.rs         – Module declarations + re-exports of all public DB functions
     migrate.rs     – Refinery migration runner (embed_migrations! + run_migrations)
     health.rs      – Database health check (check_db)
-    users.rs       – User CRUD (get_users, get_user, get_user_by_email, get_password_hash, create_user, update_user, delete_user, delete_user_by_email)
+    users.rs       – User CRUD (get_users, get_user, get_user_by_email, get_password_hash, create_user, update_user, delete_user, delete_user_by_email, count_users)
     teams.rs       – Team CRUD + user-team queries (get_teams, get_team, create_team, update_team, delete_team, get_user_teams, get_team_users)
-    roles.rs       – Role CRUD (get_roles, get_role, create_role, update_role, delete_role)
+    roles.rs       – Role CRUD + bootstrap (get_roles, get_role, create_role, update_role, delete_role, seed_default_roles)
     items.rs       – Item CRUD (get_items, get_item, create_item, update_item, delete_item)
     orders.rs      – Team order CRUD (get_team_orders, get_team_order, create_team_order, update_team_order, delete_team_order, delete_team_orders)
     order_items.rs – Order item CRUD + closed-order check (is_team_order_closed, get_order_items, get_order_item, create_order_item, update_order_item, delete_order_item)
@@ -69,11 +69,11 @@ src/
     avatars.rs     – Avatar CRUD (get_avatars, get_avatar, insert_avatar, count_avatars, set_user_avatar)
   errors.rs        – Error enum with thiserror + ResponseError impl (maps to HTTP status codes)
   validate.rs      – Generic validation wrapper using validator crate
-  routes.rs        – All route definitions with auth middleware wiring
+  routes.rs        – All route definitions with auth middleware wiring (includes /auth/register for first-user registration)
   lib.rs           – Module declarations
   handlers/
-    mod.rs         – get_client() utility, health endpoint, RBAC helpers (require_admin, require_admin_or_team_admin, require_team_admin, require_team_member, require_order_owner_or_team_admin, require_self_or_admin_or_team_admin, guard_admin_role_assignment, guard_admin_demotion, guard_last_admin_membership, requesting_user_id)
-    users.rs       – User CRUD + auth handlers (RBAC: self or admin)
+    mod.rs         – get_client() utility, health endpoint (with setup_required flag), RBAC helpers (require_admin, require_admin_or_team_admin, require_team_admin, require_team_member, require_order_owner_or_team_admin, require_self_or_admin_or_team_admin, guard_admin_role_assignment, guard_admin_demotion, guard_last_admin_membership, requesting_user_id)
+    users.rs       – User CRUD + auth handlers (RBAC: self or admin) + register_first_user (first-user bootstrap)
     teams.rs       – Team CRUD + team order + member management handlers (team RBAC)
     roles.rs       – Role CRUD handlers (admin-gated CUD)
     items.rs       – Item CRUD handlers (breakfast items with prices, admin-gated CUD)
@@ -106,7 +106,7 @@ frontend/
       dashboard.rs – Dashboard page (SuccessBadge, UserCard)
       items.rs     – Item catalog page (browse, create, edit, delete items)
       loading.rs   – Loading page (session restoration spinner)
-      login.rs     – Login page (LoginHeader, LoginForm, ErrorAlert, fields)
+      login.rs     – Login/registration page (LoginHeader, LoginForm, ErrorAlert, NameField, fields; dual-mode: login or first-user registration)
       orders.rs    – Order management page (team orders, line items, totals)
       order_components.rs – Order sub-components (OrderDetail, CreateOrderDialog)
       profile.rs   – User profile page (view/edit profile, change password)
@@ -127,8 +127,7 @@ config/
   development.yml  – Dev overrides (local DB)
   docker-base.yml  – Sanitized base config for Docker images (all secret fields empty; supply via env vars)
   production.yml   – Prod overrides
-database.sql       – Full schema (deprecated — kept for manual dev resets only; seed data moved to database_seed.sql)
-database_seed.sql  – Seed data for development/testing
+database.sql       – Full schema (deprecated — kept for manual dev resets only)
 init_dev_db.sh     – Docker development database initialization script
 Dockerfile.breakfast – Multi-stage Docker build for the application
 Dockerfile.postgres  – Custom Postgres image with init scripts
@@ -167,8 +166,9 @@ tests/
 - JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation; on refresh, the old access token is revoked if provided in the request body (`RefreshRequest { access_token }`)
 - Token revocation uses a DB-backed `token_blacklist` table (persisted across restarts) with an in-memory `dashmap::DashMap` cache for fast-path lookups. A background task runs every hour to clean up expired entries from both the database (via `db::cleanup_expired_tokens`) and the in-memory map (via `DashMap::retain()`).
 - Auth cache uses TTL (5min) and max-size (1000 entries) with FIFO eviction
-- Avatar cache: `DashMap<Uuid, (Vec<u8>, String)>` maps avatar_id → (image bytes, content_type). Loaded at startup from the database; on first run, pre-resized minifig PNGs from `minifigs/` are seeded into the `avatars` table. Served with `Cache-Control: public, max-age=31536000, immutable`.
+- Avatar cache: `DashMap<Uuid, (Vec<u8>, String)>` maps avatar_id → (image bytes, content_type). Loaded at startup from the database; pre-resized minifig PNGs from `minifigs/` are seeded into the `avatars` table on first run. Served with `Cache-Control: public, max-age=31536000, immutable`.
 - Account lockout: after 5 failed login attempts within 15 minutes, the account is temporarily locked (HTTP 429). Attempts are tracked in-memory per email and cleared on successful login.
+- First-user registration: `POST /auth/register` is a one-time bootstrap endpoint. It accepts a `CreateUserEntry` payload (firstname, lastname, email, password), validates that no users exist (`count_users() == 0`, else 403), creates the user, seeds the four default roles via `seed_default_roles()`, creates a "Default" bootstrap team, and assigns the new user as Admin. Rate-limited like other auth endpoints. No JWT/auth middleware required.
 - RBAC: Four roles — Admin (global superuser), Team Admin (team-scoped), Member, Guest. JWT claims stored in request extensions.
 - GET RBAC policy: All GET endpoints require only JWT authentication — no team-scoped RBAC. Data visibility is open to all authenticated users (no multi-tenant isolation). Team-scoped RBAC is enforced only on mutations (POST/PUT/DELETE) within individual handlers.
 - Global Admin RBAC: `require_admin` helper checks if user holds "Admin" role in any team (via `db::is_admin`); gates team CUD, items CUD, roles CUD. Admin bypasses all team-scoped and self-only checks.
@@ -189,7 +189,7 @@ tests/
 - `get_user_teams` and `get_team_users` return an empty `[]` (200 OK) when no records are found, rather than a 404 error
 - 4xx errors log with `warn!()`, 5xx errors log with `error!()` for color-coded severity
 - Config is layered: default.yml → environment.yml → env vars (prefix: `BREAKFAST_`, separator: `_`)
-- Health endpoint (`/health`) returns HTTP 503 with `{"up": false}` when the database is unreachable, and HTTP 200 with `{"up": true}` when healthy
+- Health endpoint (`/health`) returns HTTP 503 with `{"up": false}` when the database is unreachable, and HTTP 200 with `{"up": true, "setup_required": <bool>}` when healthy. `setup_required` is `true` when no users exist in the database (first-user registration needed).
 - Backend serves `frontend/dist/` as static files via `actix-files`, with `index_file("index.html")`
 - Static files are served with a `Content-Security-Policy` header: `default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://assets.lego.com; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'`. The `'unsafe-inline'` directive in `script-src` is required because Trunk generates an inline `<script type="module">` to initialize the WASM module; removing it causes a white-screen failure in Chrome. The `font-src` directive includes `https://assets.lego.com` to allow loading the LEGO Typewell proprietary font from the LEGO CDN.
 - Security headers: `Strict-Transport-Security` (HSTS with `preload`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()` are set globally via `DefaultHeaders`
@@ -199,22 +199,23 @@ tests/
 
 The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via Trunk. It runs entirely in the browser (CSR mode). The codebase is organized into modules:
 
-- `api.rs` — HTTP client helpers, JWT decoding, `UserContext` builder, session storage utilities
+- `api.rs` — HTTP client helpers, JWT decoding, `UserContext` builder, session storage utilities, `HealthResponse` struct, `check_setup_required()` for first-user detection
 - `app.rs` — Root `App` component, `Page` enum, `AppShell` layout, session restore logic
 - `components/` — Reusable UI components (card, icons, modal, sidebar, theme toggle, toast)
 - `pages/` — Page-level components (one file per page)
 
 - **Component hierarchy:** `App` → `LoginPage` / `LoadingPage` / `AppShell`
   - `AppShell` uses: `MobileHeader`, `Sidebar`, `ToastRegion`, and routes to page components
-  - `LoginPage` uses: `LoginHeader`, `LoginForm`, `ErrorAlert`, `UsernameField`, `PasswordField`, `SubmitButton`
+  - `LoginPage` uses: `LoginHeader`, `LoginForm`, `ErrorAlert`, `NameField`, `UsernameField`, `PasswordField`, `SubmitButton` (dual-mode: login or first-user registration)
   - `LoadingPage`: Displayed during session restoration from stored JWT token
   - `DashboardPage` uses: `SuccessBadge`, `UserCard`
   - `TeamsPage`, `OrdersPage`, `ItemsPage`, `ProfilePage`, `AdminPage`, `RolesPage`: Full CRUD pages with forms, tables, modals, and toast notifications
 - **Page routing:** Manual via `Page` enum (`Loading` / `Login` / `Dashboard` / `Teams` / `Orders` / `Items` / `Profile` / `Admin` / `Roles`) + Leptos signals (no router crate). `AppShell` wraps all authenticated pages with sidebar navigation.
+- **First-user registration:** On load, the login page checks `GET /health` for `setup_required: true`. If true, shows a registration form (first name, last name, email, password) that `POST`s to `/auth/register` to create the first admin account, then auto-logs in. If false, shows the standard login form.
 - **Auth flow:** Basic Auth POST to `/auth` → receive JWT tokens → store `access_token` and `refresh_token` in `sessionStorage` → decode JWT payload for `user_id` → GET `/api/v1.0/users/{id}` for user details → render dashboard. On logout, both access and refresh tokens are revoked server-side via `POST /auth/revoke` (fire-and-forget).
 - **Session restore:** On startup, checks `sessionStorage` for existing `access_token` → shows `LoadingPage` → if token is expired, attempts refresh via `POST /auth/refresh` → validates token via user fetch → restores dashboard or falls back to login
 - **Token refresh:** Transparent refresh via `try_refresh_token()` — when the access token is expired or within 60 seconds of expiry, the frontend automatically calls `POST /auth/refresh` with the stored refresh token and the old access token in the request body (so the server can revoke it immediately), stores the new token pair, and retries the original request. If refresh fails, tokens are cleared and the user is redirected to login.
-- **Client-side validation:** Both username and password required before form submission
+- **Client-side validation:** Both username and password required before form submission; registration mode also validates first/last name (2–50 chars) and password length (≥ 8)
 - **Error display:** HTTP 401 → "Invalid username or password"; network failure → "Unable to reach the server"
 - **Dev proxying:** Trunk proxies `/auth`, `/api`, `/health` to `https://127.0.0.1:8080` (configured in `Trunk.toml`)
 

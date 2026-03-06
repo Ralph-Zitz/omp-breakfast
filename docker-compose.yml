@@ -41,7 +41,6 @@ services:
       - postgres
     entrypoint: ["bash", "/init_dev_db.sh"]
     volumes:
-      - ./database_seed.sql:/database_seed.sql
       - ./init_dev_db.sh:/init_dev_db.sh
       - ./migrations:/migrations
   postgres:

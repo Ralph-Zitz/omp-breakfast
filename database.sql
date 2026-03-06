@@ -4,8 +4,7 @@
    ⚠️  DEPRECATED for docker-compose workflows ⚠️
 
    docker-compose now uses:
-     - migrations/V1__initial_schema.sql through V7 (via Refinery migrations)
-     - database_seed.sql (for test data)
+     - migrations/V1__initial_schema.sql through V9 (via Refinery migrations)
 
    This file is kept ONLY for manual database resets during development:
      $ PGPASSWORD=actix psql -h localhost -p 5432 -U actix actix < database.sql
