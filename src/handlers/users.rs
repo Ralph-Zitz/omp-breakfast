@@ -70,6 +70,7 @@ pub async fn get_user(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
     responses(
         (status = 200, description = "Authentication successful", body = Auth),
         (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 429, description = "Too Many Requests - rate limited or account temporarily locked", body = ErrorResponse),
     ),
     security(("basic_auth" = [])),
 )]
@@ -94,6 +95,7 @@ pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Resp
     responses(
         (status = 200, description = "Token refreshed successfully", body = Auth),
         (status = 401, description = "Invalid or expired refresh token", body = ErrorResponse),
+        (status = 429, description = "Too Many Requests - rate limited", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
@@ -300,6 +302,7 @@ pub async fn delete_user(
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - can only delete own account, requires admin, or team admin of a shared team", body = ErrorResponse),
         (status = 404, description = "User not deleted", body = DeletedResponse),
+        (status = 422, description = "Validation error - invalid email format", body = ErrorResponse),
     ),
     params(
         ("email", description = "Email of the User")
@@ -361,7 +364,7 @@ pub async fn delete_user_by_email(
     responses(
         (status = 200, description = "User updated successfully", body = UserEntry),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
-        (status = 403, description = "Forbidden - can only update own account, requires admin, or team admin of a shared team", body = ErrorResponse),
+        (status = 403, description = "Forbidden - can only update own account (requires admin or team admin of a shared team), or current password is incorrect", body = ErrorResponse),
         (status = 404, description = "User not updated", body = ErrorResponse),
         (status = 422, description = "Validation error", body = ErrorResponse),
     ),

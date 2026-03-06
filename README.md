@@ -67,7 +67,7 @@ make test-unit     # or: cargo test
 make test-integration
 ```
 
-This automatically starts an isolated Postgres container on port 5433, runs all eight migrations (V1–V8), seeds test data, executes all integration tests, and tears down the container.
+This automatically starts an isolated Postgres container on port 5433, runs all nine migrations (V1–V9), seeds test data, executes all integration tests, and tears down the container.
 
 **Frontend WASM tests** (79 tests) — require Chrome:
 
@@ -107,10 +107,11 @@ The application uses [Refinery](https://github.com/rust-db/refinery) for schema 
 | V6 | Unique constraint on orders, covering index |
 | V7 | Drop redundant idx_users_email and idx_teams_name indexes |
 | V8 | Avatars table + users.avatar_id FK column |
+| V9 | Avatar FK index + token_blacklist.revoked_at NOT NULL |
 
 **Production:** The application runs pending migrations automatically at startup. No seed data is inserted.
 
-**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all eight migrations, creates the Refinery tracking table, and loads seed data from `database_seed.sql`. On first startup, the application's migration runner detects the migrations are already applied and continues normally.
+**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all nine migrations, creates the Refinery tracking table, and loads seed data from `database_seed.sql`. On first startup, the application's migration runner detects the migrations are already applied and continues normally.
 
 **Manual database reset (development only):**
 
@@ -133,7 +134,10 @@ docker compose up -d     # reinitialize from scratch
 | `make frontend-clean` | Remove `frontend/dist/` |
 | `make db-up` | Start test DB on port 5433 |
 | `make db-down` | Stop and remove test DB |
+| `make check` | Run `cargo check` |
+| `make fmt` | Run `cargo fmt` |
 | `make audit` | Run `cargo audit` (ignores RUSTSEC-2023-0071 — unfixable `rsa` transitive dep) |
+| `make audit-install` | Install `cargo-audit` |
 
 ## Configuration
 

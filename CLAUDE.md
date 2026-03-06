@@ -150,6 +150,7 @@ migrations/
   V6__order_constraint_and_index.sql – NOT NULL + unique constraint on orders, covering index
   V7__drop_redundant_indexes.sql – Drops redundant idx_users_email and idx_teams_name (duplicated by UNIQUE constraints)
   V8__avatars.sql – Avatars table + users.avatar_id FK column
+  V9__avatar_index_and_revoked_not_null.sql – Avatar FK index + token_blacklist.revoked_at NOT NULL
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
   db_tests.rs      – DB function integration tests (ignored without running DB)
@@ -187,7 +188,7 @@ tests/
 - List queries (`get_users`, `get_teams`, `get_roles`, `get_items`, `get_team_orders`, `get_order_items`) log a `warn!()` when a row fails to map instead of silently dropping it
 - `get_user_teams` and `get_team_users` return an empty `[]` (200 OK) when no records are found, rather than a 404 error
 - 4xx errors log with `warn!()`, 5xx errors log with `error!()` for color-coded severity
-- Config is layered: default.yml → environment.yml → env vars (separator: `_`)
+- Config is layered: default.yml → environment.yml → env vars (prefix: `BREAKFAST_`, separator: `_`)
 - Health endpoint (`/health`) returns HTTP 503 with `{"up": false}` when the database is unreachable, and HTTP 200 with `{"up": true}` when healthy
 - Backend serves `frontend/dist/` as static files via `actix-files`, with `index_file("index.html")`
 - Static files are served with a `Content-Security-Policy` header: `default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://assets.lego.com; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'`. The `'unsafe-inline'` directive in `script-src` is required because Trunk generates an inline `<script type="module">` to initialize the WASM module; removing it causes a white-screen failure in Chrome. The `font-src` directive includes `https://assets.lego.com` to allow loading the LEGO Typewell proprietary font from the LEGO CDN.

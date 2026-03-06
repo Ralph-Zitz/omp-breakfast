@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-06
+Last updated: 2026-03-08
 
 ## Critical Items
 
@@ -2823,8 +2823,99 @@ Last updated: 2026-03-06
   - Resolution: Removed redundant `COPY .git/` from Dockerfile; added `.git` to `.dockerignore` to exclude git history from Docker build context.
   - Source commands: `security-audit`
 
+### OpenAPI — Order-Item 403 Descriptions Updated
+
+- [x] **#326 — `create_order_item`, `update_order_item`, `delete_order_item` utoipa 403 descriptions now match actual RBAC guards**
+  - File: `src/handlers/orders.rs`
+  - Resolution: Updated 403 descriptions to include closed-order guard (`guard_open_order`) for all three mutation endpoints.
+  - Source commands: `openapi-sync`
+
+### Documentation — `db-review.md` `init_dev_db.sh` Description Fixed
+
+- [x] **#370 — `.claude/commands/db-review.md` description of `init_dev_db.sh` updated**
+  - File: `.claude/commands/db-review.md`
+  - Resolution: Description now accurately states the script runs all migrations (V1–V8), creates the refinery tracking table, and loads seed data.
+  - Source commands: `cross-ref-check`
+
+### Documentation — README Make Targets Table Completed
+
+- [x] **#371 — README now includes `check`, `fmt`, and `audit-install` Make targets**
+  - File: `README.md`
+  - Resolution: Added missing targets to the Make targets table.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md Env Var Prefix Documented
+
+- [x] **#372 — Config env var override prefix `BREAKFAST_` now documented in Key Conventions**
+  - File: `CLAUDE.md`
+  - Resolution: Updated config layering bullet to include `prefix: BREAKFAST_`.
+  - Source commands: `cross-ref-check`
+
+### Database — `token_blacklist.revoked_at` NOT NULL Enforced
+
+- [x] **#373 — `revoked_at` column now has NOT NULL constraint**
+  - Files: `migrations/V9__avatar_index_and_revoked_not_null.sql`, `database.sql`
+  - Resolution: V9 migration backfills NULLs and adds NOT NULL. `database.sql` updated to match.
+  - Source commands: `db-review`
+
+### OpenAPI — `delete_user_by_email` 422 Response Added
+
+- [x] **#384 — utoipa annotations now include 422 (validation error) response**
+  - File: `src/handlers/users.rs`
+  - Resolution: Added `(status = 422, description = "Validation error - invalid email format")` to annotations.
+  - Source commands: `openapi-sync`
+
+### OpenAPI — Auth Endpoints 429 Response Added
+
+- [x] **#385 — `auth_user` and `refresh_token` utoipa annotations now include 429 response**
+  - File: `src/handlers/users.rs`
+  - Resolution: Added `(status = 429, description = "Too Many Requests - rate limited or account temporarily locked")` to both endpoints.
+  - Source commands: `openapi-sync`
+
+### Dependencies — Unused `logs` Feature Removed from OpenTelemetry
+
+- [x] **#386 — `opentelemetry` and `opentelemetry_sdk` no longer compile unused `logs`/`metrics` modules**
+  - File: `Cargo.toml`
+  - Resolution: Disabled default features, enabled only `trace` (and `rt-tokio-current-thread` for SDK).
+  - Source commands: `dependency-check`
+
+### OpenAPI — `update_user` 403 Description Updated
+
+- [x] **#446 — 403 description now includes password verification failure case**
+  - File: `src/handlers/users.rs`
+  - Resolution: Updated 403 description to mention "or current password is incorrect".
+  - Source commands: `openapi-sync`
+
+### Frontend — `fetch_user_details` Now Logs Non-OK Responses
+
+- [x] **#510 — Non-OK responses (403, 500) now logged via `web_sys::console::warn_1`**
+  - File: `frontend/src/api.rs`
+  - Resolution: Added console warning with status code before returning `None`.
+  - Source commands: `review`
+
+### Database — `database.sql` Redundant Indexes Removed
+
+- [x] **#512 — `idx_users_email` and `idx_teams_name` removed from `database.sql`**
+  - File: `database.sql`
+  - Resolution: Removed the two CREATE INDEX statements that were dropped by V7 migration.
+  - Source commands: `db-review`
+
+### Database — `database.sql` Avatar Support Added
+
+- [x] **#517 — `database.sql` now includes avatars table and `users.avatar_id` FK column**
+  - File: `database.sql`
+  - Resolution: Added avatars table CREATE, ALTER TABLE for avatar_id FK, and index. Added DROP TABLE for avatars.
+  - Source commands: `db-review`
+
+### Database — `users.avatar_id` FK Index Added
+
+- [x] **#518 — Index on `users.avatar_id` FK created via V9 migration**
+  - Files: `migrations/V9__avatar_index_and_revoked_not_null.sql`, `database.sql`
+  - Resolution: V9 migration creates `idx_users_avatar`. `database.sql` also updated.
+  - Source commands: `db-review`
+
 ## Notes
 
-- Total resolved items: 395 (6 critical, 47 important, 114 minor, 125 informational, plus items previously counted under different categories)
+- Total resolved items: 408 (6 critical, 47 important, 114 minor, 138 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

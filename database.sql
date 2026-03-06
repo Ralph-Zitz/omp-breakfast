@@ -23,6 +23,8 @@ DROP TABLE IF EXISTS orders;
 
 DROP TABLE IF EXISTS teamorders;
 
+DROP TABLE IF EXISTS avatars;
+
 DROP TABLE IF EXISTS users;
 
 DROP TABLE IF EXISTS teams;
@@ -52,8 +54,6 @@ CREATE TABLE users (
 
 CREATE INDEX idx_users_first_last ON users (firstname, lastname);
 
-CREATE INDEX idx_users_email ON users (email);
-
 /* Teams table */
 CREATE TABLE teams (
   team_id uuid DEFAULT uuidv7 () PRIMARY KEY,
@@ -63,8 +63,6 @@ CREATE TABLE teams (
   changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (tname)
 );
-
-CREATE INDEX idx_teams_name ON teams (tname);
 
 /* Roles table */
 CREATE TABLE roles (
@@ -173,11 +171,25 @@ CREATE INDEX idx_orders_item ON orders (orders_item_id);
 /* Token blacklist table — persists revoked JWT tokens across server restarts */
 CREATE TABLE token_blacklist (
   jti uuid PRIMARY KEY,
-  revoked_at timestamptz DEFAULT CURRENT_TIMESTAMP,
+  revoked_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at timestamptz NOT NULL
 );
 
 CREATE INDEX idx_token_blacklist_expires ON token_blacklist (expires_at);
+
+/* Avatars table */
+CREATE TABLE avatars (
+  avatar_id uuid PRIMARY KEY,
+  name text NOT NULL,
+  data bytea NOT NULL,
+  content_type text NOT NULL DEFAULT 'image/png',
+  created timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (name)
+);
+
+ALTER TABLE users ADD COLUMN avatar_id uuid REFERENCES avatars (avatar_id) ON DELETE SET NULL;
+
+CREATE INDEX idx_users_avatar ON users (avatar_id);
 
 /* Create on-update/change function */
 CREATE OR REPLACE FUNCTION update_changed_timestamp ()

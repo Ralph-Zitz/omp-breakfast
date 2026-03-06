@@ -11,8 +11,9 @@
 # 6. Run the V6 migration SQL for order constraint and covering index
 # 7. Run the V7 migration SQL to drop redundant indexes
 # 8. Run the V8 migration SQL for avatars table and users.avatar_id
-# 9. Create the refinery_schema_history table (empty — no rows inserted)
-# 10. Load seed data for development/testing
+# 9. Run the V9 migration SQL for avatar index and revoked_at NOT NULL
+# 10. Create the refinery_schema_history table (empty — no rows inserted)
+# 11. Load seed data for development/testing
 #
 # On first start the application's refinery migration runner will detect
 # that V1–V7 are "unapplied", re-run them (safe — the SQL is fully
@@ -44,6 +45,9 @@ PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V7__drop_
 
 echo "==> Running V8 migration (avatars)..."
 PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V8__avatars.sql
+
+echo "==> Running V9 migration (avatar index + revoked_at NOT NULL)..."
+PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V9__avatar_index_and_revoked_not_null.sql
 
 echo "==> Creating refinery migration tracking table..."
 # The table is created here so the app's migration runner sees it on first

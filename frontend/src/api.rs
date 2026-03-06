@@ -379,6 +379,13 @@ pub async fn fetch_user_details(
     let url = format!("/api/v1.0/users/{}", payload.sub);
     let resp = authed_get(&url).await?;
     if !resp.ok() {
+        web_sys::console::warn_1(
+            &format!(
+                "fetch_user_details: non-OK response (status {})",
+                resp.status()
+            )
+            .into(),
+        );
         return None;
     }
     let user: UserEntry = resp.json().await.ok()?;

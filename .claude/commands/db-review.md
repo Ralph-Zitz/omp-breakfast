@@ -13,7 +13,7 @@ The application uses different initialization strategies:
 - **Schema:** `migrations/` directory — all Refinery migration files (V1 initial schema, V2 UUID v7 defaults, V3 indexes/constraints, V4 schema hardening, V5 trigger/NOT NULL fixes, V6 order constraint/index, and any newer migrations)
 - **Seed data (dev/test only):** `database_seed.sql` - INSERT statements with ON CONFLICT DO NOTHING for test fixtures
 - **Manual reset (deprecated):** `database.sql` - Full DROP/CREATE script, kept for manual dev resets only
-- **Initialization:** `init_dev_db.sh` - Sets up refinery tracking table and loads seed data for docker-compose
+- **Initialization:** `init_dev_db.sh` - Docker Compose init script: runs all migrations (V1–V8), creates refinery tracking table, loads seed data
 
 **Production:** Application runs migrations at startup via `src/db/migrate.rs`  
 **Development:** docker-compose runs `init_dev_db.sh` which marks V1 as applied and loads seeds

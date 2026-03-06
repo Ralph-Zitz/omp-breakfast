@@ -39,13 +39,6 @@ _No open minor items._
   - Files: `migrations/V1__initial_schema.sql`, `src/models.rs`
   - Source commands: `db-review`
 
-### OpenAPI — Order-Item Endpoint 403 Descriptions Are Imprecise
-
-- [ ] **#326 — `create_order_item`, `update_order_item`, `delete_order_item` utoipa 403 descriptions do not match actual RBAC guards**
-  - File: `src/handlers/orders.rs`
-  - Fix: Update 403 descriptions to match actual RBAC policy once #302/#303 are fixed.
-  - Source commands: `openapi-sync`
-
 ### Security — Account Lockout State In-Memory Only
 
 - [ ] **#339 — Login attempt tracking stored in `DashMap`, not shared across instances**
@@ -65,30 +58,6 @@ _No open minor items._
   - File: `frontend/src/api.rs`
   - Problem: Backend returns `numeric(10,2)` as a JSON number; frontend deserializes as `String` which works but loses type safety for display and arithmetic.
   - Source commands: `api-completeness`
-
-### Documentation — `db-review.md` Factually Incorrect Description of `init_dev_db.sh`
-
-- [ ] **#370 — `.claude/commands/db-review.md` describes `init_dev_db.sh` as initialising the development database; it actually initialises the Docker Postgres entrypoint**
-  - File: `.claude/commands/db-review.md`
-  - Source commands: `cross-ref-check`
-
-### Documentation — `README.md` Make Targets Table Missing 3 Targets
-
-- [ ] **#371 — README lists Make targets but omits `check`, `fmt`, and `audit-install`**
-  - File: `README.md`
-  - Source commands: `cross-ref-check`
-
-### Documentation — CLAUDE.md Key Conventions Omits `BREAKFAST_` Env Var Prefix
-
-- [ ] **#372 — Config env var override prefix `BREAKFAST_` (set in `config/default.yml`) not documented in Key Conventions**
-  - File: `CLAUDE.md`
-  - Source commands: `cross-ref-check`
-
-### Database — `token_blacklist.revoked_at` Lacks NOT NULL Constraint
-
-- [ ] **#373 — `revoked_at TIMESTAMPTZ DEFAULT NOW()` has no NOT NULL; a manual INSERT could omit it**
-  - File: `migrations/V1__initial_schema.sql`
-  - Source commands: `db-review`
 
 ### Database — `idx_teamorders_id_due` Index Unused by Any Query
 
@@ -123,25 +92,6 @@ _No open minor items._
   - File: `src/handlers/users.rs`
   - Problem: Low risk — endpoint is admin-gated. But the response difference is observable.
   - Source commands: `security-audit`
-
-### OpenAPI — `delete_user_by_email` Missing 422 Response
-
-- [ ] **#384 — utoipa annotations for `delete_user_by_email` omit the 422 (validation error) response**
-  - File: `src/handlers/users.rs`
-  - Source commands: `openapi-sync`
-
-### OpenAPI — Auth Endpoints Missing 429 Response
-
-- [ ] **#385 — `auth_user` and `refresh_token` utoipa annotations omit 429 (rate-limited / account locked) response**
-  - File: `src/handlers/users.rs`
-  - Source commands: `openapi-sync`
-
-### Dependencies — OpenTelemetry Stack Enables Unused `logs` and `metrics` Features
-
-- [ ] **#386 — `opentelemetry` and `opentelemetry_sdk` have `logs` feature enabled; no log exporter is configured**
-  - File: `Cargo.toml`
-  - Problem: Compiles unused modules. Removing `logs` feature reduces compile time slightly.
-  - Source commands: `dependency-check`
 
 ### Testing — `auth_user` Cache Miss Path Untested
 
@@ -210,12 +160,6 @@ _No open minor items._
   - File: `Cargo.toml`, `src/server.rs` (line ~13)
   - Source commands: `dependency-check`
 
-### OpenAPI — `update_user` 403 Description Omits Password Verification Failure
-
-- [ ] **#446 — A correct JWT with wrong `current_password` returns an undocumented 403 with different error message**
-  - File: `src/handlers/users.rs` (lines ~273–289)
-  - Source commands: `openapi-sync`
-
 ### Security — JWT HS256 With No Key Rotation Mechanism
 
 - [ ] **#447 — No `kid` claim or multi-key support; compromised secret requires full restart**
@@ -227,22 +171,6 @@ _No open minor items._
 - [ ] **#453 — `evict_oldest_if_full` iterates all 1000 entries to find oldest; fine at current scale**
   - File: `src/middleware/auth.rs`
   - Source commands: `review`
-
-### Frontend — `fetch_user_details` Silently Drops Non-401 Errors
-
-- [ ] **#510 — When `authed_get` returns a non-OK response (403, 500), `fetch_user_details` returns `None` with no logging**
-  - File: `frontend/src/api.rs` (`fetch_user_details` function)
-  - Problem: During session restore, a 403 or 500 silently drops the user to the login page with no explanation. Other page-level fetches at least log errors to the console.
-  - Fix: Add `web_sys::console::warn_1(...)` for non-OK responses before returning `None`.
-  - Source commands: `review`
-
-### Database — `database.sql` Not Updated for V7 Migration
-
-- [ ] **#512 — `database.sql` still creates `idx_users_email` and `idx_teams_name` indexes dropped by V7 migration**
-  - File: `database.sql` (lines ~56, ~69)
-  - Problem: V7 drops these indexes as redundant (duplicated by UNIQUE constraints). The deprecated dev-reset script still creates them, causing schema drift.
-  - Fix: Remove the two `CREATE INDEX` statements from `database.sql`.
-  - Source commands: `db-review`
 
 ### API Completeness — `OrderItemEntry` vs Backend `OrderEntry` Naming Inconsistency
 
@@ -267,22 +195,6 @@ _No open minor items._
 - [ ] **#460 — Frontend always fetches via list endpoints; `GET /teams/{id}`, `GET /items/{id}`, `GET /roles/{id}`, single order, single order item all unused**
   - File: `src/routes.rs`
   - Source commands: `api-completeness`
-
-### Database — `database.sql` Missing Avatar Support from V8
-
-- [ ] **#517 — `database.sql` lacks avatars table and `users.avatar_id` FK column added in V8 migration**
-  - File: `database.sql`
-  - Problem: Running `database.sql` for a manual dev reset would lose avatar functionality. Subsequent avatar operations would fail with FK errors or missing table.
-  - Fix: Add avatars table CREATE and ALTER TABLE for `users.avatar_id` to `database.sql`.
-  - Source commands: `db-review`
-
-### Database — Missing Index on `users.avatar_id` FK
-
-- [ ] **#518 — V8 adds FK from `users` to `avatars` but does not create an index on `users.avatar_id`**
-  - File: `migrations/V8__avatars.sql`
-  - Problem: FK constraint verification and JOIN performance may require sequential scan on `users` table when deleting avatars or querying user-avatar joins.
-  - Fix: Add `CREATE INDEX IF NOT EXISTS idx_users_avatar ON users (avatar_id);` in a future migration.
-  - Source commands: `db-review`
 
 ### Database — `items.price` CHECK Constraint Allows Zero
 
