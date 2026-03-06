@@ -114,10 +114,11 @@ fn UserCard(
         Some(aid) => {
             let src = format!("/api/v1.0/avatars/{}", aid);
             view! {
-                <img
-                    class="connect-avatar connect-avatar--x-large"
-                    src=src
-                    alt="User avatar"
+                <div
+                    class="connect-avatar connect-avatar--x-large connect-avatar--image"
+                    style=format!("background-image: url('{}');", src)
+                    role="img"
+                    aria-label="User avatar"
                 />
             }
             .into_any()

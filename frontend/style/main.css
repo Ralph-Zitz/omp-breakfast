@@ -671,7 +671,7 @@ form {
     display: table-cell;
     width: auto;
     white-space: nowrap;
-    text-align: right;
+    text-align: left;
     padding-right: var(--ds-layout-spacing-200, 16px);
     padding-left: var(--ds-layout-spacing-200, 16px);
 }
