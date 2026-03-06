@@ -25,11 +25,37 @@ use deadpool_postgres::Client;
 /// salt = "dHlwaW5nZXF1YWxpemVy"   (base-64 of "typingequalizer")
 /// ```
 static DUMMY_HASH: &str = "$argon2id$v=19$m=47104,t=1,p=1$dHlwaW5nZXF1YWxpemVy$DMz1OpMJ0dIVYIG89X9/fPQYLc2wEpNZSDKn+WkGw8w";
-use jsonwebtoken::{
-    Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode,
+use jwt_compact::{
+    AlgorithmExt, Claims as JwtClaims, Header as JwtHeader, TimeOptions, Token, UntrustedToken,
+    alg::{Hs256, Hs256Key},
 };
+use serde::{Deserialize, Serialize};
 use tracing::{error, instrument, warn};
 use uuid::Uuid;
+
+/// Custom claims embedded in JWTs (excludes exp/iat which jwt-compact handles).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JwtCustomClaims {
+    sub: Uuid,
+    jti: Uuid,
+    token_type: TokenType,
+    iss: String,
+    aud: String,
+}
+
+/// Convert a validated jwt-compact token back to our internal Claims struct.
+fn claims_from_token(token: &Token<JwtCustomClaims>) -> Claims {
+    let c = token.claims();
+    Claims {
+        sub: c.custom.sub,
+        exp: c.expiration.map(|dt| dt.timestamp()).unwrap_or(0),
+        iat: c.issued_at.map(|dt| dt.timestamp()).unwrap_or(0),
+        jti: c.custom.jti,
+        token_type: c.custom.token_type.clone(),
+        iss: c.custom.iss.clone(),
+        aud: c.custom.aud.clone(),
+    }
+}
 
 // Access token lifetime: 15 minutes
 const ACCESS_TOKEN_DURATION_MINUTES: i64 = 15;
@@ -64,21 +90,20 @@ fn generate_token(
     jwt_secret: &str,
     token_type: TokenType,
     duration: Duration,
-) -> Result<String, jsonwebtoken::errors::Error> {
-    let headers = Header::new(Algorithm::HS256);
-    let encoding_key = EncodingKey::from_secret(jwt_secret.as_ref());
-    let now = Utc::now();
-    let exp = now + duration;
-    let claims = Claims {
+) -> Result<String, Error> {
+    let key = Hs256Key::new(jwt_secret.as_bytes());
+    let time_options = TimeOptions::default();
+    let custom = JwtCustomClaims {
         sub: user_id,
-        exp: exp.timestamp(),
-        iat: now.timestamp(),
         jti: Uuid::now_v7(),
         token_type,
         iss: JWT_ISSUER.to_string(),
         aud: JWT_AUDIENCE.to_string(),
     };
-    encode(&headers, &claims, &encoding_key)
+    let claims = JwtClaims::new(custom).set_duration_and_issuance(&time_options, duration);
+    Hs256
+        .token(&JwtHeader::empty(), &claims, &key)
+        .map_err(|e| Error::Jwt(e.to_string()))
 }
 
 #[must_use = "token pair should be sent to the client or stored"]
@@ -89,15 +114,13 @@ pub fn generate_token_pair(user_id: Uuid, jwt_secret: &str) -> Result<Auth, Erro
         jwt_secret,
         TokenType::Access,
         Duration::try_minutes(ACCESS_TOKEN_DURATION_MINUTES).expect("valid duration"),
-    )
-    .map_err(Error::Jwt)?;
+    )?;
     let refresh_token = generate_token(
         user_id,
         jwt_secret,
         TokenType::Refresh,
         Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration"),
-    )
-    .map_err(Error::Jwt)?;
+    )?;
     Ok(Auth {
         access_token,
         refresh_token,
@@ -108,30 +131,48 @@ pub fn generate_token_pair(user_id: Uuid, jwt_secret: &str) -> Result<Auth, Erro
 
 #[must_use = "verified claims must be inspected or propagated"]
 #[instrument(skip(jwt_secret), level = "debug")]
-pub fn verify_jwt(token: &str, jwt_secret: &str) -> Result<TokenData<Claims>, Error> {
-    let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
-    let mut validation = Validation::new(Algorithm::HS256);
-    validation.set_issuer(&[JWT_ISSUER]);
-    validation.set_audience(&[JWT_AUDIENCE]);
-    let result = decode::<Claims>(token, &decoding_key, &validation)?;
-    Ok(result)
+pub fn verify_jwt(token: &str, jwt_secret: &str) -> Result<Claims, Error> {
+    let key = Hs256Key::new(jwt_secret.as_bytes());
+    let time_options = TimeOptions::default();
+    let untrusted = UntrustedToken::new(token).map_err(|e| Error::Jwt(e.to_string()))?;
+    let validated: Token<JwtCustomClaims> = Hs256
+        .validator(&key)
+        .validate(&untrusted)
+        .map_err(|e| Error::Jwt(e.to_string()))?;
+    validated
+        .claims()
+        .validate_expiration(&time_options)
+        .map_err(|e| Error::Jwt(e.to_string()))?;
+    let c = validated.claims();
+    if c.custom.iss != JWT_ISSUER {
+        return Err(Error::Jwt(format!("Invalid issuer: {}", c.custom.iss)));
+    }
+    if c.custom.aud != JWT_AUDIENCE {
+        return Err(Error::Jwt(format!("Invalid audience: {}", c.custom.aud)));
+    }
+    Ok(claims_from_token(&validated))
 }
 
 /// Verify a JWT for revocation purposes. Skips expiry validation so that
 /// legitimately-expired tokens can still be revoked (signature is still checked).
 #[must_use = "verified claims must be inspected or propagated"]
 #[instrument(skip(jwt_secret), level = "debug")]
-pub fn verify_jwt_for_revocation(
-    token: &str,
-    jwt_secret: &str,
-) -> Result<TokenData<Claims>, Error> {
-    let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
-    let mut validation = Validation::new(Algorithm::HS256);
-    validation.set_issuer(&[JWT_ISSUER]);
-    validation.set_audience(&[JWT_AUDIENCE]);
-    validation.validate_exp = false;
-    let result = decode::<Claims>(token, &decoding_key, &validation)?;
-    Ok(result)
+pub fn verify_jwt_for_revocation(token: &str, jwt_secret: &str) -> Result<Claims, Error> {
+    let key = Hs256Key::new(jwt_secret.as_bytes());
+    let untrusted = UntrustedToken::new(token).map_err(|e| Error::Jwt(e.to_string()))?;
+    let validated: Token<JwtCustomClaims> = Hs256
+        .validator(&key)
+        .validate(&untrusted)
+        .map_err(|e| Error::Jwt(e.to_string()))?;
+    // Intentionally skip expiration validation for revocation
+    let c = validated.claims();
+    if c.custom.iss != JWT_ISSUER {
+        return Err(Error::Jwt(format!("Invalid issuer: {}", c.custom.iss)));
+    }
+    if c.custom.aud != JWT_AUDIENCE {
+        return Err(Error::Jwt(format!("Invalid audience: {}", c.custom.aud)));
+    }
+    Ok(claims_from_token(&validated))
 }
 
 /// Revoke a token by persisting it to the DB blacklist and caching in memory.
@@ -248,8 +289,8 @@ pub async fn jwt_validator(
     let claims = verify_jwt(credentials.token(), jwt_secret);
     if let Ok(c) = claims {
         // Only accept access tokens for API endpoints
-        if c.claims.token_type != TokenType::Access {
-            warn!(token_type = ?c.claims.token_type, "Invalid token type, access token required");
+        if c.token_type != TokenType::Access {
+            warn!(token_type = ?c.token_type, "Invalid token type, access token required");
             return Err((
                 actix_web::error::ErrorUnauthorized(ErrorResponse {
                     error: "Invalid token type, access token required".to_string(),
@@ -258,9 +299,9 @@ pub async fn jwt_validator(
             ));
         }
         // Check if token has been revoked
-        match is_token_revoked(&client, state, &c.claims.jti.to_string()).await {
+        match is_token_revoked(&client, state, &c.jti.to_string()).await {
             Ok(true) => {
-                warn!(jti = %c.claims.jti, "Rejected revoked token");
+                warn!(jti = %c.jti, "Rejected revoked token");
                 return Err((
                     actix_web::error::ErrorUnauthorized(ErrorResponse {
                         error: "Token has been revoked".to_string(),
@@ -278,9 +319,9 @@ pub async fn jwt_validator(
             }
             Ok(false) => {}
         }
-        match get_user(&client, c.claims.sub).await {
+        match get_user(&client, c.sub).await {
             Ok(_) => {
-                req.extensions_mut().insert(c.claims);
+                req.extensions_mut().insert(c);
                 Ok(req)
             }
             Err(e) => Err((actix_web::error::ErrorUnauthorized(e), req)),
@@ -317,8 +358,8 @@ pub async fn refresh_validator(
     let claims = verify_jwt(credentials.token(), jwt_secret);
     if let Ok(c) = claims {
         // Only accept refresh tokens
-        if c.claims.token_type != TokenType::Refresh {
-            warn!(token_type = ?c.claims.token_type, "Invalid token type, refresh token required");
+        if c.token_type != TokenType::Refresh {
+            warn!(token_type = ?c.token_type, "Invalid token type, refresh token required");
             return Err((
                 actix_web::error::ErrorUnauthorized(ErrorResponse {
                     error: "Invalid token type, refresh token required".to_string(),
@@ -338,9 +379,9 @@ pub async fn refresh_validator(
                 ));
             }
         };
-        match is_token_revoked(&client, state, &c.claims.jti.to_string()).await {
+        match is_token_revoked(&client, state, &c.jti.to_string()).await {
             Ok(true) => {
-                warn!(jti = %c.claims.jti, "Rejected revoked refresh token");
+                warn!(jti = %c.jti, "Rejected revoked refresh token");
                 return Err((
                     actix_web::error::ErrorUnauthorized(ErrorResponse {
                         error: "Token has been revoked".to_string(),
@@ -360,7 +401,7 @@ pub async fn refresh_validator(
         }
         // Store claims in request extensions so the handler can access them
         // without re-decoding the JWT (same pattern as jwt_validator).
-        req.extensions_mut().insert(c.claims);
+        req.extensions_mut().insert(c);
         Ok(req)
     } else {
         warn!("Invalid or expired refresh token");
@@ -535,7 +576,6 @@ pub async fn basic_validator(
 mod tests {
     use super::*;
     use actix_web::web::Data;
-    use jsonwebtoken::EncodingKey;
 
     const TEST_SECRET: &str = "test-jwt-secret";
 
@@ -589,13 +629,13 @@ mod tests {
 
         let token_data = verify_jwt(&auth.access_token, TEST_SECRET).unwrap();
 
-        assert_eq!(token_data.claims.sub, user_id);
-        assert_eq!(token_data.claims.token_type, TokenType::Access);
-        assert_eq!(token_data.claims.iss, JWT_ISSUER);
-        assert_eq!(token_data.claims.aud, JWT_AUDIENCE);
+        assert_eq!(token_data.sub, user_id);
+        assert_eq!(token_data.token_type, TokenType::Access);
+        assert_eq!(token_data.iss, JWT_ISSUER);
+        assert_eq!(token_data.aud, JWT_AUDIENCE);
         let expected_exp = Utc::now().timestamp() + ACCESS_TOKEN_DURATION_MINUTES * 60;
         assert!(
-            (token_data.claims.exp - expected_exp).abs() < 60,
+            (token_data.exp - expected_exp).abs() < 60,
             "access token exp should be ~15 min from now"
         );
     }
@@ -607,11 +647,11 @@ mod tests {
 
         let token_data = verify_jwt(&auth.refresh_token, TEST_SECRET).unwrap();
 
-        assert_eq!(token_data.claims.sub, user_id);
-        assert_eq!(token_data.claims.token_type, TokenType::Refresh);
+        assert_eq!(token_data.sub, user_id);
+        assert_eq!(token_data.token_type, TokenType::Refresh);
         let expected_exp = Utc::now().timestamp() + REFRESH_TOKEN_DURATION_DAYS * 86400;
         assert!(
-            (token_data.claims.exp - expected_exp).abs() < 60,
+            (token_data.exp - expected_exp).abs() < 60,
             "refresh token exp should be ~7 days from now"
         );
     }
@@ -623,7 +663,7 @@ mod tests {
 
         let result = verify_jwt(&auth.access_token, TEST_SECRET);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().claims.sub, user_id);
+        assert_eq!(result.unwrap().sub, user_id);
     }
 
     #[actix_web::test]
@@ -639,17 +679,18 @@ mod tests {
     async fn verify_jwt_fails_with_expired_token() {
         let user_id = Uuid::now_v7();
         let token = {
-            let encoding_key = EncodingKey::from_secret(TEST_SECRET.as_ref());
-            let claims = Claims {
+            let key = Hs256Key::new(TEST_SECRET.as_bytes());
+            let custom = JwtCustomClaims {
                 sub: user_id,
-                exp: (Utc::now() - Duration::try_hours(1).unwrap()).timestamp(),
-                iat: (Utc::now() - Duration::try_hours(2).unwrap()).timestamp(),
                 jti: Uuid::now_v7(),
                 token_type: TokenType::Access,
                 iss: JWT_ISSUER.to_string(),
                 aud: JWT_AUDIENCE.to_string(),
             };
-            encode(&Header::default(), &claims, &encoding_key).unwrap()
+            let mut claims = JwtClaims::new(custom);
+            claims.expiration = Some(Utc::now() - Duration::try_hours(1).unwrap());
+            claims.issued_at = Some(Utc::now() - Duration::try_hours(2).unwrap());
+            Hs256.token(&JwtHeader::empty(), &claims, &key).unwrap()
         };
 
         let result = verify_jwt(&token, TEST_SECRET);
@@ -684,7 +725,7 @@ mod tests {
             &auth2.refresh_token,
         ]
         .iter()
-        .map(|t| verify_jwt(t, TEST_SECRET).unwrap().claims.jti)
+        .map(|t| verify_jwt(t, TEST_SECRET).unwrap().jti)
         .collect();
 
         for i in 0..jtis.len() {
@@ -927,17 +968,18 @@ mod tests {
         let user_id = Uuid::now_v7();
         // Create a token that expired 1 hour ago
         let token = {
-            let encoding_key = EncodingKey::from_secret(TEST_SECRET.as_ref());
-            let claims = Claims {
+            let key = Hs256Key::new(TEST_SECRET.as_bytes());
+            let custom = JwtCustomClaims {
                 sub: user_id,
-                exp: (Utc::now() - Duration::try_hours(1).unwrap()).timestamp(),
-                iat: (Utc::now() - Duration::try_hours(2).unwrap()).timestamp(),
                 jti: Uuid::now_v7(),
                 token_type: TokenType::Access,
                 iss: JWT_ISSUER.to_string(),
                 aud: JWT_AUDIENCE.to_string(),
             };
-            encode(&Header::default(), &claims, &encoding_key).unwrap()
+            let mut claims = JwtClaims::new(custom);
+            claims.expiration = Some(Utc::now() - Duration::try_hours(1).unwrap());
+            claims.issued_at = Some(Utc::now() - Duration::try_hours(2).unwrap());
+            Hs256.token(&JwtHeader::empty(), &claims, &key).unwrap()
         };
 
         // verify_jwt should reject it (expired)
@@ -952,7 +994,7 @@ mod tests {
             result.is_ok(),
             "verify_jwt_for_revocation should accept expired tokens"
         );
-        assert_eq!(result.unwrap().claims.sub, user_id);
+        assert_eq!(result.unwrap().sub, user_id);
     }
 
     #[actix_web::test]

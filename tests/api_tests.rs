@@ -13,10 +13,24 @@ use actix_web::{App, test, web::Data};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use breakfast::{models::*, routes::routes};
 use chrono::Utc;
-use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+use jwt_compact::{
+    AlgorithmExt, Claims as JwtClaims, Header as JwtHeader,
+    alg::{Hs256, Hs256Key},
+};
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::net::SocketAddr;
 use uuid::Uuid;
+
+/// Custom claims for forging test tokens (mirrors the server's internal struct).
+#[derive(Debug, Serialize, serde::Deserialize)]
+struct ForgeClaims {
+    sub: Uuid,
+    jti: Uuid,
+    token_type: TokenType,
+    iss: String,
+    aud: String,
+}
 
 /// Fake peer address for test requests (required by actix-governor's PeerIpKeyExtractor).
 const PEER: SocketAddr = SocketAddr::new(
@@ -7693,19 +7707,20 @@ async fn revoke_expired_token_succeeds() {
 
     // Forge an expired JWT signed with the correct secret
     let now = Utc::now();
-    let expired_claims = Claims {
+    let custom = ForgeClaims {
         sub: admin_uuid,
-        exp: (now - chrono::Duration::try_hours(1).unwrap()).timestamp(),
-        iat: (now - chrono::Duration::try_hours(2).unwrap()).timestamp(),
         jti: Uuid::now_v7(),
         token_type: TokenType::Access,
         iss: "omp-breakfast".to_string(),
         aud: "omp-breakfast".to_string(),
     };
-    let headers = Header::new(Algorithm::HS256);
-    let encoding_key = EncodingKey::from_secret(b"Very Secret");
-    let expired_token =
-        encode(&headers, &expired_claims, &encoding_key).expect("encoding should succeed");
+    let mut jwt_claims = JwtClaims::new(custom);
+    jwt_claims.expiration = Some(now - chrono::Duration::try_hours(1).unwrap());
+    jwt_claims.issued_at = Some(now - chrono::Duration::try_hours(2).unwrap());
+    let key = Hs256Key::new(b"Very Secret");
+    let expired_token = Hs256
+        .token(&JwtHeader::empty(), &jwt_claims, &key)
+        .expect("encoding should succeed");
 
     // Submit the expired token for revocation (using a valid token as bearer)
     let req = test::TestRequest::post()

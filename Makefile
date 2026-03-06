@@ -80,12 +80,12 @@ audit-install:
 
 audit:
 	@echo "Running security audit on dependencies..."
-	cargo audit --ignore RUSTSEC-2023-0071
+	cargo audit
 
 audit-if-available:
 	@if command -v cargo-audit >/dev/null 2>&1; then \
 		echo "Running security audit on dependencies..."; \
-		cargo audit --ignore RUSTSEC-2023-0071; \
+		cargo audit; \
 	else \
 		echo "SKIP: cargo-audit not installed (run 'make audit-install' to enable)"; \
 	fi

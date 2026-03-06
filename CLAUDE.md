@@ -10,7 +10,7 @@ A breakfast ordering application for teams, built in Rust with an actix-web REST
 - **Web framework:** actix-web 4 (with rustls TLS) + `actix-cors` for CORS policy
 - **Database:** PostgreSQL via `deadpool-postgres` connection pool + `tokio-postgres`
 - **ORM/mapping:** Custom `FromRow` trait in `src/from_row.rs` (manual row mapping, no external dependency); DB functions organized in `src/db/` module directory by domain
-- **Auth:** JWT (access + refresh tokens via `jsonwebtoken`) + Basic Auth (Argon2 password hashing) + RBAC (Admin/Team Admin/Member/Guest roles, admin bypass); in-memory caching via `dashmap` (concurrent HashMap)
+- **Auth:** JWT (access + refresh tokens via `jwt-compact`) + Basic Auth (Argon2 password hashing) + RBAC (Admin/Team Admin/Member/Guest roles, admin bypass); in-memory caching via `dashmap` (concurrent HashMap)
 - **Rate limiting:** `actix-governor` on auth endpoints (6s per request, burst size 10)
 - **Validation:** `validator` crate with derive macros
 - **Error handling:** `thiserror` for typed error enum, `color-eyre` for colorized panic/error reports
@@ -421,7 +421,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### All Tests
 
 - Run everything: `make test-all` (backend unit + integration + frontend WASM + dependency audit)
-- Dependency audit: `make audit` runs `cargo audit --ignore RUSTSEC-2023-0071`; `make test-all` includes it automatically via `audit-if-available`. The ignore flag acknowledges the unfixable `rsa` timing side-channel pulled transitively by `jsonwebtoken` (see assessment finding #132). **Re-evaluate periodically** — remove the ignore flag once the `rsa` crate or `jsonwebtoken` ships a fix.
+- Dependency audit: `make audit` runs `cargo audit`; `make test-all` includes it automatically via `audit-if-available`.
 
 ## Required Test Runs
 

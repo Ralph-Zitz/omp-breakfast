@@ -11,8 +11,8 @@ use utoipa::ToSchema;
 pub enum Error {
     #[error(transparent)]
     Eyre(#[from] EError),
-    #[error(transparent)]
-    Jwt(#[from] jsonwebtoken::errors::Error),
+    #[error("{0}")]
+    Jwt(String),
     #[error(transparent)]
     ActixAuth(#[from] AError),
     #[error(transparent)]
@@ -298,14 +298,7 @@ mod tests {
 
     #[test]
     fn jwt_error_returns_500() {
-        // Create a JWT error by trying to decode an invalid token
-        let jwt_err = jsonwebtoken::decode::<serde_json::Value>(
-            "invalid",
-            &jsonwebtoken::DecodingKey::from_secret(b"secret"),
-            &jsonwebtoken::Validation::default(),
-        )
-        .unwrap_err();
-        let err = Error::Jwt(jwt_err);
+        let err = Error::Jwt("invalid token".to_string());
         let resp = err.error_response();
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }

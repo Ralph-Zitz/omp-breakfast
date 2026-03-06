@@ -14,15 +14,7 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Critical Items
 
-### Dependencies — `jsonwebtoken` Pulls Vulnerable and Unnecessary Crypto Crates
-
-- [ ] **#132 — `rust_crypto` feature enables ~15 unused crates including vulnerable `rsa` (RUSTSEC-2023-0071); granular `["hmac", "sha2"]` features are available but do not work**
-  - File: `Cargo.toml` (jsonwebtoken dependency)
-  - Problem: `features = ["rust_crypto"]` pulls `rsa`, `ed25519-dalek`, `p256`, `p384`, `rand` — none of which are used (only HS256). The `rsa` crate has an unfixable timing side-channel advisory.
-  - Attempted fix: Changed `features = ["rust_crypto"]` to `features = ["hmac", "sha2"]`. This compiled but all JWT tests failed at runtime: jsonwebtoken 10.x requires either `rust_crypto` or `aws_lc_rs` to auto-install a `CryptoProvider`. The granular `hmac`/`sha2` features do not register a provider, causing `"Could not automatically determine the process-level CryptoProvider"` errors. Manual `CryptoProvider::install_default()` calls would be needed, which is invasive.
-  - Status: **Blocked on upstream.** Requires `jsonwebtoken` to either support granular features with auto-provider registration, or to split the `rust_crypto` feature so HS-only usage doesn't pull RSA/EC crates. Reverted to `features = ["rust_crypto"]`.
-  - Mitigation: `cargo audit --ignore RUSTSEC-2023-0071` is used in the Makefile, CI, and assessment commands to acknowledge the advisory while keeping audit runs clean for other vulnerabilities. **This ignore must be re-evaluated periodically** — check whether a new `rsa` release resolves RUSTSEC-2023-0071 or whether `jsonwebtoken` adds HS-only feature support.
-  - Source commands: `dependency-check`
+_No open critical items._
 
 ## Important Items
 
@@ -314,9 +306,9 @@ See that file for the full history of resolved findings.
 ## Notes
 
 - **Test counts verified (2026-03-06):** 234 unit (212 lib + 22 healthcheck), 145 API integration (ignored), 104 DB integration (ignored), 79 WASM.
-- **`cargo audit` (2026-03-06):** Exit code 0. No new vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) remains intentionally ignored — **blocked on upstream**, see #132.
+- **`cargo audit` (2026-03-06):** Exit code 0. No vulnerabilities. RUSTSEC-2023-0071 resolved — `jsonwebtoken` replaced with `jwt-compact 0.8.0`, `--ignore` flag removed from Makefile.
 - **CONNECT Design System (2026-03-06):** `git pull` fetched new commits (3.0.0-RC1, 2.9.0, etc.). CSS changes to checkbox-group, dropdown, inline-alert, menu, radio-group, tag, text-field, utility-button — **none used by our frontend**. Token additions (opacity variants) are non-breaking. SCSS removal has no impact (we only use CSS imports). **No migration required.**
-- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 12 informational (down from 22 — 10 security-audit findings resolved).
+- Open items summary: 0 critical, 0 important, 0 minor, 12 informational.
 - 8 new findings in this assessment: #513–#520. 0 regressions found. 4 items resolved this session (#513, #514, #515, #516). 26 test-gap items resolved in session of 2026-03-07. 10 security-audit items resolved in session of 2026-03-08 (#336, #337, #338, #340, #379, #380, #448, #449, #450, #451).
 - Highest finding number: #520.
 

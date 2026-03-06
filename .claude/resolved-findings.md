@@ -2,9 +2,17 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-08
+Last updated: 2026-03-06
 
 ## Critical Items
+
+### Dependencies — Vulnerable `rsa` Crate via `jsonwebtoken`
+
+- [x] **#132 — Migrated from `jsonwebtoken` to `jwt-compact 0.8.0`; vulnerable `rsa` crate eliminated**
+  - File: `Cargo.toml`, `src/middleware/auth.rs`, `src/errors.rs`, `src/handlers/users.rs`, `tests/api_tests.rs`, `Makefile`
+  - Problem: `jsonwebtoken`'s `rust_crypto` feature pulled ~15 unused crates including `rsa` (RUSTSEC-2023-0071, unfixable timing side-channel). Granular feature flags didn't work (runtime `CryptoProvider` errors).
+  - Resolution: Replaced `jsonwebtoken` with `jwt-compact 0.8.0` (pure Rust, HS256 via `sha2`, no RSA/EC dependencies). Removed `--ignore RUSTSEC-2023-0071` from Makefile. `cargo audit` now passes clean.
+  - Source commands: `dependency-check`
 
 ### RBAC — Privilege Escalation via Team Admin Role Assignment
 

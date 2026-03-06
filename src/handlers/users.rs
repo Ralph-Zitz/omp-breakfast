@@ -141,11 +141,11 @@ pub async fn refresh_token(
         access_token: Some(old_access),
     })) = body
         && let Ok(td) = verify_jwt_for_revocation(&old_access, &state.jwtsecret)
-        && td.claims.sub == claims.sub
-        && td.claims.token_type == TokenType::Access
+        && td.sub == claims.sub
+        && td.token_type == TokenType::Access
     {
-        let at_exp = DateTime::<Utc>::from_timestamp(td.claims.exp, 0).unwrap_or_else(Utc::now);
-        let _ = revoke_token(&client, &state, &td.claims.jti.to_string(), at_exp).await;
+        let at_exp = DateTime::<Utc>::from_timestamp(td.exp, 0).unwrap_or_else(Utc::now);
+        let _ = revoke_token(&client, &state, &td.jti.to_string(), at_exp).await;
     }
 
     // Issue a new token pair
@@ -192,24 +192,17 @@ pub async fn revoke_user_token(
 
     let client: Client = get_client(&state.pool).await?;
 
-    if token_data.claims.sub != requester_id && !db::is_admin(&client, requester_id).await? {
+    if token_data.sub != requester_id && !db::is_admin(&client, requester_id).await? {
         return Err(Error::Forbidden(
             "Cannot revoke another user's token".to_string(),
         ));
     }
 
     // Revoke by jti — persist to DB
-    let expires_at =
-        DateTime::<Utc>::from_timestamp(token_data.claims.exp, 0).unwrap_or_else(|| {
-            Utc::now() + Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration")
-        });
-    revoke_token(
-        &client,
-        &state,
-        &token_data.claims.jti.to_string(),
-        expires_at,
-    )
-    .await?;
+    let expires_at = DateTime::<Utc>::from_timestamp(token_data.exp, 0).unwrap_or_else(|| {
+        Utc::now() + Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration")
+    });
+    revoke_token(&client, &state, &token_data.jti.to_string(), expires_at).await?;
 
     Ok(HttpResponse::Ok().json(RevokedResponse { revoked: true }))
 }
