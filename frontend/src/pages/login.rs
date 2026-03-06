@@ -133,8 +133,18 @@ fn LoginForm(
     set_password: WriteSignal<String>,
     loading: ReadSignal<bool>,
 ) -> impl IntoView {
+    let form_ref = NodeRef::<leptos::html::Form>::new();
+
+    let on_keydown = move |ev: web_sys::KeyboardEvent| {
+        if ev.key() == "Enter" {
+            if let Some(form) = form_ref.get() {
+                let _ = form.request_submit();
+            }
+        }
+    };
+
     view! {
-        <form on:submit=on_submit>
+        <form node_ref=form_ref on:submit=on_submit on:keydown=on_keydown>
             <ErrorAlert error />
             <UsernameField username set_username />
             <PasswordField password set_password />
