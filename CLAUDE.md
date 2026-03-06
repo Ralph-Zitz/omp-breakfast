@@ -328,7 +328,7 @@ git clone git@github.com:LEGO/connect-design-system.git connect-design-system
 
 When asked to **assess the project** (or "project assessment"), perform the following:
 
-1. Run every command defined in `.claude/commands/` against the current codebase:
+1. Run every command defined in `.claude/commands/` against the current codebase. **Each command must be executed in a dedicated subagent** (one subagent per command). The subagent prompt must include the full contents of the command file and instruct the subagent to perform the analysis and return its findings. **Parallelise subagent invocations where possible** — since each command is independent and read-only, launch as many concurrently as the tooling allows. Commands:
    - `api-completeness` — compare DB schema vs implemented endpoints and frontend consumption
    - `cross-ref-check` — validate CLAUDE.md, commands, and migration references against disk
    - `db-review` — review schema design, indexing, constraints, and query patterns
