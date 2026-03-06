@@ -2962,3 +2962,28 @@ async fn create_role_with_duplicate_title_fails() {
         .await
         .expect("cleanup: delete_role should succeed");
 }
+
+// ===========================================================================
+// check_team_access for Team Admin role (#393)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn check_team_access_team_admin() {
+    let client = test_client().await;
+    // U4_F is Team Admin in "League of Cool Coders"
+    let user_id = seed_user_id(&client, "U4_F.U4_L@LEGO.com").await;
+    let team_id = seed_team_id(&client, "League of Cool Coders").await;
+    let (is_admin, team_role) = db::check_team_access(&client, team_id, user_id)
+        .await
+        .expect("check_team_access should succeed");
+    assert!(
+        !is_admin,
+        "Team Admin should NOT be recognized as global admin"
+    );
+    assert_eq!(
+        team_role,
+        Some("Team Admin".to_string()),
+        "U4_F should have Team Admin role in League of Cool Coders"
+    );
+}

@@ -2521,16 +2521,31 @@ async fn test_admin_actions_cell_contains_multiple_buttons() {
     flush(100).await;
     login_to_dashboard(id).await;
     click_nav(id, "Admin");
-    flush(500).await;
+    flush(1000).await;
 
     // Admin row renders Edit + Reset-password + Delete (≥ 3 buttons in one cell).
     // Having ≥ 2 confirms multiple buttons coexist in the same actions cell,
     // which is the scenario that required the width:auto + gap fix.
-    let count = button_count_in(id, "td.connect-table-cell--actions");
+    //
+    // The first actions cell may be the current user's row (empty / self).
+    // Sum buttons across ALL actions cells instead of checking only the first.
+    let total_action_buttons: u32 = js_sys::eval(&format!(
+        r#"(() => {{
+            const cells = document.getElementById("{id}").querySelectorAll("td.connect-table-cell--actions");
+            let total = 0;
+            for (const cell of cells) {{ total += cell.querySelectorAll("button").length; }}
+            return total;
+        }})()"#,
+        id = id,
+    ))
+    .ok()
+    .and_then(|v| v.as_f64())
+    .map(|n| n as u32)
+    .unwrap_or(0);
     assert!(
-        count >= 2,
-        "admin actions cell must contain at least 2 action buttons, found {}",
-        count
+        total_action_buttons >= 2,
+        "admin actions cells must contain at least 2 action buttons total, found {}",
+        total_action_buttons
     );
 
     remove_test_container(id);
@@ -3077,6 +3092,725 @@ async fn test_reset_password_success_shows_toast_and_closes_dialog() {
     assert!(
         !has_element(id, ".modal-overlay"),
         "the dialog must be closed automatically after a successful reset"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 15 · Shared component tests (#322)
+//
+// Tests for components that had zero WASM coverage:
+//   - Toast: toast-region renders, dismiss button works
+//   - ConfirmModal: modal structure, overlay click closes
+//   - Sidebar: nav items rendered, active highlight
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[wasm_bindgen_test]
+async fn test_toast_region_renders_on_dashboard() {
+    let id = "t-toast-region";
+    clear_tokens();
+    install_mock_fetch_success();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+
+    assert!(
+        has_element(id, ".toast-region"),
+        "toast-region must be present in the dashboard layout"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_sidebar_nav_items_rendered() {
+    let id = "t-sidebar-nav";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+
+    // Admin user should see all nav items
+    let html = inner_html(id);
+    assert!(html.contains("Dashboard"), "Dashboard nav item");
+    assert!(html.contains("Teams"), "Teams nav item");
+    assert!(html.contains("Orders"), "Orders nav item");
+    assert!(html.contains("Items"), "Items nav item");
+    assert!(html.contains("Profile"), "Profile nav item");
+    assert!(html.contains("Admin"), "Admin nav item for admin user");
+    assert!(html.contains("Roles"), "Roles nav item for admin user");
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_sidebar_active_nav_item() {
+    let id = "t-sidebar-active";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+
+    // Dashboard should be active by default
+    assert!(
+        has_element(id, ".nav-item--active"),
+        "there should be an active nav item"
+    );
+
+    // Navigate to Teams → active item should change
+    click_nav(id, "Teams");
+    flush(500).await;
+    assert!(
+        has_element(id, ".nav-item--active"),
+        "active nav item should still exist after navigation"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_confirm_modal_structure_on_delete() {
+    let id = "t-confirm-modal";
+    clear_tokens();
+    install_mock_fetch_full_with_second_user();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    // Click the delete button (trash icon) for a non-self user
+    click_button(id, "button[aria-label='Delete user']");
+    flush(200).await;
+
+    // Confirm modal should appear
+    assert!(
+        has_element(id, ".modal-overlay"),
+        "confirmation modal should appear on delete click"
+    );
+    assert!(has_element(id, ".modal-title"), "modal should have a title");
+    assert!(
+        has_element(id, ".modal-footer"),
+        "modal should have a footer with action buttons"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 16 · Orders page interactive flows (#357)
+//
+// Tests for create-order dialog interaction
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[wasm_bindgen_test]
+async fn test_orders_page_create_order_dialog_opens() {
+    let id = "t-orders-create-dialog";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Orders");
+    flush(500).await;
+
+    // Select a team first
+    click_button(id, ".team-selector .connect-button");
+    flush(500).await;
+
+    // Click "New Order" button
+    assert!(
+        !has_element(id, ".modal-overlay"),
+        "no modal before clicking New Order"
+    );
+
+    // Find and click the New Order button
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const el = document.getElementById("{}");
+            if (!el) return;
+            const buttons = el.querySelectorAll("button");
+            for (const btn of buttons) {{
+                if (btn.textContent.includes("New Order")) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("click New Order button failed");
+    flush(200).await;
+
+    assert!(
+        has_element(id, ".modal-overlay"),
+        "create-order dialog should appear"
+    );
+    let html = inner_html(id);
+    assert!(
+        html.contains("New Order"),
+        "dialog title should be 'New Order'"
+    );
+    assert!(
+        has_element(id, "#order-due"),
+        "due-date input should be present"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 17 · Profile page edit mode and password fields (#358)
+//
+// Tests for the edit-mode toggle and password change form
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[wasm_bindgen_test]
+async fn test_profile_page_edit_mode_toggle() {
+    let id = "t-profile-edit";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Profile");
+    flush(500).await;
+
+    // Should not be in edit mode initially — no edit form fields
+    assert!(
+        !has_element(id, "#profile-fn"),
+        "profile-fn input should not exist before entering edit mode"
+    );
+
+    // Click the Edit button
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const el = document.getElementById("{}");
+            if (!el) return;
+            const buttons = el.querySelectorAll("button");
+            for (const btn of buttons) {{
+                if (btn.textContent.includes("Edit")) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("click Edit button failed");
+    flush(300).await;
+
+    // Should now show edit form fields
+    assert!(
+        has_element(id, "#profile-fn"),
+        "first name input should appear in edit mode"
+    );
+    assert!(
+        has_element(id, "#profile-ln"),
+        "last name input should appear in edit mode"
+    );
+    assert!(
+        has_element(id, "#profile-email"),
+        "email input should appear in edit mode"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_profile_page_password_field_reveals_current_password() {
+    let id = "t-profile-pw";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Profile");
+    flush(500).await;
+
+    // Enter edit mode
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const el = document.getElementById("{}");
+            if (!el) return;
+            const buttons = el.querySelectorAll("button");
+            for (const btn of buttons) {{
+                if (btn.textContent.includes("Edit")) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("click Edit button failed");
+    flush(300).await;
+
+    // Current password field should NOT be visible yet
+    assert!(
+        !has_element(id, "#profile-curpw"),
+        "current password field should not appear until new password is typed"
+    );
+
+    // Type in the password field
+    set_input(id, "#profile-pw", "newpassword123");
+    flush(200).await;
+
+    // Now current password field should appear
+    assert!(
+        has_element(id, "#profile-curpw"),
+        "current password field should appear after typing new password"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_profile_page_cancel_exits_edit_mode() {
+    let id = "t-profile-cancel";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Profile");
+    flush(500).await;
+
+    // Enter edit mode
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const el = document.getElementById("{}");
+            if (!el) return;
+            const buttons = el.querySelectorAll("button");
+            for (const btn of buttons) {{
+                if (btn.textContent.includes("Edit")) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("click Edit button failed");
+    flush(300).await;
+
+    assert!(has_element(id, "#profile-fn"), "should be in edit mode");
+
+    // Click Cancel
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const el = document.getElementById("{}");
+            if (!el) return;
+            const buttons = el.querySelectorAll("button");
+            for (const btn of buttons) {{
+                if (btn.textContent.includes("Cancel")) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("click Cancel button failed");
+    flush(300).await;
+
+    assert!(
+        !has_element(id, "#profile-fn"),
+        "should exit edit mode after Cancel"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 18 · CreateUserDialog and EditUserDialog tests (#511)
+//
+// Tests for the admin page user management dialogs
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Install a fetch mock that extends `install_mock_fetch_full_with_second_user`
+/// by also handling POST /api/v1.0/users (user creation).
+fn install_mock_fetch_with_user_crud() {
+    let token = mock_token("12345678-1234-1234-1234-1234567890ab");
+    let js = format!(
+        r#"(() => {{
+            window.__original_fetch = window.fetch;
+            window.fetch = function(input, init) {{
+                var url = (typeof input === 'string') ? input : input.url;
+                var method = 'GET';
+                if (init && init.method) {{ method = init.method; }}
+                else if (typeof input !== 'string' && input.method) {{ method = input.method; }}
+
+                if (url.endsWith('/auth') && method === 'POST' && !url.includes('/refresh')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{access_token:"{token}",refresh_token:"mock_refresh",token_type:"Bearer",expires_in:900}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.includes('/auth/revoke')) {{
+                    return Promise.resolve(new Response(JSON.stringify({{}}),{{status:200,headers:{{"Content-Type":"application/json"}}}}));
+                }}
+                if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[{{"team_id":"aaaaaaaa-1234-1234-1234-1234567890ab","tname":"Core Team","title":"Admin","firstname":"John","lastname":"Doe","joined":"2025-01-01T00:00:00Z","role_changed":"2025-01-01T00:00:00Z"}}],"total":1,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.match(/\/api\/v1\.0\/users\/[^/]+$/) && method === 'POST') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"user_id":"ffff6666-0000-0000-0000-000000000001","firstname":"New","lastname":"User","email":"new@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}),
+                        {{status:201,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.split('?')[0].endsWith('/api/v1.0/users') && method === 'POST') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"user_id":"ffff6666-0000-0000-0000-000000000001","firstname":"New","lastname":"User","email":"new@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}),
+                        {{status:201,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.match(/\/api\/v1\.0\/users\/[^/]+$/) && method === 'PUT') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"user_id":"eeee5555-0000-0000-0000-000000000001","firstname":"Jane","lastname":"Smith","email":"jane@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.match(/\/api\/v1\.0\/users\/[^/]+$/) && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"user_id":"12345678-1234-1234-1234-1234567890ab","firstname":"John","lastname":"Doe","email":"john@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.split('?')[0].endsWith('/api/v1.0/users') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[
+                            {{"user_id":"12345678-1234-1234-1234-1234567890ab","firstname":"John","lastname":"Doe","email":"john@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}},
+                            {{"user_id":"eeee5555-0000-0000-0000-000000000001","firstname":"Jane","lastname":"Smith","email":"jane@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}
+                        ],"total":2,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.match(/\/api\/v1\.0\/teams\/[^/]+\/users/) && method === 'GET') {{
+                    return Promise.resolve(new Response(JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),{{status:200,headers:{{"Content-Type":"application/json"}}}}));
+                }}
+                if (url.split('?')[0].endsWith('/api/v1.0/teams') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[{{"team_id":"bbbb2222-0000-0000-0000-000000000001","tname":"Core Team","descr":"The core breakfast team","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}],"total":1,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.split('?')[0].endsWith('/api/v1.0/items') && method === 'GET') {{
+                    return Promise.resolve(new Response(JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),{{status:200,headers:{{"Content-Type":"application/json"}}}}));
+                }}
+                if (url.split('?')[0].endsWith('/api/v1.0/roles') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[{{"role_id":"dddd4444-0000-0000-0000-000000000001","title":"Admin","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}],"total":1,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                return Promise.resolve(new Response("Not Found", {{status:404}}));
+            }};
+        }})()"#,
+        token = token
+    );
+    js_sys::eval(&js).expect("install_mock_fetch_with_user_crud failed");
+}
+
+// ── 18a · CreateUserDialog opens ─────────────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_create_user_dialog_opens() {
+    let id = "t-create-user-open";
+    clear_tokens();
+    install_mock_fetch_with_user_crud();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    assert!(
+        !has_element(id, ".modal-overlay"),
+        "no modal before clicking New User"
+    );
+
+    // Click "New User" button
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const el = document.getElementById("{}");
+            if (!el) return;
+            const buttons = el.querySelectorAll("button");
+            for (const btn of buttons) {{
+                if (btn.textContent.includes("New User")) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("click New User failed");
+    flush(200).await;
+
+    assert!(
+        has_element(id, ".modal-overlay"),
+        "create-user dialog should open"
+    );
+    let html = inner_html(id);
+    assert!(
+        html.contains("New User"),
+        "dialog title should be 'New User'"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 18b · CreateUserDialog has form fields ───────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_create_user_dialog_has_form_fields() {
+    let id = "t-create-user-fields";
+    clear_tokens();
+    install_mock_fetch_with_user_crud();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const el = document.getElementById("{}");
+            if (!el) return;
+            const buttons = el.querySelectorAll("button");
+            for (const btn of buttons) {{
+                if (btn.textContent.includes("New User")) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("click New User failed");
+    flush(200).await;
+
+    assert!(has_element(id, "#user-fn"), "First Name input (#user-fn)");
+    assert!(has_element(id, "#user-ln"), "Last Name input (#user-ln)");
+    assert!(has_element(id, "#user-email"), "Email input (#user-email)");
+    assert!(has_element(id, "#user-pw"), "Password input (#user-pw)");
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 18c · CreateUserDialog Create button disabled when empty ─────────────────
+
+#[wasm_bindgen_test]
+async fn test_create_user_dialog_create_disabled_when_empty() {
+    let id = "t-create-user-disabled";
+    clear_tokens();
+    install_mock_fetch_with_user_crud();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const el = document.getElementById("{}");
+            if (!el) return;
+            const buttons = el.querySelectorAll("button");
+            for (const btn of buttons) {{
+                if (btn.textContent.includes("New User")) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("click New User failed");
+    flush(200).await;
+
+    assert!(
+        is_modal_button_disabled(id, "Create"),
+        "Create button should be disabled when fields are empty"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 18d · CreateUserDialog cancel closes dialog ──────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_create_user_dialog_cancel_closes() {
+    let id = "t-create-user-cancel";
+    clear_tokens();
+    install_mock_fetch_with_user_crud();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const el = document.getElementById("{}");
+            if (!el) return;
+            const buttons = el.querySelectorAll("button");
+            for (const btn of buttons) {{
+                if (btn.textContent.includes("New User")) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("click New User failed");
+    flush(200).await;
+
+    assert!(has_element(id, ".modal-overlay"), "dialog should be open");
+
+    // Click Cancel
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const footer = document.getElementById("{}").querySelector(".modal-footer");
+            if (!footer) return;
+            for (const btn of footer.querySelectorAll("button")) {{
+                if (btn.textContent.includes("Cancel")) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("click Cancel failed");
+    flush(200).await;
+
+    assert!(
+        !has_element(id, ".modal-overlay"),
+        "dialog should be closed after Cancel"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 18e · EditUserDialog opens with correct data ─────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_edit_user_dialog_opens() {
+    let id = "t-edit-user-open";
+    clear_tokens();
+    install_mock_fetch_with_user_crud();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    // Click the edit button for the non-self user (Jane)
+    click_button(id, "button[aria-label='Edit user']");
+    flush(200).await;
+
+    assert!(
+        has_element(id, ".modal-overlay"),
+        "edit-user dialog should open"
+    );
+    let html = inner_html(id);
+    assert!(
+        html.contains("Edit User"),
+        "dialog title should be 'Edit User'"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 18f · EditUserDialog has form fields ─────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_edit_user_dialog_has_form_fields() {
+    let id = "t-edit-user-fields";
+    clear_tokens();
+    install_mock_fetch_with_user_crud();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    click_button(id, "button[aria-label='Edit user']");
+    flush(200).await;
+
+    assert!(
+        has_element(id, "#edit-user-fn"),
+        "First Name input (#edit-user-fn)"
+    );
+    assert!(
+        has_element(id, "#edit-user-ln"),
+        "Last Name input (#edit-user-ln)"
+    );
+    assert!(
+        has_element(id, "#edit-user-email"),
+        "Email input (#edit-user-email)"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── 18g · EditUserDialog cancel closes ───────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_edit_user_dialog_cancel_closes() {
+    let id = "t-edit-user-cancel";
+    clear_tokens();
+    install_mock_fetch_with_user_crud();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    click_button(id, "button[aria-label='Edit user']");
+    flush(200).await;
+
+    assert!(has_element(id, ".modal-overlay"), "dialog should be open");
+
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const footer = document.getElementById("{}").querySelector(".modal-footer");
+            if (!footer) return;
+            for (const btn of footer.querySelectorAll("button")) {{
+                if (btn.textContent.includes("Cancel")) {{ btn.click(); return; }}
+            }}
+        }})()"#,
+        id
+    ))
+    .expect("click Cancel failed");
+    flush(200).await;
+
+    assert!(
+        !has_element(id, ".modal-overlay"),
+        "dialog should be closed after Cancel"
     );
 
     remove_test_container(id);

@@ -381,4 +381,101 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["error"], "Internal server error");
     }
+
+    // ── ActixJson Deserialize (.is_data()) branch (#356) ─────────────────────
+
+    #[actix_web::test]
+    async fn actix_json_deserialize_data_error_returns_422() {
+        use actix_web::body::to_bytes;
+
+        // Construct a JSON data error (type mismatch) — is_data() returns true
+        // Deserialize an integer where a string is expected
+        let json_err: serde_json::Error =
+            serde_json::from_str::<std::collections::HashMap<String, String>>(r#"{"key": 42}"#)
+                .unwrap_err();
+        assert!(json_err.is_data(), "should be a data error");
+        let payload_err = JsonPayloadError::Deserialize(json_err);
+        let err = Error::ActixJson(payload_err);
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = to_bytes(resp.into_body()).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["error"].as_str().unwrap().contains("invalid type"));
+    }
+
+    // ── ActixJson catch-all (parse error) branch (#464) ──────────────────────
+
+    #[actix_web::test]
+    async fn actix_json_parse_error_returns_400() {
+        use actix_web::body::to_bytes;
+
+        // Construct a JSON syntax/parse error — is_data() returns false
+        let json_err: serde_json::Error =
+            serde_json::from_str::<serde_json::Value>("{{bad").unwrap_err();
+        assert!(!json_err.is_data(), "should NOT be a data error");
+        let payload_err = JsonPayloadError::Deserialize(json_err);
+        let err = Error::ActixJson(payload_err);
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(resp.into_body()).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            json["error"]
+                .as_str()
+                .unwrap()
+                .contains("key must be a string")
+        );
+    }
+
+    // ── DbMapper::Conversion variant (#359) ─────────────────────────────────
+
+    #[test]
+    fn db_mapper_conversion_error_returns_500() {
+        let err = Error::DbMapper(crate::from_row::FromRowError::Conversion(
+            "test conversion".into(),
+        ));
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[actix_web::test]
+    async fn db_mapper_conversion_error_body_is_sanitized() {
+        use actix_web::body::to_bytes;
+
+        let err = Error::DbMapper(crate::from_row::FromRowError::Conversion(
+            "secret detail".into(),
+        ));
+        let resp = err.error_response();
+        let body = to_bytes(resp.into_body()).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            json["error"], "Internal server error",
+            "conversion details must not leak to client"
+        );
+    }
+
+    // ── ErrorResponse::Display fallback (#463) ───────────────────────────────
+
+    #[test]
+    fn error_response_display_normal() {
+        let resp = ErrorResponse {
+            error: "something broke".to_string(),
+        };
+        let display = format!("{}", resp);
+        assert!(display.contains("something broke"));
+        // Should be valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&display).unwrap();
+        assert_eq!(parsed["error"], "something broke");
+    }
+
+    #[test]
+    fn error_response_display_with_special_chars() {
+        let resp = ErrorResponse {
+            error: r#"has "quotes" and \backslash"#.to_string(),
+        };
+        let display = format!("{}", resp);
+        // serde_json::to_string handles escaping, so this should still be valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&display).unwrap();
+        assert_eq!(parsed["error"], r#"has "quotes" and \backslash"#);
+    }
 }

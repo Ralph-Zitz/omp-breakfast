@@ -569,4 +569,245 @@ mod tests {
         let entry = UpdateOrderEntry { amt: 10000 };
         assert!(entry.validate().is_ok());
     }
+
+    // ── validate_non_negative_price (#352) ───────────────────────────────────
+
+    #[test]
+    fn validate_non_negative_price_rejects_negative() {
+        let price = rust_decimal::Decimal::new(-100, 2); // -1.00
+        let err = validate_non_negative_price(&price).unwrap_err();
+        assert_eq!(err.code, "price");
+        assert!(err.message.as_ref().unwrap().contains("zero or positive"));
+    }
+
+    #[test]
+    fn validate_non_negative_price_accepts_zero() {
+        let price = rust_decimal::Decimal::ZERO;
+        assert!(validate_non_negative_price(&price).is_ok());
+    }
+
+    #[test]
+    fn validate_non_negative_price_accepts_positive() {
+        let price = rust_decimal::Decimal::new(999, 2); // 9.99
+        assert!(validate_non_negative_price(&price).is_ok());
+    }
+
+    // ── CreateUserEntry boundary tests (#353) ────────────────────────────────
+
+    #[test]
+    fn create_user_entry_firstname_at_max_50_is_valid() {
+        let entry = CreateUserEntry {
+            firstname: "a".repeat(50),
+            lastname: "Valid".to_string(),
+            email: "test@example.com".to_string(),
+            password: "validpass123".to_string(),
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn create_user_entry_firstname_at_51_is_rejected() {
+        let entry = CreateUserEntry {
+            firstname: "a".repeat(51),
+            lastname: "Valid".to_string(),
+            email: "test@example.com".to_string(),
+            password: "validpass123".to_string(),
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn create_user_entry_lastname_at_max_50_is_valid() {
+        let entry = CreateUserEntry {
+            firstname: "Valid".to_string(),
+            lastname: "b".repeat(50),
+            email: "test@example.com".to_string(),
+            password: "validpass123".to_string(),
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn create_user_entry_lastname_at_51_is_rejected() {
+        let entry = CreateUserEntry {
+            firstname: "Valid".to_string(),
+            lastname: "b".repeat(51),
+            email: "test@example.com".to_string(),
+            password: "validpass123".to_string(),
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn create_user_entry_firstname_at_min_2_is_valid() {
+        let entry = CreateUserEntry {
+            firstname: "ab".to_string(),
+            lastname: "Valid".to_string(),
+            email: "test@example.com".to_string(),
+            password: "validpass123".to_string(),
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn create_user_entry_firstname_at_1_is_rejected() {
+        let entry = CreateUserEntry {
+            firstname: "a".to_string(),
+            lastname: "Valid".to_string(),
+            email: "test@example.com".to_string(),
+            password: "validpass123".to_string(),
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    // ── Team/Role/Item field length boundary tests (#354) ────────────────────
+
+    #[test]
+    fn create_team_entry_tname_at_max_255_is_valid() {
+        let entry = CreateTeamEntry {
+            tname: "t".repeat(255),
+            descr: None,
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn create_team_entry_tname_at_256_is_rejected() {
+        let entry = CreateTeamEntry {
+            tname: "t".repeat(256),
+            descr: None,
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn create_team_entry_descr_at_max_1000_is_valid() {
+        let entry = CreateTeamEntry {
+            tname: "Valid Team".to_string(),
+            descr: Some("d".repeat(1000)),
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn create_team_entry_descr_at_1001_is_rejected() {
+        let entry = CreateTeamEntry {
+            tname: "Valid Team".to_string(),
+            descr: Some("d".repeat(1001)),
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn create_team_entry_empty_tname_is_rejected() {
+        let entry = CreateTeamEntry {
+            tname: String::new(),
+            descr: None,
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn update_team_entry_tname_at_max_255_is_valid() {
+        let entry = UpdateTeamEntry {
+            tname: "t".repeat(255),
+            descr: None,
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn update_team_entry_tname_at_256_is_rejected() {
+        let entry = UpdateTeamEntry {
+            tname: "t".repeat(256),
+            descr: None,
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn create_role_entry_title_at_max_255_is_valid() {
+        let entry = CreateRoleEntry {
+            title: "r".repeat(255),
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn create_role_entry_title_at_256_is_rejected() {
+        let entry = CreateRoleEntry {
+            title: "r".repeat(256),
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn create_role_entry_empty_title_is_rejected() {
+        let entry = CreateRoleEntry {
+            title: String::new(),
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn create_item_entry_descr_at_max_255_is_valid() {
+        let entry = CreateItemEntry {
+            descr: "i".repeat(255),
+            price: rust_decimal::Decimal::new(100, 2),
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn create_item_entry_descr_at_256_is_rejected() {
+        let entry = CreateItemEntry {
+            descr: "i".repeat(256),
+            price: rust_decimal::Decimal::new(100, 2),
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn create_item_entry_empty_descr_is_rejected() {
+        let entry = CreateItemEntry {
+            descr: String::new(),
+            price: rust_decimal::Decimal::new(100, 2),
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn update_item_entry_descr_at_max_255_is_valid() {
+        let entry = UpdateItemEntry {
+            descr: "i".repeat(255),
+            price: rust_decimal::Decimal::new(100, 2),
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn update_item_entry_descr_at_256_is_rejected() {
+        let entry = UpdateItemEntry {
+            descr: "i".repeat(256),
+            price: rust_decimal::Decimal::new(100, 2),
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    // ── Order entry amt boundary tests (#396) ────────────────────────────────
+
+    #[test]
+    fn create_order_entry_boundary_min_1_is_valid() {
+        let entry = CreateOrderEntry {
+            orders_item_id: Uuid::nil(),
+            amt: 1,
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn update_order_entry_boundary_min_1_is_valid() {
+        let entry = UpdateOrderEntry { amt: 1 };
+        assert!(entry.validate().is_ok());
+    }
 }

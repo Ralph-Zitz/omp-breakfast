@@ -919,4 +919,68 @@ mod tests {
             "valid token should remain"
         );
     }
+
+    // -- verify_jwt_for_revocation (#349) --
+
+    #[actix_web::test]
+    async fn verify_jwt_for_revocation_accepts_expired_token() {
+        let user_id = Uuid::now_v7();
+        // Create a token that expired 1 hour ago
+        let token = {
+            let encoding_key = EncodingKey::from_secret(TEST_SECRET.as_ref());
+            let claims = Claims {
+                sub: user_id,
+                exp: (Utc::now() - Duration::try_hours(1).unwrap()).timestamp(),
+                iat: (Utc::now() - Duration::try_hours(2).unwrap()).timestamp(),
+                jti: Uuid::now_v7(),
+                token_type: TokenType::Access,
+                iss: JWT_ISSUER.to_string(),
+                aud: JWT_AUDIENCE.to_string(),
+            };
+            encode(&Header::default(), &claims, &encoding_key).unwrap()
+        };
+
+        // verify_jwt should reject it (expired)
+        assert!(
+            verify_jwt(&token, TEST_SECRET).is_err(),
+            "verify_jwt should reject expired tokens"
+        );
+
+        // verify_jwt_for_revocation should accept it (skips exp)
+        let result = verify_jwt_for_revocation(&token, TEST_SECRET);
+        assert!(
+            result.is_ok(),
+            "verify_jwt_for_revocation should accept expired tokens"
+        );
+        assert_eq!(result.unwrap().claims.sub, user_id);
+    }
+
+    #[actix_web::test]
+    async fn verify_jwt_for_revocation_rejects_tampered_token() {
+        let user_id = Uuid::now_v7();
+        let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
+
+        let mut bytes = auth.access_token.into_bytes();
+        let idx = bytes.len() - 2;
+        bytes[idx] = if bytes[idx] == b'A' { b'B' } else { b'A' };
+        let tampered = String::from_utf8(bytes).unwrap();
+
+        let result = verify_jwt_for_revocation(&tampered, TEST_SECRET);
+        assert!(
+            result.is_err(),
+            "verify_jwt_for_revocation should reject tampered tokens"
+        );
+    }
+
+    #[actix_web::test]
+    async fn verify_jwt_for_revocation_rejects_wrong_secret() {
+        let user_id = Uuid::now_v7();
+        let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
+
+        let result = verify_jwt_for_revocation(&auth.access_token, "wrong-secret");
+        assert!(
+            result.is_err(),
+            "verify_jwt_for_revocation should reject wrong secret"
+        );
+    }
 }

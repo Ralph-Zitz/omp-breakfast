@@ -36,10 +36,8 @@ pub async fn get_avatars(state: Data<State>) -> Result<impl Responder, Error> {
     ),
     responses(
         (status = 200, description = "Avatar image", content_type = "image/png"),
-        (status = 401, description = "Unauthorized", body = ErrorResponse),
         (status = 404, description = "Avatar not found", body = ErrorResponse),
     ),
-    security(("bearer_auth" = [])),
 )]
 #[instrument(skip(state), level = "debug")]
 pub async fn get_avatar(

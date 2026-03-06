@@ -12,6 +12,8 @@
 use actix_web::{App, test, web::Data};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use breakfast::{models::*, routes::routes};
+use chrono::Utc;
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use serde_json::{Value, json};
 use std::net::SocketAddr;
 use uuid::Uuid;
@@ -4341,7 +4343,28 @@ async fn team_users_returns_members_of_seed_team() {
     let users = paginated_items(test::read_body_json(resp).await);
 
     // Seed data has 5 members in LoCC: admin, U1_F, U2_F, U3_F, U4_F
-    assert_eq!(users.len(), 5, "LoCC should have 5 seed members");
+    // Use >= because other tests may temporarily add members in parallel
+    assert!(
+        users.len() >= 5,
+        "LoCC should have at least 5 seed members, got {}",
+        users.len()
+    );
+
+    // Verify all 5 seed members are present
+    let emails: Vec<&str> = users.iter().filter_map(|u| u["email"].as_str()).collect();
+    for expected in &[
+        "admin@admin.com",
+        "U1_F.U1_L@LEGO.com",
+        "U2_F.U2_L@LEGO.com",
+        "U3_F.U3_L@LEGO.com",
+        "U4_F.U4_L@LEGO.com",
+    ] {
+        assert!(
+            emails.contains(expected),
+            "seed member {} should be in LoCC",
+            expected
+        );
+    }
 
     // Check that membership timestamps are present (#115)
     let first = &users[0];
@@ -6869,6 +6892,907 @@ async fn demoting_admin_allowed_when_another_admin_exists() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/users/{}", new_admin_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ===========================================================================
+// DELETE nonexistent resources → 404 (#296)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn delete_nonexistent_item_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let fake_id = Uuid::now_v7();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", fake_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "DELETE nonexistent item should be 404");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn delete_nonexistent_role_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let fake_id = Uuid::now_v7();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/roles/{}", fake_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "DELETE nonexistent role should be 404");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn delete_nonexistent_team_order_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams[0]["team_id"].as_str().unwrap();
+    let fake_order_id = Uuid::now_v7();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}",
+            team_id, fake_order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        404,
+        "DELETE nonexistent team order should be 404"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn delete_nonexistent_order_item_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a team order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2026-08-01"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    let fake_item_id = Uuid::now_v7();
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items/{}",
+            team_id, order_id, fake_item_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        404,
+        "DELETE nonexistent order item should be 404"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn remove_nonexistent_team_member_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams[0]["team_id"].as_str().unwrap();
+    let fake_user_id = Uuid::now_v7();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/users/{}",
+            team_id, fake_user_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        404,
+        "removing nonexistent member should be 404"
+    );
+}
+
+// ===========================================================================
+// UPDATE nonexistent resources → 404 (#300)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn update_nonexistent_user_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let fake_id = Uuid::now_v7();
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}", fake_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .set_json(json!({"firstname": "Ghost", "lastname": "User", "email": "ghost@test.local"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "PUT nonexistent user should be 404");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn update_nonexistent_team_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let fake_id = Uuid::now_v7();
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}", fake_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .set_json(json!({"tname": "Ghost Team", "descr": null}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "PUT nonexistent team should be 404");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn update_nonexistent_role_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let fake_id = Uuid::now_v7();
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/roles/{}", fake_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .set_json(json!({"title": "Ghost Role"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "PUT nonexistent role should be 404");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn update_nonexistent_item_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let fake_id = Uuid::now_v7();
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/items/{}", fake_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .set_json(json!({"descr": "Ghost Item", "price": "1.00"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "PUT nonexistent item should be 404");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn update_nonexistent_team_order_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams[0]["team_id"].as_str().unwrap();
+    let fake_order_id = Uuid::now_v7();
+
+    let req = test::TestRequest::put()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}",
+            team_id, fake_order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"closed": true}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        404,
+        "PUT nonexistent team order should be 404"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn update_nonexistent_order_item_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let token = &auth.access_token;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Create a team order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2026-08-15"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    let fake_item_id = Uuid::now_v7();
+    let req = test::TestRequest::put()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items/{}",
+            team_id, order_id, fake_item_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"amt": 5}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        404,
+        "PUT nonexistent order item should be 404"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ===========================================================================
+// Auth flow edge cases (#461, #462, #387)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn revoke_already_revoked_token_is_idempotent() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    // Revoke once
+    let req = test::TestRequest::post()
+        .uri("/auth/revoke")
+        .peer_addr(PEER)
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .set_json(json!({"token": auth.access_token}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "first revoke should succeed");
+
+    // Login again to get a fresh token (the old one is now revoked)
+    let auth2: Auth = login_admin(&app).await;
+
+    // Revoke the same (already-revoked) token again
+    let req = test::TestRequest::post()
+        .uri("/auth/revoke")
+        .peer_addr(PEER)
+        .insert_header(("Authorization", format!("Bearer {}", auth2.access_token)))
+        .set_json(json!({"token": auth.access_token}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "second revoke should also succeed (idempotent)"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn auth_response_has_cache_control_no_store() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!("Basic {}", STANDARD.encode("admin@admin.com:Very Secret")),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let cache_control = resp
+        .headers()
+        .get("Cache-Control")
+        .expect("auth response should have Cache-Control header")
+        .to_str()
+        .unwrap();
+    assert_eq!(
+        cache_control, "no-store",
+        "auth response must have Cache-Control: no-store"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn refresh_response_has_cache_control_no_store() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    let req = test::TestRequest::post()
+        .uri("/auth/refresh")
+        .peer_addr(PEER)
+        .insert_header(("Authorization", format!("Bearer {}", auth.refresh_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let cache_control = resp
+        .headers()
+        .get("Cache-Control")
+        .expect("refresh response should have Cache-Control header")
+        .to_str()
+        .unwrap();
+    assert_eq!(
+        cache_control, "no-store",
+        "refresh response must have Cache-Control: no-store"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn refresh_token_after_user_deleted_returns_error() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    // Create a temporary user
+    let test_email = "refresh-deleted@test.local";
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "Temp",
+            "lastname": "User",
+            "email": test_email,
+            "password": "Very Secret"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let user: Value = test::read_body_json(resp).await;
+    let user_id = user["user_id"].as_str().unwrap().to_string();
+
+    // Login as temporary user
+    let user_auth: Auth = login_user(&app, test_email).await;
+
+    // Delete the user via admin
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Try to refresh the deleted user's token → should fail
+    let req = test::TestRequest::post()
+        .uri("/auth/refresh")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", user_auth.refresh_token),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(
+        resp.status().is_client_error(),
+        "refresh after user deletion should fail, got {}",
+        resp.status()
+    );
+}
+
+// ===========================================================================
+// RBAC edge cases (#323, #355, #388)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn member_cannot_update_another_members_order_item() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // U1_F creates an order and order item
+    let u1_auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let u1_token = &u1_auth.access_token;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", u1_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/items")
+        .insert_header(("Authorization", format!("Bearer {}", u1_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let items = paginated_items(test::read_body_json(resp).await);
+    let item_id = items[0]["item_id"].as_str().unwrap().to_string();
+
+    // U1_F creates a team order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", u1_token)))
+        .set_json(json!({"duedate": "2026-09-01"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // U1_F creates an order item
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", u1_token)))
+        .set_json(json!({"orders_item_id": item_id, "amt": 2}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // U2_F (another member) tries to update U1_F's order item → 403
+    let u2_auth: Auth = login_user(&app, "U2_F.U2_L@LEGO.com").await;
+    let u2_token = &u2_auth.access_token;
+
+    let req = test::TestRequest::put()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items/{}",
+            team_id, order_id, item_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", u2_token)))
+        .set_json(json!({"amt": 99}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "member should not update another member's order item"
+    );
+
+    // U2_F tries to delete U1_F's order item → 403
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items/{}",
+            team_id, order_id, item_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", u2_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "member should not delete another member's order item"
+    );
+
+    // Cleanup via admin
+    let admin_auth: Auth = login_admin(&app).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn member_cannot_update_or_delete_team_order_they_did_not_create() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    let u1_auth: Auth = login_user(&app, "U1_F.U1_L@LEGO.com").await;
+    let u1_token = &u1_auth.access_token;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", u1_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("League of Cool Coders"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // U1_F creates a team order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", u1_token)))
+        .set_json(json!({"duedate": "2026-09-15"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // U2_F tries to update U1_F's order → 403
+    let u2_auth: Auth = login_user(&app, "U2_F.U2_L@LEGO.com").await;
+    let u2_token = &u2_auth.access_token;
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", u2_token)))
+        .set_json(json!({"closed": true}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "member should not update another member's order"
+    );
+
+    // U2_F tries to delete U1_F's order → 403
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", u2_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "member should not delete another member's order"
+    );
+
+    // Cleanup via admin
+    let admin_auth: Auth = login_admin(&app).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn admin_can_assign_admin_role_via_add_member() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    // Create a temp user
+    let test_email = "admin-assign-test@test.local";
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "Temp",
+            "lastname": "Admin",
+            "email": test_email,
+            "password": "ValidPassword123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let user: Value = test::read_body_json(resp).await;
+    let user_id = user["user_id"].as_str().unwrap().to_string();
+
+    // Get Pixel Bakers team ID (avoid LoCC to prevent race with member-count test)
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/teams")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let teams = paginated_items(test::read_body_json(resp).await);
+    let team_id = teams
+        .iter()
+        .find(|t| t["tname"].as_str() == Some("Pixel Bakers"))
+        .unwrap()["team_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let roles = paginated_items(test::read_body_json(resp).await);
+    let admin_role_id = roles
+        .iter()
+        .find(|r| r["title"].as_str() == Some("Admin"))
+        .unwrap()["role_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Admin adds user as Admin role → should succeed
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/users", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({"user_id": user_id, "role_id": admin_role_id}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        201,
+        "admin should be able to assign Admin role"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ===========================================================================
+// Misc edge cases (#390, #392)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn delete_user_by_email_invalid_format_returns_422() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+
+    let req = test::TestRequest::delete()
+        .uri("/api/v1.0/users/email/not-an-email")
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 422, "malformed email should return 422");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn get_team_users_for_nonexistent_team_returns_empty() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let fake_team_id = Uuid::now_v7();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/teams/{}/users", fake_team_id))
+        .insert_header(("Authorization", format!("Bearer {}", auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "GET /teams/{{nonexistent}}/users should return 200"
+    );
+    let body: Value = test::read_body_json(resp).await;
+    assert!(
+        body.as_array().is_none_or(|a| a.is_empty()),
+        "should return empty list for nonexistent team"
+    );
+}
+
+// ===========================================================================
+// Expired token revocation (#299)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn revoke_expired_token_succeeds() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = login_admin(&app).await;
+    let admin_token = &auth.access_token;
+
+    // Get admin's user_id from the JWT
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let users = paginated_items(test::read_body_json(resp).await);
+    let admin_id = users
+        .iter()
+        .find(|u| u["email"].as_str() == Some("admin@admin.com"))
+        .unwrap()["user_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let admin_uuid: Uuid = admin_id.parse().unwrap();
+
+    // Forge an expired JWT signed with the correct secret
+    let now = Utc::now();
+    let expired_claims = Claims {
+        sub: admin_uuid,
+        exp: (now - chrono::Duration::try_hours(1).unwrap()).timestamp(),
+        iat: (now - chrono::Duration::try_hours(2).unwrap()).timestamp(),
+        jti: Uuid::now_v7(),
+        token_type: TokenType::Access,
+        iss: "omp-breakfast".to_string(),
+        aud: "omp-breakfast".to_string(),
+    };
+    let headers = Header::new(Algorithm::HS256);
+    let encoding_key = EncodingKey::from_secret(b"Very Secret");
+    let expired_token =
+        encode(&headers, &expired_claims, &encoding_key).expect("encoding should succeed");
+
+    // Submit the expired token for revocation (using a valid token as bearer)
+    let req = test::TestRequest::post()
+        .uri("/auth/revoke")
+        .peer_addr(PEER)
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({"token": expired_token}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "revoking an expired-but-validly-signed token should succeed"
+    );
+}
+
+// ===========================================================================
+// Email change dual cache invalidation (#391)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn update_user_email_invalidates_both_cache_keys() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = login_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    // Create a temp user
+    let original_email = "cache-test-original@test.local";
+    let new_email = "cache-test-new@test.local";
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/users")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "Cache",
+            "lastname": "Test",
+            "email": original_email,
+            "password": "Very Secret"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let user: Value = test::read_body_json(resp).await;
+    let user_id = user["user_id"].as_str().unwrap().to_string();
+
+    // Login with original email to populate cache
+    let _user_auth: Auth = login_user(&app, original_email).await;
+
+    // Update the user's email
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({
+            "firstname": "Cache",
+            "lastname": "Test",
+            "email": new_email
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Login with old email should fail (404 user not found → 401)
+    let req = test::TestRequest::post()
+        .uri("/auth")
+        .peer_addr(PEER)
+        .insert_header((
+            "Authorization",
+            format!(
+                "Basic {}",
+                STANDARD.encode(format!("{}:Very Secret", original_email))
+            ),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        401,
+        "login with old email should fail after email change"
+    );
+
+    // Login with new email should succeed
+    let _new_auth: Auth = login_user(&app, new_email).await;
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
         .to_request();
     test::call_service(&app, req).await;

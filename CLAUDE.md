@@ -119,7 +119,7 @@ frontend/
       tokens.css   – Imports CONNECT core tokens + enterprise theme from connect-design-system/
       components.css – Imports all CONNECT component CSS modules from connect-design-system/
   tests/
-    ui_tests.rs    – 64 WASM integration tests (headless Chrome)
+    ui_tests.rs    – 79 WASM integration tests (headless Chrome)
   bundle-css.sh    – Script to bundle CONNECT CSS into style/bundled.css
 connect-design-system/ – Local clone of git@github.com:LEGO/connect-design-system.git (gitignored, read-only asset source)
 config/
@@ -383,16 +383,16 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 198 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 123 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
-- 103 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 234 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
+- 145 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 104 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
 - Test DB uses `docker-compose.test.yml` overlay to expose port 5433 (avoids conflicts with dev DB on 5432)
 
 ### Frontend
 
-- 64 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
+- 79 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
 - Test categories:
   - JWT decode (4 tests): valid token, missing segments, bad base64, invalid JSON
   - Login page rendering (3 tests): brand/form elements, email attributes, password attributes
@@ -410,6 +410,10 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
   - Table styling (4 tests): connect-table-header-cell class on admin, items, roles, teams tables
   - Actions column (6 tests): actions modifier classes (3), no narrow inline width (2), multiple buttons present (2)
   - Admin password reset (10 tests): button visibility, dialog open/close, validation (empty, short, mismatch), success toast
+  - Shared components (4 tests): toast region, sidebar nav items, sidebar active state, confirm modal structure
+  - Orders page interactions (1 test): create order dialog opens
+  - Profile page interactions (3 tests): edit mode toggle, password field reveal, cancel exits edit
+  - Admin dialogs (7 tests): CreateUserDialog open/fields/disabled/cancel, EditUserDialog open/fields/cancel
 - Mocking strategy: overrides `window.fetch` via `js_sys::eval` to intercept `gloo-net` HTTP calls; uses `Promise`-based `setTimeout` wrapper for async timing (no `gloo-timers` dependency)
 - Run frontend tests: `make test-frontend` or `cd frontend && wasm-pack test --headless --chrome`
 - Note: ChromeDriver version must match installed Chrome version

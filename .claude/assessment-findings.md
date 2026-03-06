@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-05 (re-assessment #2)
+Last assessed: 2026-03-06
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -26,33 +26,13 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Important Items
 
-_No open important items. See `.claude/resolved-findings.md` for resolved items._
+_No open important items._
 
 ## Minor Items
 
-_No open minor items. See `.claude/resolved-findings.md` for resolved items._
+_No open minor items._
 
 ## Informational Items
-
-### Testing — Delete-Not-Found API Paths Untested for 5 Entities
-
-- [ ] **#296 — No API test calls DELETE with a nonexistent ID for items, roles, team orders, order items, or members**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — No API Test for Revoking an Expired Token
-
-- [ ] **#299 — No test submits a legitimately-expired (but validly-signed) token for revocation**
-  - File: `tests/api_tests.rs`
-  - Problem: Would currently return 500 (see #298). After #298 is fixed, should assert 400.
-  - Source commands: `test-gaps`
-
-### Testing — No API-Level Test for UPDATE with Nonexistent ID → 404
-
-- [ ] **#300 — DB-level tests exist but no API integration test verifies HTTP 404 for PUT with nonexistent UUID across 6 update endpoints**
-  - File: `tests/api_tests.rs`
-  - Problem: Missing tests for: `PUT /users/{nonexistent}`, `PUT /teams/{nonexistent}`, `PUT /roles/{nonexistent}`, `PUT /items/{nonexistent}`, `PUT /teams/{tid}/orders/{nonexistent}`, `PUT /teams/{tid}/orders/{oid}/items/{nonexistent}`.
-  - Source commands: `test-gaps`
 
 ### Frontend — Uses `String` for UUIDs Everywhere
 
@@ -60,19 +40,6 @@ _No open minor items. See `.claude/resolved-findings.md` for resolved items._
   - File: `frontend/src/api.rs`
   - Problem: All ID fields are `String`. A typo or wrong field could silently produce invalid requests.
   - Source commands: `review`
-
-### Testing — Zero Tests for Shared Frontend Components
-
-- [ ] **#322 — `modal.rs`, `toast.rs`, `sidebar.rs`, `card.rs`, `icons.rs`, `theme_toggle.rs` have no WASM tests**
-  - Files: `frontend/src/components/`, `frontend/tests/ui_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — Order-Item RBAC Bug Has Zero Test Coverage
-
-- [ ] **#323 — No integration test verifies that a team member cannot modify another member's order items**
-  - Files: `tests/api_tests.rs`, `src/handlers/orders.rs`
-  - Problem: The RBAC privilege escalation in #302/#303 was never caught because no negative-path test exists. HIGH PRIORITY.
-  - Source commands: `test-gaps`, `rbac-rules`
 
 ### Database — `orders.orders_team_id` May Be Missing NOT NULL
 
@@ -123,68 +90,10 @@ _No open minor items. See `.claude/resolved-findings.md` for resolved items._
   - Fix: Add `maxlength=50` on name fields, `maxlength=128` on password, `maxlength=255` on team/role names.
   - Source commands: `security-audit`
 
-### Testing — `verify_jwt_for_revocation` Has Zero Dedicated Unit Tests
-
-- [ ] **#349 — Security-sensitive function that skips expiry validation has no test verifying expired-but-valid tokens are accepted**
-  - File: `src/middleware/auth.rs` (lines ~124–136)
-  - Problem: This function intentionally sets `validate_exp = false`. No test confirms that an expired token with a valid signature passes, or that a tampered token still fails.
-  - Source commands: `test-gaps`
-
 ### Testing — `basic_validator` Malformed Password Hash Path Untested
 
 - [ ] **#350 — When DB stores a corrupted/non-Argon2 hash, `PasswordHash::new()` fails and returns 500 — no test**
   - File: `src/middleware/auth.rs` (lines ~484–498)
-  - Source commands: `test-gaps`
-
-### Testing — `validate_non_negative_price` Has No Unit Tests
-
-- [ ] **#352 — Custom validator for item price never directly tested (negative, zero, positive cases)**
-  - File: `src/models.rs` (lines ~301–312)
-  - Source commands: `test-gaps`
-
-### Testing — No Boundary Tests for `CreateUserEntry` Name Fields
-
-- [ ] **#353 — firstname/lastname max=50 boundary untested (50 chars should pass, 51 should fail)**
-  - File: `src/models.rs` (lines ~159–185)
-  - Source commands: `test-gaps`
-
-### Testing — No Boundary Tests for Team/Role/Item Model Field Lengths
-
-- [ ] **#354 — `tname` max=255, `descr` max=1000, role `title` max=255, item `descr` max=255 — all untested at boundary**
-  - File: `src/models.rs`
-  - Source commands: `test-gaps`
-
-### Testing — Non-Owner Member Cannot Update/Delete Team Order — Untested
-
-- [ ] **#355 — A team member who didn't create the order, and is not a team admin, tries PUT/DELETE — no test**
-  - File: `tests/api_tests.rs`
-  - Problem: Differs from #291 (non-member). This concerns a member who is not the order creator.
-  - Source commands: `test-gaps`
-
-### Testing — `ActixJson` Deserialize Error Branch Untested
-
-- [ ] **#356 — `JsonPayloadError::Deserialize` with `.data()` → 422 path has no test (only parse error is tested)**
-  - File: `src/errors.rs` (lines ~82–118)
-  - Problem: Sending valid JSON with wrong field types (type mismatch) hits a different `JsonPayloadError` variant than malformed JSON.
-  - Source commands: `test-gaps`
-
-### Testing — Frontend Orders Page Interactive Flows Untested
-
-- [ ] **#357 — Add-item, remove-item, create/delete order interactions have no WASM tests**
-  - Files: `frontend/src/pages/orders.rs`, `frontend/tests/ui_tests.rs`
-  - Problem: The 721-line orders page has extensive interactive logic, all untested.
-  - Source commands: `test-gaps`
-
-### Testing — Frontend Profile Page Password Change Flow Untested
-
-- [ ] **#358 — Edit mode, password validation, and save logic have no WASM tests**
-  - Files: `frontend/src/pages/profile.rs`, `frontend/tests/ui_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — `DbMapper::Conversion` Error Variant Returns 500 — Never Tested
-
-- [ ] **#359 — Only `ColumnNotFound` sub-variant is tested; `Conversion` has its own log-and-respond branch with zero coverage**
-  - File: `src/errors.rs` (lines ~124–140)
   - Source commands: `test-gaps`
 
 ### API Completeness — Frontend `ItemEntry.price` Typed as `String`
@@ -285,46 +194,10 @@ _No open minor items. See `.claude/resolved-findings.md` for resolved items._
   - Problem: Compiles unused modules. Removing `logs` feature reduces compile time slightly.
   - Source commands: `dependency-check`
 
-### Testing — Token Refresh After User Deletion Untested
-
-- [ ] **#387 — No test refreshes a token after the user has been deleted from the database**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — Admin Assigning Admin Role Has No Positive API Test
-
-- [ ] **#388 — `guard_admin_role_assignment` allows Admin to assign Admin role, but no test exercises this success path**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
 ### Testing — `auth_user` Cache Miss Path Untested
 
 - [ ] **#389 — No test verifies the code path when the auth cache has no entry for a user (first login or after TTL expiry)**
   - File: `src/middleware/auth.rs`
-  - Source commands: `test-gaps`
-
-### Testing — `delete_user_by_email` Invalid Email Format Not Tested
-
-- [ ] **#390 — No API test sends a malformed email string to verify 422 response**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — `update_user` Email Change Dual Cache Invalidation Untested
-
-- [ ] **#391 — No test changes a user's email and verifies both old and new cache keys are invalidated**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — `GET /teams/{nonexistent}/users` Behavior Untested
-
-- [ ] **#392 — No test verifies whether the endpoint returns 200 `[]` or 404 for a non-existent team**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
-
-### Testing — `check_team_access` for "Team Admin" Role Missing from DB Tests
-
-- [ ] **#393 — DB tests cover Admin bypass and Member access but not Team Admin role specifically**
-  - File: `tests/db_tests.rs`
   - Source commands: `test-gaps`
 
 ### Testing — Health Endpoint 503 Response Never Tested
@@ -337,12 +210,6 @@ _No open minor items. See `.claude/resolved-findings.md` for resolved items._
 
 - [ ] **#395 — The `DateTime::from_timestamp(exp, 0).unwrap_or_default()` fallback in `refresh_token` handler is never tested**
   - File: `src/handlers/users.rs`
-  - Source commands: `test-gaps`
-
-### Testing — Order Entry `amt` Range Validation Untested
-
-- [ ] **#396 — `CreateOrderEntry` and `UpdateOrderEntry` have `#[validate(range(min=1, max=10000))]` on `amt` but no test verifies boundary values**
-  - File: `src/models.rs`
   - Source commands: `test-gaps`
 
 ### Database — `SET timezone` in V1 Is Session-Scoped Dead Code
@@ -446,13 +313,6 @@ _No open minor items. See `.claude/resolved-findings.md` for resolved items._
   - Fix: Add `web_sys::console::warn_1(...)` for non-OK responses before returning `None`.
   - Source commands: `review`
 
-### Testing — `CreateUserDialog` and `EditUserDialog` Have Zero WASM Tests
-
-- [ ] **#511 — Admin page dialog components for creating and editing users have no test coverage**
-  - File: `frontend/src/pages/admin.rs` (lines ~322–599), `frontend/tests/ui_tests.rs`
-  - Problem: The `ResetPasswordDialog` has 12 comprehensive tests. `CreateUserDialog` and `EditUserDialog` have zero tests — no tests for opening, form validation, submission, or cancel behavior.
-  - Source commands: `test-gaps`
-
 ### Database — `database.sql` Not Updated for V7 Migration
 
 - [ ] **#512 — `database.sql` still creates `idx_users_email` and `idx_teams_name` indexes dropped by V7 migration**
@@ -485,29 +345,35 @@ _No open minor items. See `.claude/resolved-findings.md` for resolved items._
   - File: `src/routes.rs`
   - Source commands: `api-completeness`
 
-### Testing — Revoke Already-Revoked Token Idempotency Untested
+### Database — `database.sql` Missing Avatar Support from V8
 
-- [ ] **#461 — No API test calls `POST /auth/revoke` twice with the same token**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
+- [ ] **#517 — `database.sql` lacks avatars table and `users.avatar_id` FK column added in V8 migration**
+  - File: `database.sql`
+  - Problem: Running `database.sql` for a manual dev reset would lose avatar functionality. Subsequent avatar operations would fail with FK errors or missing table.
+  - Fix: Add avatars table CREATE and ALTER TABLE for `users.avatar_id` to `database.sql`.
+  - Source commands: `db-review`
 
-### Testing — `Cache-Control: no-store` Header on Auth Responses Untested
+### Database — Missing Index on `users.avatar_id` FK
 
-- [ ] **#462 — Both `auth_user` and `refresh_token` set the header but no test asserts its presence**
-  - File: `tests/api_tests.rs`
-  - Source commands: `test-gaps`
+- [ ] **#518 — V8 adds FK from `users` to `avatars` but does not create an index on `users.avatar_id`**
+  - File: `migrations/V8__avatars.sql`
+  - Problem: FK constraint verification and JOIN performance may require sequential scan on `users` table when deleting avatars or querying user-avatar joins.
+  - Fix: Add `CREATE INDEX IF NOT EXISTS idx_users_avatar ON users (avatar_id);` in a future migration.
+  - Source commands: `db-review`
 
-### Testing — `ErrorResponse::Display` Fallback Branch Untested
+### Database — `items.price` CHECK Constraint Allows Zero
 
-- [ ] **#463 — The `serde_json::to_string` failure fallback in `Display` impl has no test**
-  - File: `src/errors.rs` (lines ~51–59)
-  - Source commands: `test-gaps`
+- [ ] **#519 — `items.price CHECK (price >= 0)` permits items with zero cost; a breakfast ordering system likely doesn't intend free items**
+  - File: `migrations/V1__initial_schema.sql`
+  - Problem: No business-level protection against inserting cost-free items; the `validate_non_negative_price` custom validator also accepts zero.
+  - Source commands: `db-review`
 
-### Testing — `ActixJson` Catch-All Error Branch Untested
+### Frontend — No Client-Side Validation for Item Price Format
 
-- [ ] **#464 — The `_ =>` branch for generic `JsonPayloadError` (overflow, EOF) returns 400 but is untargeted by tests**
-  - File: `src/errors.rs` (lines ~200–205)
-  - Source commands: `test-gaps`
+- [ ] **#520 — Frontend items page accepts free-form text for price without validating it's a valid decimal number**
+  - File: `frontend/src/pages/items.rs`
+  - Problem: Backend validates, but poor UX if user enters non-numeric text — they get a generic server error instead of inline form feedback.
+  - Source commands: `api-completeness`
 
 ## Completed Items
 
@@ -516,30 +382,20 @@ See that file for the full history of resolved findings.
 
 ## Notes
 
-- **Test counts verified (2026-03-05):** 193 unit (171 lib + 22 healthcheck), 117 API integration (ignored), 103 DB integration (ignored), 64 WASM (documented as 41 — see #507).
-- **`cargo audit` (2026-03-05):** Exit code 0. No new vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) remains intentionally ignored — **blocked on upstream**, see #132. Verified `hmac`+`sha2` features alone still do NOT register a CryptoProvider in jsonwebtoken 10.3.0. Re-evaluate periodically.
-- **CONNECT Design System (2026-03-05):** `git pull` reports "Already up to date" — no migration needed.
-- Open items summary: 1 critical (#132 blocked), 2 important (#505, #506), 3 minor (#507, #508, #509), 44+ informational.
-- 8 new findings in this assessment: #505–#512. 0 regressions found. 0 items resolved.
-- Highest finding number: #512.
-- 354 resolved items in `.claude/resolved-findings.md`.
+- **Test counts verified (2026-03-06):** 234 unit (212 lib + 22 healthcheck), 145 API integration (ignored), 104 DB integration (ignored), 79 WASM.
+- **`cargo audit` (2026-03-06):** Exit code 0. No new vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) remains intentionally ignored — **blocked on upstream**, see #132.
+- **CONNECT Design System (2026-03-06):** `git pull` fetched new commits (3.0.0-RC1, 2.9.0, etc.). CSS changes to checkbox-group, dropdown, inline-alert, menu, radio-group, tag, text-field, utility-button — **none used by our frontend**. Token additions (opacity variants) are non-breaking. SCSS removal has no impact (we only use CSS imports). **No migration required.**
+- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 22 informational.
+- 8 new findings in this assessment: #513–#520. 0 regressions found. 4 items resolved this session (#513, #514, #515, #516). 26 test-gap items resolved in session of 2026-03-07.
+- Highest finding number: #520.
 
-### Re-assessment — 2026-03-05 (3rd run)
+### Re-assessment — 2026-03-06
 
-- **All 11 commands re-run:** 8 new findings surfaced (2 important, 3 minor, 3 informational).
-- **#505 (Important):** Last-admin demotion/removal via `remove_team_member` and `update_member_role` — no `count_admins` guard (similar gap to resolved #399 which protected `delete_user` only).
-- **#506 (Important):** Admin password reset feature completely broken — frontend sends incomplete PUT body missing required fields.
-- **#507–#508 (Minor):** Documentation drift — WASM test count 64 vs documented 41, `order_components.rs` missing from project structure.
-- **#509 (Minor):** Orders page fetches all teams instead of user's teams, showing non-member teams.
-- **#510–#512 (Informational):** Silent error drops in `fetch_user_details`, missing WASM tests for admin dialogs, `database.sql` schema drift from V7.
-- **0 regressions** — all 354 resolved items checked, none regressed.
-- **Unit tests:** 193 passing (171 lib + 22 healthcheck). `cargo fmt`: clean. `cargo audit`: exit 0.
-- **CONNECT Design System:** Already up to date.
-
-### Re-assessment — 2026-03-05 (docker fix session)
-
-- **Changes since last run:** Two Docker bug fixes applied — `config/docker-base.yml` (added `db_ca_cert: localhost_ca.pem` + `ssl_mode: Require` under `pg`) and `docker-compose.yml` (added `BREAKFAST_PG_USER=actix`, `BREAKFAST_PG_PASSWORD=actix`). Both fix startup errors when running `docker compose up`.
-- **All commands re-run (api-completeness, cross-ref-check, db-review, dependency-check, openapi-sync, practices-audit, rbac-rules, review, security-audit, test-gaps):** 0 new findings.
-- **0 regressions** — all 354 resolved items checked, none regressed.
-- **Unit tests:** 193 passing (171 lib + 22 healthcheck). `cargo audit` exit 0.
-- **CONNECT Design System:** Already up to date.
+- **All 11 commands re-run:** 8 new findings surfaced (0 critical, 1 important, 3 minor, 4 informational).
+- **#515 (Important):** README.md migration table missing V8 — says "Seven" but 8 exist on disk.
+- **#513 (Minor):** `get_avatar` utoipa annotation falsely claims JWT auth, but endpoint is public.
+- **#514, #516 (Minor):** Test count drift in CLAUDE.md (198→199) and README.md (193→199).
+- **#517–#520 (Informational):** `database.sql` missing V8, missing FK index on `users.avatar_id`, price CHECK allows zero, frontend lacks price format validation.
+- **0 regressions** — all 354+ resolved items spot-checked, none regressed.
+- **Unit tests:** 199 passing (177 lib + 22 healthcheck). `cargo fmt`: clean. `cargo audit`: exit 0.
+- **CONNECT Design System:** Updated. New commits pulled. No breaking changes to components used by frontend.

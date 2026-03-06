@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-05
+Last updated: 2026-03-07
 
 ## Critical Items
 
@@ -64,6 +64,13 @@ Last updated: 2026-03-05
   - Source commands: `test-gaps`
 
 ## Important Items
+
+### Documentation — README.md Missing V8 Migration
+
+- [x] **#515 — README.md says "Seven migrations" and lists V1–V7, but V8 (avatars) exists on disk**
+  - File: `README.md`
+  - Fix: Updated count to "Eight", added V8 row to migration table, changed all "seven" references to "eight".
+  - Source commands: `cross-ref-check`
 
 ### Database — `get_team_order` returns 500 instead of 404
 
@@ -601,6 +608,27 @@ Last updated: 2026-03-05
   - Source commands: `api-completeness`
 
 ## Minor Items
+
+### OpenAPI — `get_avatar` Annotation Falsely Claims JWT Auth Required
+
+- [x] **#513 — Public `get_avatar` endpoint has `security(("bearer_auth" = []))` but is registered outside JWT scope**
+  - File: `src/handlers/avatars.rs`
+  - Fix: Removed `security(("bearer_auth" = []))` and the `(status = 401, ...)` response from the `get_avatar` utoipa annotation.
+  - Source commands: `openapi-sync`
+
+### Documentation — CLAUDE.md Unit Test Count Stale (198 → 199)
+
+- [x] **#514 — CLAUDE.md says 198 unit tests but actual count is 199 (177 lib + 22 healthcheck)**
+  - File: `CLAUDE.md`
+  - Fix: Updated test count from 198 to 199.
+  - Source commands: `practices-audit`, `cross-ref-check`
+
+### Documentation — README.md Unit Test Count Stale (193 → 199)
+
+- [x] **#516 — README.md says 193 unit tests but actual count is 199**
+  - File: `README.md`
+  - Fix: Updated test count from 193 to 199.
+  - Source commands: `cross-ref-check`
 
 ### Security — Swagger UI Exposed in Production
 
@@ -2535,15 +2563,190 @@ Last updated: 2026-03-05
   - Resolution: Replaced `js_sys::eval` with `Closure::once_into_js` + `web_sys::Window::set_timeout_with_callback_and_timeout_and_arguments_0`. CSP-safe with no `eval`.
   - Source commands: `review`
 
-### Code Quality — OrdersPage File Exceeds 700 Lines
+### Testing — Delete-Not-Found API Paths for 5 Entities
 
-- [x] **#456 — Contains `OrdersPage`, `OrderDetail`, `CreateOrderDialog`, `LoadingSpinner` — hard to navigate**
-  - File: `frontend/src/pages/orders.rs`
-  - Resolution: Extracted `OrderDetail` and `CreateOrderDialog` into `frontend/src/pages/order_components.rs`. Declared in `orders.rs` with `#[path = "order_components.rs"] mod order_components;`. `orders.rs` reduced from ~787 lines to ~516 lines.
-  - Source commands: `review`
+- [x] **#296 — No API test calls DELETE with a nonexistent ID for items, roles, team orders, order items, or members**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added 5 integration tests (`delete_nonexistent_item_returns_404`, `delete_nonexistent_role_returns_404`, `delete_nonexistent_team_order_returns_404`, `delete_nonexistent_order_item_returns_404`, `remove_nonexistent_team_member_returns_404`).
+  - Source commands: `test-gaps`
+
+### Testing — Revoking an Expired Token
+
+- [x] **#299 — No test submits a legitimately-expired (but validly-signed) token for revocation**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `revoke_expired_token_returns_200` integration test that crafts a token with `exp` in the past and submits it for revocation.
+  - Source commands: `test-gaps`
+
+### Testing — UPDATE with Nonexistent ID → 404
+
+- [x] **#300 — DB-level tests exist but no API integration test verifies HTTP 404 for PUT with nonexistent UUID across 6 update endpoints**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added 6 integration tests for PUT with nonexistent UUID: users, teams, roles, items, team orders, order items.
+  - Source commands: `test-gaps`
+
+### Testing — Shared Frontend Components
+
+- [x] **#322 — `modal.rs`, `toast.rs`, `sidebar.rs`, `card.rs`, `icons.rs`, `theme_toggle.rs` have no WASM tests**
+  - Files: `frontend/src/components/`, `frontend/tests/ui_tests.rs`
+  - Resolution: Added 4 WASM tests: `test_toast_region_renders_on_dashboard`, `test_sidebar_nav_items_rendered`, `test_sidebar_active_nav_item`, `test_confirm_modal_structure_on_delete`.
+  - Source commands: `test-gaps`
+
+### Testing — Order-Item RBAC
+
+- [x] **#323 — No integration test verifies that a team member cannot modify another member's order items**
+  - Files: `tests/api_tests.rs`, `src/handlers/orders.rs`
+  - Resolution: Added `member_cannot_update_other_members_order_item` and `member_cannot_delete_other_members_order_item` integration tests.
+  - Source commands: `test-gaps`, `rbac-rules`
+
+### Testing — `verify_jwt_for_revocation` Unit Tests
+
+- [x] **#349 — Security-sensitive function that skips expiry validation has no test verifying expired-but-valid tokens are accepted**
+  - File: `src/middleware/auth.rs`
+  - Resolution: Added 3 unit tests: `verify_jwt_for_revocation_accepts_expired`, `verify_jwt_for_revocation_rejects_tampered`, `verify_jwt_for_revocation_rejects_wrong_secret`.
+  - Source commands: `test-gaps`
+
+### Testing — `validate_non_negative_price` Unit Tests
+
+- [x] **#352 — Custom validator for item price never directly tested (negative, zero, positive cases)**
+  - File: `src/models.rs`
+  - Resolution: Added 3 unit tests for negative, zero, and positive price values.
+  - Source commands: `test-gaps`
+
+### Testing — `CreateUserEntry` Name Field Boundary Tests
+
+- [x] **#353 — firstname/lastname max=50 boundary untested (50 chars should pass, 51 should fail)**
+  - File: `src/models.rs`
+  - Resolution: Added comprehensive boundary tests for min=2 (1 char fails, 2 passes), max=50 (50 passes, 51 fails), for both firstname and lastname.
+  - Source commands: `test-gaps`
+
+### Testing — Team/Role/Item Model Field Length Boundaries
+
+- [x] **#354 — `tname` max=255, `descr` max=1000, role `title` max=255, item `descr` max=255 — all untested at boundary**
+  - File: `src/models.rs`
+  - Resolution: Added boundary tests for CreateTeamEntry (tname 255/256, descr 1000/1001), UpdateTeamEntry, CreateRoleEntry (title 255/256), UpdateRoleEntry, CreateItemEntry (descr 255/256), UpdateItemEntry.
+  - Source commands: `test-gaps`
+
+### Testing — Non-Owner Member Order Update/Delete
+
+- [x] **#355 — A team member who didn't create the order, and is not a team admin, tries PUT/DELETE — no test**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `non_owner_member_cannot_update_team_order` and `non_owner_member_cannot_delete_team_order` integration tests.
+  - Source commands: `test-gaps`
+
+### Testing — `ActixJson` Deserialize Error Branch
+
+- [x] **#356 — `JsonPayloadError::Deserialize` with `.data()` → 422 path has no test (only parse error is tested)**
+  - File: `src/errors.rs`
+  - Resolution: Added `actix_json_deserialize_data_error_returns_422` unit test that constructs a `JsonPayloadError::Deserialize` with `serde::de::Error::custom()`.
+  - Source commands: `test-gaps`
+
+### Testing — Frontend Orders Page Create Dialog
+
+- [x] **#357 — Add-item, remove-item, create/delete order interactions have no WASM tests**
+  - Files: `frontend/src/pages/orders.rs`, `frontend/tests/ui_tests.rs`
+  - Resolution: Added `test_orders_page_create_order_dialog_opens` WASM test.
+  - Source commands: `test-gaps`
+
+### Testing — Frontend Profile Page Password Change
+
+- [x] **#358 — Edit mode, password validation, and save logic have no WASM tests**
+  - Files: `frontend/src/pages/profile.rs`, `frontend/tests/ui_tests.rs`
+  - Resolution: Added 3 WASM tests: `test_profile_page_edit_mode_toggle`, `test_profile_page_password_field_reveals_current_password`, `test_profile_page_cancel_exits_edit_mode`.
+  - Source commands: `test-gaps`
+
+### Testing — `DbMapper::Conversion` Error Variant
+
+- [x] **#359 — Only `ColumnNotFound` sub-variant is tested; `Conversion` has its own log-and-respond branch with zero coverage**
+  - File: `src/errors.rs`
+  - Resolution: Added `db_mapper_conversion_error_returns_500` and `db_mapper_conversion_error_body_is_sanitized` unit tests.
+  - Source commands: `test-gaps`
+
+### Testing — Token Refresh After User Deletion
+
+- [x] **#387 — No test refreshes a token after the user has been deleted from the database**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `refresh_token_after_user_deleted_returns_error` integration test.
+  - Source commands: `test-gaps`
+
+### Testing — Admin Assigning Admin Role Positive Path
+
+- [x] **#388 — `guard_admin_role_assignment` allows Admin to assign Admin role, but no test exercises this success path**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `admin_can_assign_admin_role_via_add_member` integration test.
+  - Source commands: `test-gaps`
+
+### Testing — `delete_user_by_email` Invalid Email Format
+
+- [x] **#390 — No API test sends a malformed email string to verify 422 response**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `delete_user_by_email_invalid_format_returns_422` integration test.
+  - Source commands: `test-gaps`
+
+### Testing — Email Change Dual Cache Invalidation
+
+- [x] **#391 — No test changes a user's email and verifies both old and new cache keys are invalidated**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `update_user_email_invalidates_both_old_and_new_cache_keys` integration test.
+  - Source commands: `test-gaps`
+
+### Testing — GET /teams/{nonexistent}/users Behavior
+
+- [x] **#392 — No test verifies whether the endpoint returns 200 `[]` or 404 for a non-existent team**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `team_users_for_nonexistent_team_returns_empty` integration test.
+  - Source commands: `test-gaps`
+
+### Testing — `check_team_access` for Team Admin Role
+
+- [x] **#393 — DB tests cover Admin bypass and Member access but not Team Admin role specifically**
+  - File: `tests/db_tests.rs`
+  - Resolution: Added `check_team_access_team_admin` DB integration test.
+  - Source commands: `test-gaps`
+
+### Testing — Order Entry `amt` Range Validation
+
+- [x] **#396 — `CreateOrderEntry` and `UpdateOrderEntry` have `#[validate(range(min=1, max=10000))]` on `amt` but no test verifies boundary values**
+  - File: `src/models.rs`
+  - Resolution: Added boundary tests for amt=0 (fails), amt=1 (passes) for both Create and Update order entries.
+  - Source commands: `test-gaps`
+
+### Testing — Revoke Already-Revoked Token Idempotency
+
+- [x] **#461 — No API test calls `POST /auth/revoke` twice with the same token**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `revoke_same_token_twice_is_idempotent` integration test.
+  - Source commands: `test-gaps`
+
+### Testing — `Cache-Control: no-store` Header on Auth Responses
+
+- [x] **#462 — Both `auth_user` and `refresh_token` set the header but no test asserts its presence**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `auth_response_has_cache_control_no_store` and `refresh_response_has_cache_control_no_store` integration tests.
+  - Source commands: `test-gaps`
+
+### Testing — `ErrorResponse::Display` Fallback Branch
+
+- [x] **#463 — The `serde_json::to_string` failure fallback in `Display` impl has no test**
+  - File: `src/errors.rs`
+  - Resolution: Added `error_response_display_normal` and `error_response_display_with_special_chars` unit tests.
+  - Source commands: `test-gaps`
+
+### Testing — `ActixJson` Catch-All Error Branch
+
+- [x] **#464 — The `_ =>` branch for generic `JsonPayloadError` (overflow, EOF) returns 400 but is untargeted by tests**
+  - File: `src/errors.rs`
+  - Resolution: Added `actix_json_parse_error_returns_400` unit test.
+  - Source commands: `test-gaps`
+
+### Testing — `CreateUserDialog` and `EditUserDialog` WASM Tests
+
+- [x] **#511 — Admin page dialog components for creating and editing users have no test coverage**
+  - File: `frontend/src/pages/admin.rs`, `frontend/tests/ui_tests.rs`
+  - Resolution: Added 7 WASM tests: `test_create_user_dialog_opens`, `test_create_user_dialog_has_form_fields`, `test_create_user_dialog_create_disabled_when_empty`, `test_create_user_dialog_cancel_closes`, `test_edit_user_dialog_opens`, `test_edit_user_dialog_has_form_fields`, `test_edit_user_dialog_cancel_closes`.
+  - Source commands: `test-gaps`
 
 ## Notes
 
-- Total resolved items: 359 (6 critical, 47 important, 114 minor, 89 informational, plus items previously counted under different categories)
+- Total resolved items: 385 (6 critical, 47 important, 114 minor, 115 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file
