@@ -29,28 +29,28 @@ pub fn DashboardPage() -> impl IntoView {
                                 <UserCard name=name.clone() initials=initials.clone() email=email.clone() />
                             </div>
 
-                            <div class="dashboard-stats">
-                                <div class="card stat-card">
-                                    <span class="stat-card__value">{team_count}</span>
-                                    <span class="stat-card__label">{if team_count == 1 { "Team" } else { "Teams" }}</span>
-                                </div>
-                                <div class="card stat-card">
-                                    <span class="connect-tag connect-tag--medium connect-tag--primary-default stat-card__tag">
-                                        <span class="connect-tag__text-wrapper">
-                                            <span class="connect-tag__text">{role_label}</span>
+                            <div class="card dashboard-teams-card">
+                                <div class="dashboard-stats">
+                                    <div class="stat-card">
+                                        <span class="stat-card__value">{team_count}</span>
+                                        <span class="stat-card__label">{if team_count == 1 { "Team" } else { "Teams" }}</span>
+                                    </div>
+                                    <div class="stat-card">
+                                        <span class="connect-tag connect-tag--medium connect-tag--primary-default stat-card__tag">
+                                            <span class="connect-tag__text-wrapper">
+                                                <span class="connect-tag__text">{role_label}</span>
+                                            </span>
                                         </span>
-                                    </span>
-                                    <span class="stat-card__label">"Role"</span>
+                                        <span class="stat-card__label">"Role"</span>
+                                    </div>
                                 </div>
-                            </div>
 
-                            // Team membership overview
-                            {if !u.teams.is_empty() {
-                                let teams = u.teams.clone();
-                                view! {
-                                    <div class="card">
+                                // Team membership overview
+                                {if !u.teams.is_empty() {
+                                    let teams = u.teams.clone();
+                                    view! {
                                         <h3 class="section-title">"Your Teams"</h3>
-                                        <table class="connect-table connect-table--medium">
+                                        <table class="connect-table connect-table--medium dashboard-teams-table">
                                             <thead class="connect-table-header">
                                                 <tr>
                                                     <th class="connect-table-header-cell">"Team"</th>
@@ -77,11 +77,11 @@ pub fn DashboardPage() -> impl IntoView {
                                                 }).collect::<Vec<_>>()}
                                             </tbody>
                                         </table>
-                                    </div>
-                                }.into_any()
-                            } else {
-                                view! { <div /> }.into_any()
-                            }}
+                                    }.into_any()
+                                } else {
+                                    view! { <div /> }.into_any()
+                                }}
+                            </div>
                         </div>
                     }
                 })
