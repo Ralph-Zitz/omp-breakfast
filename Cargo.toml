@@ -19,13 +19,13 @@ utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.149" }
 chrono = { version = "0.4.44", features = ["serde"] }
-uuid = { version = "1.21.0", features = ["serde", "v7"] }
+uuid = { version = "1.22.0", features = ["serde", "v7"] }
 thiserror = "2.0.18"
 config = "0.15.19"
 
 deadpool-postgres = { version = "0.14.1", features = ["serde"] }
 tokio-postgres = { version = "0.7.16", features = ["with-chrono-0_4", "with-uuid-1"] }
-tokio = { version = "1", default-features = false, features = ["rt"] }
+tokio = { version = "1.50.0", default-features = false, features = ["rt"] }
 tokio-postgres-rustls = "0.13.0"
 validator = { version = "0.20.0", features = ["derive"] }
 argon2 = "0.5.3"
