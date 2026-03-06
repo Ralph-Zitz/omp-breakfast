@@ -4,3 +4,4 @@ frontend/dist
 Dockerfile
 .dockerignore
 .gitignore
+.git

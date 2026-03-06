@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-06
+Last assessed: 2026-03-08
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -54,26 +54,7 @@ _No open minor items._
   - Fix: Update 403 descriptions to match actual RBAC policy once #302/#303 are fixed.
   - Source commands: `openapi-sync`
 
-### Security — Swagger UI Gated by Negation Rather Than Explicit Opt-In
 
-- [ ] **#336 — Swagger UI at `/explorer` available in all non-production environments (staging, preprod, etc.)**
-  - File: `src/routes.rs` (lines ~33–35)
-  - Problem: Gate is `ENV != "production"`, so staging/preprod environments expose full API docs. Consider explicit opt-in (e.g., `ENABLE_SWAGGER=true`).
-  - Source commands: `security-audit`
-
-### Security — Refresh Token Rotation Doesn't Revoke Old Access Token
-
-- [ ] **#337 — When refresh token is used to obtain a new pair, the old access token remains valid up to 15 minutes**
-  - File: `src/handlers/users.rs` (lines ~121–129)
-  - Problem: Only the old refresh token is revoked. An attacker with both tokens could still use the access token.
-  - Source commands: `security-audit`
-
-### Security — HSTS Header Missing `preload` Directive
-
-- [ ] **#338 — HSTS value is `max-age=31536000; includeSubDomains` but lacks `preload`**
-  - File: `src/server.rs` (line ~443)
-  - Problem: Without `preload`, the first visit is vulnerable to MITM downgrade.
-  - Source commands: `security-audit`
 
 ### Security — Account Lockout State In-Memory Only
 
@@ -82,13 +63,7 @@ _No open minor items._
   - Problem: In multi-instance deployment, attacker can distribute brute-force attempts across instances.
   - Source commands: `security-audit`
 
-### Frontend — No Client-Side `maxlength` on Form Inputs
 
-- [ ] **#340 — Frontend input fields lack `maxlength` attributes matching backend validation rules**
-  - Files: `frontend/src/pages/login.rs`, `frontend/src/pages/admin.rs`, `frontend/src/pages/profile.rs`
-  - Problem: Arbitrarily long strings transmitted to server before backend validator catches them.
-  - Fix: Add `maxlength=50` on name fields, `maxlength=128` on password, `maxlength=255` on team/role names.
-  - Source commands: `security-audit`
 
 ### Testing — `basic_validator` Malformed Password Hash Path Untested
 
@@ -140,19 +115,7 @@ _No open minor items._
   - Problem: 3 pairs of structs are field-identical. Could be unified or type-aliased to reduce boilerplate.
   - Source commands: `review`
 
-### Security — Password Fields Lack `autocomplete="new-password"`
 
-- [ ] **#379 — Profile page password input missing `autocomplete` attribute**
-  - File: `frontend/src/pages/profile.rs` (line ~207)
-  - Problem: Without `autocomplete="new-password"`, password managers may not offer to save the new password.
-  - Source commands: `security-audit`
-
-### Security — Argon2id `Params::default()` Below OWASP Minimum
-
-- [ ] **#380 — Default Argon2id parameters (19 MiB, 2 iterations, 1 lane) are below OWASP recommendation (46 MiB, 1 iteration, 1 lane)**
-  - File: `src/middleware/auth.rs`
-  - Problem: The `Params::default()` values are the `argon2` crate defaults, not the OWASP-recommended profile. For an internal app this is low risk but worth noting.
-  - Source commands: `security-audit`
 
 ### Security — JWT Validator Performs DB Lookup on Every Request
 
@@ -273,31 +236,7 @@ _No open minor items._
   - File: `src/middleware/auth.rs` (lines ~65–70)
   - Source commands: `security-audit`
 
-### Security — `local_storage()` Helper Needs Doc Warning
 
-- [ ] **#448 — Public helper exists alongside `session_storage()`; could invite token misuse by future developers**
-  - File: `frontend/src/api.rs` (lines ~187–191)
-  - Fix: Add doc-comment warning against storing tokens in localStorage.
-  - Source commands: `security-audit`
-
-### Security — Docker Containers Lack Hardening Options
-
-- [ ] **#449 — No `read_only: true`, `security_opt: ["no-new-privileges:true"]`, or `cap_drop: ["ALL"]`**
-  - File: `docker-compose.yml`
-  - Source commands: `security-audit`
-
-### Security — CORS `allowed_origin` Uses Bind Address
-
-- [ ] **#450 — `allowed_origin(&format!("https://{}:{}", host, port))` produces non-matching origin string; CORS is effectively non-functional**
-  - File: `src/server.rs` (lines ~430–435)
-  - Source commands: `security-audit`
-
-### Security — `.git` Directory Copied Into Docker Builder Stage
-
-- [ ] **#451 — Full git history in builder image cache; used only for `git_version!()`**
-  - File: `Dockerfile.breakfast` (line ~40)
-  - Fix: Pass git version as build arg instead.
-  - Source commands: `security-audit`
 
 ### Code Quality — Auth Cache Eviction O(n)
 
@@ -385,8 +324,8 @@ See that file for the full history of resolved findings.
 - **Test counts verified (2026-03-06):** 234 unit (212 lib + 22 healthcheck), 145 API integration (ignored), 104 DB integration (ignored), 79 WASM.
 - **`cargo audit` (2026-03-06):** Exit code 0. No new vulnerabilities. RUSTSEC-2023-0071 (`rsa` via `jsonwebtoken`) remains intentionally ignored — **blocked on upstream**, see #132.
 - **CONNECT Design System (2026-03-06):** `git pull` fetched new commits (3.0.0-RC1, 2.9.0, etc.). CSS changes to checkbox-group, dropdown, inline-alert, menu, radio-group, tag, text-field, utility-button — **none used by our frontend**. Token additions (opacity variants) are non-breaking. SCSS removal has no impact (we only use CSS imports). **No migration required.**
-- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 22 informational.
-- 8 new findings in this assessment: #513–#520. 0 regressions found. 4 items resolved this session (#513, #514, #515, #516). 26 test-gap items resolved in session of 2026-03-07.
+- Open items summary: 1 critical (#132 blocked), 0 important, 0 minor, 12 informational (down from 22 — 10 security-audit findings resolved).
+- 8 new findings in this assessment: #513–#520. 0 regressions found. 4 items resolved this session (#513, #514, #515, #516). 26 test-gap items resolved in session of 2026-03-07. 10 security-audit items resolved in session of 2026-03-08 (#336, #337, #338, #340, #379, #380, #448, #449, #450, #451).
 - Highest finding number: #520.
 
 ### Re-assessment — 2026-03-06

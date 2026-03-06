@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-07
+Last updated: 2026-03-08
 
 ## Critical Items
 
@@ -2745,8 +2745,78 @@ Last updated: 2026-03-07
   - Resolution: Added 7 WASM tests: `test_create_user_dialog_opens`, `test_create_user_dialog_has_form_fields`, `test_create_user_dialog_create_disabled_when_empty`, `test_create_user_dialog_cancel_closes`, `test_edit_user_dialog_opens`, `test_edit_user_dialog_has_form_fields`, `test_edit_user_dialog_cancel_closes`.
   - Source commands: `test-gaps`
 
+### Security — Swagger UI Explicit Opt-In
+
+- [x] **#336 — Swagger UI at `/explorer` available in all non-production environments (staging, preprod, etc.)**
+  - File: `src/routes.rs`
+  - Resolution: Changed to explicit `ENABLE_SWAGGER` env var opt-in. Defaults to `!is_production` if unset, but can be explicitly disabled in staging/preprod environments.
+  - Source commands: `security-audit`
+
+### Security — Refresh Token Rotation Revokes Old Access Token
+
+- [x] **#337 — When refresh token is used to obtain a new pair, the old access token remains valid up to 15 minutes**
+  - Files: `src/handlers/users.rs`, `src/models.rs`, `src/middleware/openapi.rs`, `frontend/src/api.rs`
+  - Resolution: `refresh_token` handler now accepts optional `RefreshRequest { access_token }` body. Frontend sends old access token on refresh. Server validates (same user, Access type) and revokes it immediately, closing the window where a leaked token could be reused.
+  - Source commands: `security-audit`
+
+### Security — HSTS Preload Directive
+
+- [x] **#338 — HSTS value is `max-age=31536000; includeSubDomains` but lacks `preload`**
+  - File: `src/server.rs`
+  - Resolution: Added `; preload` to HSTS header value.
+  - Source commands: `security-audit`
+
+### Frontend — Client-Side `maxlength` on Form Inputs
+
+- [x] **#340 — Frontend input fields lack `maxlength` attributes matching backend validation rules**
+  - Files: `frontend/src/pages/login.rs`, `frontend/src/pages/admin.rs`, `frontend/src/pages/profile.rs`
+  - Resolution: Added `maxlength=255` on email/username fields, `maxlength=128` on password fields, `maxlength=50` on first/last name fields across login, admin, and profile pages.
+  - Source commands: `security-audit`
+
+### Security — Password Fields `autocomplete` Attribute
+
+- [x] **#379 — Profile page password input missing `autocomplete` attribute**
+  - Files: `frontend/src/pages/admin.rs`, `frontend/src/pages/profile.rs`
+  - Resolution: Added `autocomplete="new-password"` on create/reset password fields, `autocomplete="current-password"` on current password field.
+  - Source commands: `security-audit`
+
+### Security — Argon2id OWASP Parameters
+
+- [x] **#380 — Default Argon2id parameters (19 MiB, 2 iterations, 1 lane) are below OWASP recommendation (46 MiB, 1 iteration, 1 lane)**
+  - Files: `src/lib.rs`, `src/middleware/auth.rs`
+  - Resolution: Changed `Params::default()` to `Params::new(47104, 1, 1, None)` (46 MiB, 1 iteration, 1 lane). Regenerated DUMMY_HASH with matching parameters.
+  - Source commands: `security-audit`
+
+### Security — `local_storage()` Doc Warning
+
+- [x] **#448 — Public helper exists alongside `session_storage()`; could invite token misuse by future developers**
+  - File: `frontend/src/api.rs`
+  - Resolution: Added doc-comment warning against storing tokens in localStorage.
+  - Source commands: `security-audit`
+
+### Security — Docker Container Hardening
+
+- [x] **#449 — No `read_only: true`, `security_opt: ["no-new-privileges:true"]`, or `cap_drop: ["ALL"]`**
+  - File: `docker-compose.yml`
+  - Resolution: Added `read_only: true` + `security_opt: ["no-new-privileges:true"]` on breakfast container; `security_opt` only on postgres (needs writable filesystem).
+  - Source commands: `security-audit`
+
+### Security — CORS `allowed_origin` Fix
+
+- [x] **#450 — `allowed_origin` uses bind address `0.0.0.0` which browsers never produce as Origin**
+  - File: `src/server.rs`
+  - Resolution: Substitutes `0.0.0.0` with `localhost` for CORS origin since browsers never send `Origin: https://0.0.0.0:...`.
+  - Source commands: `security-audit`
+
+### Security — `.git` Directory in Docker Build
+
+- [x] **#451 — Full git history in builder image cache; used only for `git_version!()`**
+  - Files: `Dockerfile.breakfast`, `.dockerignore`
+  - Resolution: Removed redundant `COPY .git/` from Dockerfile; added `.git` to `.dockerignore` to exclude git history from Docker build context.
+  - Source commands: `security-audit`
+
 ## Notes
 
-- Total resolved items: 385 (6 critical, 47 important, 114 minor, 115 informational, plus items previously counted under different categories)
+- Total resolved items: 395 (6 critical, 47 important, 114 minor, 125 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

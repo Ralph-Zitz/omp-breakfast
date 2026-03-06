@@ -163,7 +163,7 @@ tests/
 - **Update functions must return 404 (not 500) when the target resource does not exist.** Use `query_opt()` + `.ok_or_else(|| Error::NotFound(...))` — never `query_one()`, which maps missing rows to a generic DB error (500). This is a permanent design decision; do not revert to `query_one()` in update functions.
 - All handlers are instrumented with `#[instrument(skip(state), level = "debug")]`
 - Validation uses `validate(&json)?` before any DB call
-- JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation
+- JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation; on refresh, the old access token is revoked if provided in the request body (`RefreshRequest { access_token }`)
 - Token revocation uses a DB-backed `token_blacklist` table (persisted across restarts) with an in-memory `dashmap::DashMap` cache for fast-path lookups. A background task runs every hour to clean up expired entries from both the database (via `db::cleanup_expired_tokens`) and the in-memory map (via `DashMap::retain()`).
 - Auth cache uses TTL (5min) and max-size (1000 entries) with FIFO eviction
 - Avatar cache: `DashMap<Uuid, (Vec<u8>, String)>` maps avatar_id → (image bytes, content_type). Loaded at startup from the database; on first run, pre-resized minifig PNGs from `minifigs/` are seeded into the `avatars` table. Served with `Cache-Control: public, max-age=31536000, immutable`.
@@ -191,8 +191,8 @@ tests/
 - Health endpoint (`/health`) returns HTTP 503 with `{"up": false}` when the database is unreachable, and HTTP 200 with `{"up": true}` when healthy
 - Backend serves `frontend/dist/` as static files via `actix-files`, with `index_file("index.html")`
 - Static files are served with a `Content-Security-Policy` header: `default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://assets.lego.com; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'`. The `'unsafe-inline'` directive in `script-src` is required because Trunk generates an inline `<script type="module">` to initialize the WASM module; removing it causes a white-screen failure in Chrome. The `font-src` directive includes `https://assets.lego.com` to allow loading the LEGO Typewell proprietary font from the LEGO CDN.
-- Security headers: `Strict-Transport-Security` (HSTS), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()` are set globally via `DefaultHeaders`
-- Password hashing uses explicit Argon2id parameters (`Algorithm::Argon2id`, `Version::V0x13`, `Params::default()`) rather than `Argon2::default()` to prevent silent weakening via crate updates
+- Security headers: `Strict-Transport-Security` (HSTS with `preload`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()` are set globally via `DefaultHeaders`
+- Password hashing uses explicit Argon2id parameters (`Algorithm::Argon2id`, `Version::V0x13`, `Params::new(47104, 1, 1, None)` — OWASP recommended: 46 MiB memory, 1 iteration, 1 lane) rather than `Argon2::default()` to prevent silent weakening via crate updates
 
 ## Frontend Architecture
 
@@ -212,7 +212,7 @@ The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via 
 - **Page routing:** Manual via `Page` enum (`Loading` / `Login` / `Dashboard` / `Teams` / `Orders` / `Items` / `Profile` / `Admin` / `Roles`) + Leptos signals (no router crate). `AppShell` wraps all authenticated pages with sidebar navigation.
 - **Auth flow:** Basic Auth POST to `/auth` → receive JWT tokens → store `access_token` and `refresh_token` in `sessionStorage` → decode JWT payload for `user_id` → GET `/api/v1.0/users/{id}` for user details → render dashboard. On logout, both access and refresh tokens are revoked server-side via `POST /auth/revoke` (fire-and-forget).
 - **Session restore:** On startup, checks `sessionStorage` for existing `access_token` → shows `LoadingPage` → if token is expired, attempts refresh via `POST /auth/refresh` → validates token via user fetch → restores dashboard or falls back to login
-- **Token refresh:** Transparent refresh via `try_refresh_token()` — when the access token is expired or within 60 seconds of expiry, the frontend automatically calls `POST /auth/refresh` with the stored refresh token, stores the new token pair, and retries the original request. If refresh fails, tokens are cleared and the user is redirected to login.
+- **Token refresh:** Transparent refresh via `try_refresh_token()` — when the access token is expired or within 60 seconds of expiry, the frontend automatically calls `POST /auth/refresh` with the stored refresh token and the old access token in the request body (so the server can revoke it immediately), stores the new token pair, and retries the original request. If refresh fails, tokens are cleared and the user is redirected to login.
 - **Client-side validation:** Both username and password required before form submission
 - **Error display:** HTTP 401 → "Invalid username or password"; network failure → "Unable to reach the server"
 - **Dev proxying:** Trunk proxies `/auth`, `/api`, `/health` to `https://127.0.0.1:8080` (configured in `Trunk.toml`)

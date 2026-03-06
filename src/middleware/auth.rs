@@ -21,10 +21,10 @@ use deadpool_postgres::Client;
 /// The hash is for the string "dummy" and is **never** expected to match:
 ///
 /// ```text
-/// argon2id, v=19, m=19456, t=2, p=1
+/// argon2id, v=19, m=47104, t=1, p=1
 /// salt = "dHlwaW5nZXF1YWxpemVy"   (base-64 of "typingequalizer")
 /// ```
-static DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$dHlwaW5nZXF1YWxpemVy$QvwUmVBE5xpmfcBAnqUhQDQecbVnqjhAhj4cXN0OPWE";
+static DUMMY_HASH: &str = "$argon2id$v=19$m=47104,t=1,p=1$dHlwaW5nZXF1YWxpemVy$DMz1OpMJ0dIVYIG89X9/fPQYLc2wEpNZSDKn+WkGw8w";
 use jsonwebtoken::{
     Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode,
 };

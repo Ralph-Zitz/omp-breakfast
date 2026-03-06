@@ -202,6 +202,7 @@ fn UsernameField(username: ReadSignal<String>, set_username: WriteSignal<String>
                     class="connect-text-field__input"
                     id="username"
                     type="text"
+                    maxlength=255
                     placeholder="you@example.com or username"
                     autocomplete="username"
                     prop:value=move || username.get()
@@ -246,6 +247,7 @@ fn PasswordField(password: ReadSignal<String>, set_password: WriteSignal<String>
                     class="connect-text-field__input"
                     id="password"
                     type="password"
+                    maxlength=128
                     placeholder="Enter your password"
                     autocomplete="current-password"
                     prop:value=move || password.get()

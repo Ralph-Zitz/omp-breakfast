@@ -33,13 +33,16 @@ pub fn routes(cfg: &mut ServiceConfig) {
         .expect("valid rate limiter config");
 
     let is_production = env::var("ENV").unwrap_or_default() == "production";
+    let swagger_enabled = env::var("ENABLE_SWAGGER")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(!is_production);
 
     cfg
         /* Status Endpoint: Is server running and connected to DB? */
         .route("/health", get().to(get_health));
 
-    // Swagger UI: only available in non-production environments
-    if !is_production {
+    // Swagger UI: opt-in via ENABLE_SWAGGER=true, defaults to on in non-production
+    if swagger_enabled {
         cfg.service(scope("/explorer").service(get_swagger));
     }
 

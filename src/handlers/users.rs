@@ -90,14 +90,19 @@ pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Resp
 #[utoipa::path(
     post,
     path = "/auth/refresh",
+    request_body(content = Option<RefreshRequest>, description = "Optional: include the old access token to revoke it immediately"),
     responses(
         (status = 200, description = "Token refreshed successfully", body = Auth),
         (status = 401, description = "Invalid or expired refresh token", body = ErrorResponse),
     ),
     security(("bearer_auth" = [])),
 )]
-#[instrument(skip(state, req), level = "debug")]
-pub async fn refresh_token(state: Data<State>, req: HttpRequest) -> Result<impl Responder, Error> {
+#[instrument(skip(state, req, body), level = "debug")]
+pub async fn refresh_token(
+    state: Data<State>,
+    req: HttpRequest,
+    body: Option<Json<RefreshRequest>>,
+) -> Result<impl Responder, Error> {
     // Claims are already decoded and validated by the refresh_validator middleware
     // and stored in request extensions — avoid redundant re-decode.
     let claims = req
@@ -129,6 +134,21 @@ pub async fn refresh_token(state: Data<State>, req: HttpRequest) -> Result<impl 
         Utc::now() + Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration")
     });
     revoke_token(&client, &state, &claims.jti.to_string(), expires_at).await?;
+
+    // Also revoke the old access token if the client supplied it, closing the
+    // 15-minute window where a leaked access token remains usable.
+    if let Some(Json(RefreshRequest {
+        access_token: Some(old_access),
+    })) = body
+    {
+        if let Ok(td) = verify_jwt_for_revocation(&old_access, &state.jwtsecret) {
+            if td.claims.sub == claims.sub && td.claims.token_type == TokenType::Access {
+                let at_exp =
+                    DateTime::<Utc>::from_timestamp(td.claims.exp, 0).unwrap_or_else(Utc::now);
+                let _ = revoke_token(&client, &state, &td.claims.jti.to_string(), at_exp).await;
+            }
+        }
+    }
 
     // Issue a new token pair
     let auth = generate_token_pair(claims.sub, &state.jwtsecret)?;

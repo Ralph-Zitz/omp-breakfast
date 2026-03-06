@@ -546,12 +546,14 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     let bind_address = format!("{}:{}", host, port);
     HttpServer::new(move || {
         // CORS: restrict to same-origin by default.
-        // In production the frontend is served from the same origin so
-        // `allowed_origin` matches the server's own address. For local
-        // Trunk dev-server proxying, the proxy forwards requests to the
-        // backend so no extra origin is needed.
+        // The frontend SPA is served from the same origin so most requests
+        // are same-origin and bypass CORS entirely. This policy covers any
+        // cross-origin API consumers (tools, other frontends). The bind
+        // address (0.0.0.0) is replaced with "localhost" because browsers
+        // never produce `Origin: https://0.0.0.0:…`.
+        let cors_host = if host == "0.0.0.0" { "localhost" } else { &host };
         let cors = Cors::default()
-            .allowed_origin(&format!("https://{}:{}", host, port))
+            .allowed_origin(&format!("https://{}:{}", cors_host, port))
             .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
             .allowed_headers(vec![
                 actix_web::http::header::AUTHORIZATION,
@@ -565,7 +567,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
             .wrap(cors)
             .wrap(
                 DefaultHeaders::new()
-                    .add(("Strict-Transport-Security", "max-age=31536000; includeSubDomains"))
+                    .add(("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload"))
                     .add(("X-Content-Type-Options", "nosniff"))
                     .add(("X-Frame-Options", "DENY"))
                     .add(("Referrer-Policy", "strict-origin-when-cross-origin"))

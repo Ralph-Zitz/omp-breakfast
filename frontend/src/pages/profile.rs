@@ -250,6 +250,7 @@ pub fn ProfilePage() -> impl IntoView {
                                         class="connect-text-field__input"
                                         id="profile-ln"
                                         type="text"
+                                        maxlength=50
                                         prop:value=move || lastname.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return };
@@ -268,6 +269,7 @@ pub fn ProfilePage() -> impl IntoView {
                                         class="connect-text-field__input"
                                         id="profile-email"
                                         type="email"
+                                        maxlength=255
                                         prop:value=move || email.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return };
@@ -286,6 +288,8 @@ pub fn ProfilePage() -> impl IntoView {
                                         class="connect-text-field__input"
                                         id="profile-pw"
                                         type="password"
+                                        maxlength=128
+                                        autocomplete="new-password"
                                         placeholder="••••••••"
                                         prop:value=move || password.get()
                                         on:input=move |ev| {
@@ -308,6 +312,8 @@ pub fn ProfilePage() -> impl IntoView {
                                                 class="connect-text-field__input"
                                                 id="profile-curpw"
                                                 type="password"
+                                                maxlength=128
+                                                autocomplete="current-password"
                                                 placeholder="••••••••"
                                                 required=true
                                                 prop:value=move || current_password.get()

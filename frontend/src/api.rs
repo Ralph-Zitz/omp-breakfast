@@ -194,6 +194,12 @@ pub fn session_storage() -> Option<web_sys::Storage> {
         .flatten()
 }
 
+/// WARNING: Do NOT use `local_storage()` for storing authentication tokens.
+/// Tokens are stored in `sessionStorage` (via [`session_storage()`]) to limit
+/// exposure — they are cleared when the browser tab closes, reducing the
+/// window for XSS-based token theft. `localStorage` persists across tabs and
+/// sessions, making stolen tokens usable indefinitely. This helper exists
+/// only for non-sensitive preferences (e.g., theme choice).
 pub fn local_storage() -> Option<web_sys::Storage> {
     web_sys::window()
         .and_then(|w| w.local_storage().ok())
@@ -217,34 +223,48 @@ pub fn token_needs_refresh(token: &str, margin_secs: u64) -> bool {
 }
 
 /// Attempt to refresh the access token using the stored refresh token.
+/// Sends the old access token in the request body so the server can revoke it
+/// immediately, closing the window where a leaked token could be reused.
 pub async fn try_refresh_token() -> Option<String> {
-    let refresh_token = session_storage()
-        .and_then(|s| s.get_item("refresh_token").ok())
-        .flatten()?;
+    let storage = session_storage()?;
+    let refresh_token = storage.get_item("refresh_token").ok().flatten()?;
 
     if refresh_token.is_empty() {
         return None;
     }
 
-    let resp = Request::post("/auth/refresh")
-        .header("Authorization", &format!("Bearer {}", refresh_token))
+    // Capture the old access token before it's overwritten
+    let old_access = storage.get_item("access_token").ok().flatten();
+
+    let req = Request::post("/auth/refresh")
+        .header("Authorization", &format!("Bearer {}", refresh_token));
+
+    // Include the old access token so the server can revoke it
+    let resp = if let Some(ref token) = old_access {
+        #[derive(Serialize)]
+        struct RefreshBody<'a> {
+            access_token: &'a str,
+        }
+        req.json(&RefreshBody {
+            access_token: token,
+        })
+        .ok()?
         .send()
         .await
-        .ok()?;
+        .ok()?
+    } else {
+        req.send().await.ok()?
+    };
 
     if !resp.ok() {
-        if let Some(storage) = session_storage() {
-            let _ = storage.remove_item("access_token");
-            let _ = storage.remove_item("refresh_token");
-        }
+        let _ = storage.remove_item("access_token");
+        let _ = storage.remove_item("refresh_token");
         return None;
     }
 
     let auth: AuthResponse = resp.json().await.ok()?;
-    if let Some(storage) = session_storage() {
-        let _ = storage.set_item("access_token", &auth.access_token);
-        let _ = storage.set_item("refresh_token", &auth.refresh_token);
-    }
+    let _ = storage.set_item("access_token", &auth.access_token);
+    let _ = storage.set_item("refresh_token", &auth.refresh_token);
     Some(auth.access_token)
 }
 

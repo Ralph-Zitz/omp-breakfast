@@ -37,7 +37,6 @@ COPY rds-ca-rsa2048-g1.pem /usr/local/share/ca-certificates/
 COPY localhost_ca.pem /usr/local/share/ca-certificates/
 RUN update-ca-certificates
 COPY . /app
-COPY .git/ /app/.git/
 WORKDIR /app
 # Install build OS dependencies
 # Copy in dependencies

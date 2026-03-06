@@ -80,6 +80,15 @@ pub struct TokenRequest {
     pub token: String,
 }
 
+/// Optional body for the refresh endpoint. When the client provides the
+/// previous access token, the server revokes it immediately instead of
+/// waiting for it to expire naturally (15 min window).
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct RefreshRequest {
+    /// The access token that should be revoked as part of the refresh.
+    pub access_token: Option<String>,
+}
+
 /// Cached authentication data. Intentionally omits `Serialize` to prevent
 /// accidental serialization of password hashes.
 #[derive(Clone, Debug)]

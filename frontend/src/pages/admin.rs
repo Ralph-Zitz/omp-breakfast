@@ -386,6 +386,7 @@ fn CreateUserDialog(
                                         class="connect-text-field__input"
                                         id="user-fn"
                                         type="text"
+                                        maxlength=50
                                         prop:value=move || firstname.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return };
@@ -403,6 +404,7 @@ fn CreateUserDialog(
                                         class="connect-text-field__input"
                                         id="user-ln"
                                         type="text"
+                                        maxlength=50
                                         prop:value=move || lastname.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return };
@@ -420,6 +422,7 @@ fn CreateUserDialog(
                                         class="connect-text-field__input"
                                         id="user-email"
                                         type="email"
+                                        maxlength=255
                                         prop:value=move || email.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return };
@@ -437,6 +440,8 @@ fn CreateUserDialog(
                                         class="connect-text-field__input"
                                         id="user-pw"
                                         type="password"
+                                        maxlength=128
+                                        autocomplete="new-password"
                                         prop:value=move || password.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return };
@@ -536,6 +541,7 @@ fn EditUserDialog(
                                         class="connect-text-field__input"
                                         id="edit-user-fn"
                                         type="text"
+                                        maxlength=50
                                         prop:value=move || firstname.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return };
@@ -553,6 +559,7 @@ fn EditUserDialog(
                                         class="connect-text-field__input"
                                         id="edit-user-ln"
                                         type="text"
+                                        maxlength=50
                                         prop:value=move || lastname.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return };
@@ -570,6 +577,7 @@ fn EditUserDialog(
                                         class="connect-text-field__input"
                                         id="edit-user-email"
                                         type="email"
+                                        maxlength=255
                                         prop:value=move || email.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return };
@@ -662,6 +670,8 @@ fn ResetPasswordDialog(
                                         class="connect-text-field__input"
                                         id="reset-pw-new"
                                         type="password"
+                                        maxlength=128
+                                        autocomplete="new-password"
                                         prop:value=move || new_password.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return };
@@ -683,6 +693,8 @@ fn ResetPasswordDialog(
                                         }
                                         id="reset-pw-confirm"
                                         type="password"
+                                        maxlength=128
+                                        autocomplete="new-password"
                                         prop:value=move || confirm_password.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return };

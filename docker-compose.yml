@@ -8,6 +8,9 @@ services:
       - postgres
     hostname: localhost
     restart: always
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "/healthcheck"]
       interval: 5s
@@ -45,6 +48,8 @@ services:
     build:
       dockerfile: Dockerfile.postgres
     hostname: localhost
+    security_opt:
+      - no-new-privileges:true
     command: >
       -c ssl=on
       -c ssl_ca_file=/var/lib/postgresql/ca-cert.crt
