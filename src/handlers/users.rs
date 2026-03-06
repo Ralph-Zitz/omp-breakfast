@@ -140,14 +140,12 @@ pub async fn refresh_token(
     if let Some(Json(RefreshRequest {
         access_token: Some(old_access),
     })) = body
+        && let Ok(td) = verify_jwt_for_revocation(&old_access, &state.jwtsecret)
+        && td.claims.sub == claims.sub
+        && td.claims.token_type == TokenType::Access
     {
-        if let Ok(td) = verify_jwt_for_revocation(&old_access, &state.jwtsecret) {
-            if td.claims.sub == claims.sub && td.claims.token_type == TokenType::Access {
-                let at_exp =
-                    DateTime::<Utc>::from_timestamp(td.claims.exp, 0).unwrap_or_else(Utc::now);
-                let _ = revoke_token(&client, &state, &td.claims.jti.to_string(), at_exp).await;
-            }
-        }
+        let at_exp = DateTime::<Utc>::from_timestamp(td.claims.exp, 0).unwrap_or_else(Utc::now);
+        let _ = revoke_token(&client, &state, &td.claims.jti.to_string(), at_exp).await;
     }
 
     // Issue a new token pair

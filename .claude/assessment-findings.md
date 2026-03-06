@@ -54,16 +54,12 @@ _No open minor items._
   - Fix: Update 403 descriptions to match actual RBAC policy once #302/#303 are fixed.
   - Source commands: `openapi-sync`
 
-
-
 ### Security — Account Lockout State In-Memory Only
 
 - [ ] **#339 — Login attempt tracking stored in `DashMap`, not shared across instances**
   - File: `src/middleware/auth.rs` (lines ~189–213)
   - Problem: In multi-instance deployment, attacker can distribute brute-force attempts across instances.
   - Source commands: `security-audit`
-
-
 
 ### Testing — `basic_validator` Malformed Password Hash Path Untested
 
@@ -114,8 +110,6 @@ _No open minor items._
   - File: `src/models.rs`
   - Problem: 3 pairs of structs are field-identical. Could be unified or type-aliased to reduce boilerplate.
   - Source commands: `review`
-
-
 
 ### Security — JWT Validator Performs DB Lookup on Every Request
 
@@ -235,8 +229,6 @@ _No open minor items._
 - [ ] **#447 — No `kid` claim or multi-key support; compromised secret requires full restart**
   - File: `src/middleware/auth.rs` (lines ~65–70)
   - Source commands: `security-audit`
-
-
 
 ### Code Quality — Auth Cache Eviction O(n)
 
