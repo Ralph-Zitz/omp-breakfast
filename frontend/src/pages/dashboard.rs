@@ -17,6 +17,7 @@ pub fn DashboardPage() -> impl IntoView {
                         let name = u.display_name();
                         let initials = u.initials();
                         let email = u.email.clone();
+                        let avatar_id = u.avatar_id.clone();
                         let team_count = u.teams.len();
                         let role_label = if u.is_admin { "Administrator" } else { "Member" };
 
@@ -26,7 +27,7 @@ pub fn DashboardPage() -> impl IntoView {
                                 <SuccessBadge />
                                 <h2>"Welcome!"</h2>
                                 <p class="success-text">"You have successfully signed in."</p>
-                                <UserCard name=name.clone() initials=initials.clone() email=email.clone() />
+                                <UserCard name=name.clone() initials=initials.clone() email=email.clone() avatar_id=avatar_id.clone() />
                             </div>
 
                             <div class="card dashboard-teams-card">
@@ -103,12 +104,35 @@ fn SuccessBadge() -> impl IntoView {
 }
 
 #[component]
-fn UserCard(name: String, initials: String, email: String) -> impl IntoView {
-    view! {
-        <div class="user-card">
+fn UserCard(
+    name: String,
+    initials: String,
+    email: String,
+    avatar_id: Option<String>,
+) -> impl IntoView {
+    let avatar_view = match avatar_id {
+        Some(aid) => {
+            let src = format!("/api/v1.0/avatars/{}", aid);
+            view! {
+                <img
+                    class="connect-avatar connect-avatar--x-large"
+                    src=src
+                    alt="User avatar"
+                />
+            }
+            .into_any()
+        }
+        None => view! {
             <div class="connect-avatar connect-avatar--x-large connect-avatar--initials connect-avatar--bg-yellow">
                 <span class="connect-avatar__text">{initials}</span>
             </div>
+        }
+        .into_any(),
+    };
+
+    view! {
+        <div class="user-card">
+            {avatar_view}
             <div class="user-details">
                 <span class="user-name">{name}</span>
                 <span class="user-email">{email}</span>

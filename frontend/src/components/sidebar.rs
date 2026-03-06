@@ -131,7 +131,7 @@ pub fn Sidebar() -> impl IntoView {
                                     let src = format!("/api/v1.0/avatars/{}", aid);
                                     view! {
                                         <img
-                                            class="connect-avatar connect-avatar--medium"
+                                            class="connect-avatar connect-avatar--large"
                                             src=src
                                             alt="User avatar"
                                             style="object-fit: cover; border-radius: var(--ds-layout-radius-round, 999px);"
@@ -139,7 +139,7 @@ pub fn Sidebar() -> impl IntoView {
                                     }.into_any()
                                 }
                                 None => view! {
-                                    <div class="connect-avatar connect-avatar--medium connect-avatar--initials connect-avatar--bg-yellow">
+                                    <div class="connect-avatar connect-avatar--large connect-avatar--initials connect-avatar--bg-yellow">
                                         <span class="connect-avatar__text">{initials}</span>
                                     </div>
                                 }.into_any(),

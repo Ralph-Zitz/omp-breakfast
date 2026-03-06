@@ -126,6 +126,11 @@ body {
     padding: var(--ds-layout-spacing-100);
 }
 
+.sidebar__user-info {
+    min-width: 0;
+    overflow: hidden;
+}
+
 .sidebar__user-name {
     font-size: var(--ds-screen-text-body-sm-font-size, 0.875rem);
     font-weight: var(--ds-screen-text-font-weight-medium, 500);
@@ -685,6 +690,11 @@ form {
 /* Flex layout for button spacing inside body-row action cells */
 .connect-table-cell--actions > button + button {
     margin-left: var(--ds-layout-spacing-100, 8px);
+}
+
+/* Ensure buttons behave as inline so text-align:right aligns them with header */
+.connect-table-cell--actions > button {
+    display: inline-flex;
 }
 
 .connect-table-row {
