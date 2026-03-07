@@ -87,6 +87,7 @@ frontend/
   Cargo.toml       – Frontend crate config (breakfast-frontend)
   Trunk.toml       – Trunk config: output dir, watch paths, API proxies
   index.html       – Trunk HTML shell with data-trunk CSS link
+  assets/          – Static assets (favicons, images) copied into dist/ by Trunk
   src/
     lib.rs         – Library entry point (pub mod api, app, components, pages)
     main.rs        – Binary entry point: mounts App to <body>
@@ -150,6 +151,8 @@ migrations/
   V7__drop_redundant_indexes.sql – Drops redundant idx_users_email and idx_teams_name (duplicated by UNIQUE constraints)
   V8__avatars.sql – Avatars table + users.avatar_id FK column
   V9__avatar_index_and_revoked_not_null.sql – Avatar FK index + token_blacklist.revoked_at NOT NULL
+  V10__guard_teamorders_team_id.sql – Guard teamorders_team_id with trigger
+  V11__text_column_check_constraints.sql – CHECK constraints on text column lengths
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
   db_tests.rs      – DB function integration tests (ignored without running DB)
@@ -161,7 +164,7 @@ tests/
 - Every handler returns `Result<impl Responder, Error>` using the custom `errors::Error` enum
 - DB functions take a `&Client` and return `Result<T, Error>`, using `.map_err(Error::Db)?` pattern. Functions that perform multi-step mutations (`add_team_member`, `update_member_role`) take `&mut Client` and wrap operations in a database transaction.
 - **Update functions must return 404 (not 500) when the target resource does not exist.** Use `query_opt()` + `.ok_or_else(|| Error::NotFound(...))` — never `query_one()`, which maps missing rows to a generic DB error (500). This is a permanent design decision; do not revert to `query_one()` in update functions.
-- All handlers are instrumented with `#[instrument(skip(state), level = "debug")]`
+- All handlers are instrumented with `#[instrument(..., level = "debug")]` — `state` is always skipped; handlers may also skip `req`, `json`, `basic`, `body` as appropriate
 - Validation uses `validate(&json)?` before any DB call
 - JWT auth uses access tokens (15min) + refresh tokens (7 days) with token rotation; on refresh, the old access token is revoked if provided in the request body (`RefreshRequest { access_token }`)
 - Token revocation uses a DB-backed `token_blacklist` table (persisted across restarts) with an in-memory `dashmap::DashMap` cache for fast-path lookups. A background task runs every hour to clean up expired entries from both the database (via `db::cleanup_expired_tokens`) and the in-memory map (via `DashMap::retain()`).
@@ -175,7 +178,7 @@ tests/
 - Admin-or-Team-Admin RBAC: `require_admin_or_team_admin` helper checks if user holds "Admin" or "Team Admin" role in any team (via `db::is_admin_or_team_admin`); gates user creation.
 - Team RBAC: `require_team_member` and `require_team_admin` helpers gate team-scoped mutations; both allow global Admin bypass. `require_team_admin` checks for "Team Admin" role in the specific team.
 - Order RBAC: `require_order_owner_or_team_admin` gates single-order mutations (update, delete); allows the order creator, a Team Admin for the team, or a global Admin. Regular members and guests may only mutate their own orders.
-- Order Items RBAC: Creating an order item requires team membership (any role — by design, all team members may add items to a breakfast order). Updating or deleting an order item requires `require_order_owner_or_team_admin` (same as team orders). Adding items to a closed order is blocked by `guard_open_order`.
+- Order Items RBAC: Creating an order item requires team membership (any role — by design, all team members may add items to a breakfast order). Updating or deleting an order item requires `require_order_owner_or_team_admin` (same as team orders) — this checks the **team order creator** (`teamorders.teamorders_user_id`), not the individual line-item contributor, because order items have no per-item `user_id` column. This is intentional: breakfast orders are collaborative, so ownership is at the order level, not the line-item level. Adding items to a closed order is blocked by `guard_open_order`.
 - Admin role guard: `guard_admin_role_assignment` prevents non-admin users from assigning the "Admin" role. Called after `require_team_admin` in membership handlers (add member, update role). Only global Admins may grant Admin privileges; Team Admins may assign any other role.
 - Admin demotion guard: `guard_admin_demotion` prevents non-admin users from demoting or removing a global Admin. Called after `require_team_admin` in `update_member_role` and `remove_team_member` handlers. If the target user is a global Admin, only another global Admin may change their role or remove them from a team. Team Admins cannot modify global Admins' memberships.
 - Last admin guard: `guard_last_admin_membership` prevents operations that would leave zero global Admins. Called after `guard_admin_demotion` in `update_member_role` and `remove_team_member` handlers. Uses `db::would_admins_remain_without` to check whether at least one Admin would remain after excluding the target membership. Returns 403 if the operation would orphan the system.
@@ -379,15 +382,15 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ## Unfinished Work
 
 - No client-side routing library (manual signal-based page switching, by design)
-- Frontend pages render CRUD UI but lack comprehensive WASM test coverage for the 6 new pages (admin, items, orders, profile, roles, teams)
+- Frontend WASM tests cover all pages with rendering and basic interaction tests (79 tests); deeper workflow and edge-case tests for individual pages are still missing
 
 ## Testing
 
 ### Backend
 
-- 234 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 145 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
-- 104 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 236 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
+- 152 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 109 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
 - Test DB uses `docker-compose.test.yml` overlay to expose port 5433 (avoids conflicts with dev DB on 5432)

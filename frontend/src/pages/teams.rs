@@ -36,11 +36,16 @@ pub fn TeamsPage() -> impl IntoView {
         set_loading.set(true);
         leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams?limit={}&offset={}", limit, off);
-            if let Some(resp) = authed_get(&url).await {
-                if resp.ok() {
-                    match resp.json::<PaginatedResponse<TeamEntry>>().await {
-                        Ok(data) => { set_total.set(data.total as usize); set_teams.set(data.items); }
-                        Err(e) => web_sys::console::warn_1(&format!("teams JSON parse error: {e}").into()),
+            if let Some(resp) = authed_get(&url).await
+                && resp.ok()
+            {
+                match resp.json::<PaginatedResponse<TeamEntry>>().await {
+                    Ok(data) => {
+                        set_total.set(data.total as usize);
+                        set_teams.set(data.items);
+                    }
+                    Err(e) => {
+                        web_sys::console::warn_1(&format!("teams JSON parse error: {e}").into())
                     }
                 }
             }
@@ -54,12 +59,14 @@ pub fn TeamsPage() -> impl IntoView {
         set_members_loading.set(true);
         leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/users", team_id);
-            if let Some(resp) = authed_get(&url).await {
-                if resp.ok() {
-                    match resp.json::<PaginatedResponse<UsersInTeam>>().await {
-                        Ok(data) => set_team_members.set(data.items),
-                        Err(e) => web_sys::console::warn_1(&format!("team members JSON parse error: {e}").into()),
-                    }
+            if let Some(resp) = authed_get(&url).await
+                && resp.ok()
+            {
+                match resp.json::<PaginatedResponse<UsersInTeam>>().await {
+                    Ok(data) => set_team_members.set(data.items),
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("team members JSON parse error: {e}").into(),
+                    ),
                 }
             }
             set_members_loading.set(false);
@@ -72,20 +79,20 @@ pub fn TeamsPage() -> impl IntoView {
             let url = format!("/api/v1.0/teams/{}", team_id);
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
-                Some(r) if r.ok() => {
-                    match r.json::<TeamEntry>().await {
-                        Ok(updated) => {
-                            set_teams.update(|list| {
-                                if let Some(t) = list.iter_mut().find(|t| t.team_id == updated.team_id)
-                                {
-                                    *t = updated;
-                                }
-                            });
-                            toast_success("Team updated");
-                        }
-                        Err(e) => web_sys::console::warn_1(&format!("team update JSON parse error: {e}").into()),
+                Some(r) if r.ok() => match r.json::<TeamEntry>().await {
+                    Ok(updated) => {
+                        set_teams.update(|list| {
+                            if let Some(t) = list.iter_mut().find(|t| t.team_id == updated.team_id)
+                            {
+                                *t = updated;
+                            }
+                        });
+                        toast_success("Team updated");
                     }
-                }
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("team update JSON parse error: {e}").into(),
+                    ),
+                },
                 _ => toast_error("Failed to update team"),
             }
             set_edit_target.set(None);
@@ -94,19 +101,23 @@ pub fn TeamsPage() -> impl IntoView {
 
     let open_add_member = move |_team_id: String| {
         leptos::task::spawn_local_scoped(async move {
-            if let Some(r) = authed_get("/api/v1.0/users").await {
-                if r.ok() {
-                    match r.json::<PaginatedResponse<UserEntry>>().await {
-                        Ok(data) => set_available_users.set(data.items),
-                        Err(e) => web_sys::console::warn_1(&format!("users JSON parse error: {e}").into()),
+            if let Some(r) = authed_get("/api/v1.0/users?limit=100").await
+                && r.ok()
+            {
+                match r.json::<PaginatedResponse<UserEntry>>().await {
+                    Ok(data) => set_available_users.set(data.items),
+                    Err(e) => {
+                        web_sys::console::warn_1(&format!("users JSON parse error: {e}").into())
                     }
                 }
             }
-            if let Some(r) = authed_get("/api/v1.0/roles").await {
-                if r.ok() {
-                    match r.json::<PaginatedResponse<RoleEntry>>().await {
-                        Ok(data) => set_available_roles.set(data.items),
-                        Err(e) => web_sys::console::warn_1(&format!("roles JSON parse error: {e}").into()),
+            if let Some(r) = authed_get("/api/v1.0/roles?limit=100").await
+                && r.ok()
+            {
+                match r.json::<PaginatedResponse<RoleEntry>>().await {
+                    Ok(data) => set_available_roles.set(data.items),
+                    Err(e) => {
+                        web_sys::console::warn_1(&format!("roles JSON parse error: {e}").into())
                     }
                 }
             }
@@ -127,12 +138,14 @@ pub fn TeamsPage() -> impl IntoView {
                 Some(r) if r.ok() => {
                     // Reload members
                     let members_url = format!("/api/v1.0/teams/{}/users", team_id);
-                    if let Some(mr) = authed_get(&members_url).await {
-                        if mr.ok() {
-                            match mr.json::<PaginatedResponse<UsersInTeam>>().await {
-                                Ok(data) => set_team_members.set(data.items),
-                                Err(e) => web_sys::console::warn_1(&format!("team members JSON parse error: {e}").into()),
-                            }
+                    if let Some(mr) = authed_get(&members_url).await
+                        && mr.ok()
+                    {
+                        match mr.json::<PaginatedResponse<UsersInTeam>>().await {
+                            Ok(data) => set_team_members.set(data.items),
+                            Err(e) => web_sys::console::warn_1(
+                                &format!("team members JSON parse error: {e}").into(),
+                            ),
                         }
                     }
                     toast_success("Member added");
@@ -178,12 +191,14 @@ pub fn TeamsPage() -> impl IntoView {
                 Some(r) if r.ok() => {
                     // Reload members to get fresh role titles
                     let members_url = format!("/api/v1.0/teams/{}/users", team_id);
-                    if let Some(mr) = authed_get(&members_url).await {
-                        if mr.ok() {
-                            match mr.json::<PaginatedResponse<UsersInTeam>>().await {
-                                Ok(data) => set_team_members.set(data.items),
-                                Err(e) => web_sys::console::warn_1(&format!("team members JSON parse error: {e}").into()),
-                            }
+                    if let Some(mr) = authed_get(&members_url).await
+                        && mr.ok()
+                    {
+                        match mr.json::<PaginatedResponse<UsersInTeam>>().await {
+                            Ok(data) => set_team_members.set(data.items),
+                            Err(e) => web_sys::console::warn_1(
+                                &format!("team members JSON parse error: {e}").into(),
+                            ),
                         }
                     }
                     toast_success("Role updated");
@@ -198,12 +213,15 @@ pub fn TeamsPage() -> impl IntoView {
         leptos::task::spawn_local_scoped(async move {
             let resp = authed_request(HttpMethod::Post, "/api/v1.0/teams", Some(&body)).await;
             match resp {
-                Some(r) if r.ok() => {
-                    match r.json::<TeamEntry>().await {
-                        Ok(team) => { set_teams.update(|list| list.push(team)); toast_success("Team created"); }
-                        Err(e) => web_sys::console::warn_1(&format!("team create JSON parse error: {e}").into()),
+                Some(r) if r.ok() => match r.json::<TeamEntry>().await {
+                    Ok(team) => {
+                        set_teams.update(|list| list.push(team));
+                        toast_success("Team created");
                     }
-                }
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("team create JSON parse error: {e}").into(),
+                    ),
+                },
                 _ => toast_error("Failed to create team"),
             }
             set_show_create.set(false);
@@ -293,7 +311,7 @@ pub fn TeamsPage() -> impl IntoView {
                                             let tid = tid.clone();
                                             move || selected_team.get().as_deref() == Some(&tid)
                                         };
-                                        let load = load_members.clone();
+                                        let load = load_members;
 
                                         view! {
                                             <tr
@@ -304,7 +322,6 @@ pub fn TeamsPage() -> impl IntoView {
                                                 }
                                                 on:click={
                                                     let tid = tid.clone();
-                                                    let load = load.clone();
                                                     move |_| load(tid.clone())
                                                 }
                                             >
@@ -376,7 +393,7 @@ pub fn TeamsPage() -> impl IntoView {
                                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--ds-layout-spacing-200, 12px);">
                                             <h3 class="section-title" style="margin: 0;">"Team Members"</h3>
                                             {can_manage.then(|| {
-                                                let oam = open_add_member.clone();
+                                                let oam = open_add_member;
                                                 let tid2 = tid.clone();
                                                 view! {
                                                     <button
@@ -426,7 +443,7 @@ pub fn TeamsPage() -> impl IntoView {
                                                                     <td class="connect-table-cell">{email}</td>
                                                                     <td class="connect-table-cell">
                                                                         {if can_manage && !roles_for_select.is_empty() {
-                                                                            let dam = do_update_member_role.clone();
+                                                                            let dam = do_update_member_role;
                                                                             let uid2 = uid.clone();
                                                                             view! {
                                                                                 <select
@@ -592,8 +609,8 @@ fn CreateTeamDialog(
             }
 
             let on_create = on_create.clone();
-            let reset_bd = reset.clone();
-            let reset_b = reset.clone();
+            let reset_bd = reset;
+            let reset_b = reset;
             let on_cancel_bd = on_cancel.clone();
             let on_cancel_b = on_cancel.clone();
 
@@ -646,7 +663,7 @@ fn CreateTeamDialog(
                                 class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
                                 on:click={
                                     let cancel = on_cancel_b.clone();
-                                    let reset = reset_b.clone();
+                                    let reset = reset_b;
                                     move |_| { reset(); cancel(); }
                                 }
                             >
@@ -806,10 +823,8 @@ fn AddMemberDialog(
             let role_list = roles.get();
 
             // Pre-select first role if none selected
-            if sel_role.get().is_empty() {
-                if let Some(r) = role_list.first() {
+            if sel_role.get().is_empty() && let Some(r) = role_list.first() {
                     set_sel_role.set(r.role_id.clone());
-                }
             }
 
             view! {

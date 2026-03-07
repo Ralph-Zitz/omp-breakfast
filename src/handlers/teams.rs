@@ -96,6 +96,7 @@ pub async fn create_team(
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - admin role required", body = ErrorResponse),
         (status = 404, description = "Team not deleted", body = DeletedResponse),
+        (status = 409, description = "Conflict - team has existing orders", body = ErrorResponse),
     ),
     params(
         ("team_id", description = "Unique UUID of the Team")
@@ -111,6 +112,22 @@ pub async fn delete_team(
     let team_id = tid.into_inner();
     let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
+
+    // Guard against silent cascade deletion of order history
+    let order_count: i64 = client
+        .query_one(
+            "select count(*) as cnt from teamorders where teamorders_team_id = $1",
+            &[&team_id],
+        )
+        .await
+        .map_err(Error::Db)?
+        .get("cnt");
+    if order_count > 0 {
+        return Err(Error::Conflict(format!(
+            "Cannot delete team — it has {order_count} order(s). Delete the orders first."
+        )));
+    }
+
     let deleted = db::delete_team(&client, team_id).await?;
     if deleted {
         Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))

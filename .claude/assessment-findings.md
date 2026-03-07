@@ -36,7 +36,8 @@ _No open minor items._
 ### Database — `orders.orders_team_id` May Be Missing NOT NULL
 
 - [ ] **#325 — Advisory: verify that `orders_team_id` FK column has NOT NULL**
-  - Files: `migrations/V1__initial_schema.sql`, `src/models.rs`
+  - Files: `migrations/V1__initial_schema.sql` (line 94), `src/models.rs`
+  - Problem: `orders.orders_team_id` is `uuid` (nullable). The consistency trigger prevents NULL values indirectly, but a NOT NULL constraint would make this explicit.
   - Source commands: `db-review`
 
 ### Security — Account Lockout State In-Memory Only
@@ -76,7 +77,7 @@ _No open minor items._
 
 - [ ] **#381 — `jwt_validator` calls `db::get_user_by_email` on every authenticated request after cache miss**
   - File: `src/middleware/auth.rs`
-  - Problem: Informational. The auth cache mitigates this for warm paths. Cold requests hit the DB. Not a bug, just a performance observation.
+  - Problem: The auth cache mitigates this for warm paths. Cold requests hit the DB. Not a bug, just a performance observation.
   - Source commands: `security-audit`
 
 ### Security — No Rate Limiting on Password Change Endpoint
@@ -98,6 +99,24 @@ _No open minor items._
 - [ ] **#389 — No test verifies the code path when the auth cache has no entry for a user (first login or after TTL expiry)**
   - File: `src/middleware/auth.rs`
   - Source commands: `test-gaps`
+
+### Dependencies — `jwt-compact` Stale Maintenance
+
+- [ ] **#628 — Last release Oct 2023 (>2 years); no CVEs but maintenance risk grows**
+  - File: `Cargo.toml`
+  - Source commands: `dependency-check`
+
+### Dependencies — `color-eyre` Stale Release
+
+- [ ] **#629 — Last release Dec 2022 (>3 years); still functional but gap is growing**
+  - File: `Cargo.toml`
+  - Source commands: `dependency-check`
+
+### Dependencies — OpenTelemetry Stack Always Compiled
+
+- [ ] **#630 — 4 OTel crates pull ~30 transitive deps; could be feature-gated for developers without an OTel collector**
+  - File: `Cargo.toml`
+  - Source commands: `dependency-check`
 
 ### Testing — Health Endpoint 503 Response Never Tested
 
@@ -217,12 +236,16 @@ See that file for the full history of resolved findings.
 
 ## Notes
 
+- **CONNECT Design System:** `git pull` on 2026-03-06 reported "Already up to date." No migration needed.
+- **`cargo audit`:** Clean — 0 vulnerabilities in 437 dependencies.
+- **`cargo outdated`:** All root dependencies at latest versions.
+- **`cargo fmt --all --check`:** Passes clean.
 - **Test counts verified (2026-03-06):** 234 unit (212 lib + 22 healthcheck), 145 API integration (ignored), 104 DB integration (ignored), 79 WASM.
 - **`cargo audit` (2026-03-06):** Exit code 0. No vulnerabilities. RUSTSEC-2023-0071 resolved — `jsonwebtoken` replaced with `jwt-compact 0.8.0`, `--ignore` flag removed from Makefile.
 - **CONNECT Design System (2026-03-06):** `git pull` fetched new commits (3.0.0-RC1, 2.9.0, etc.). CSS changes to checkbox-group, dropdown, inline-alert, menu, radio-group, tag, text-field, utility-button — **none used by our frontend**. Token additions (opacity variants) are non-breaking. SCSS removal has no impact (we only use CSS imports). **No migration required.**
 - Open items summary: 0 critical, 0 important, 0 minor, 12 informational.
 - 8 new findings in this assessment: #513–#520. 0 regressions found. 4 items resolved this session (#513, #514, #515, #516). 26 test-gap items resolved in session of 2026-03-07. 10 security-audit items resolved in session of 2026-03-08 (#336, #337, #338, #340, #379, #380, #448, #449, #450, #451).
-- Highest finding number: #520.
+- Highest finding number: #632.
 
 ### Re-assessment — 2026-03-06
 

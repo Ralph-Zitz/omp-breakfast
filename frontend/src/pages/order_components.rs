@@ -12,6 +12,7 @@ pub fn OrderDetail(
     loading: ReadSignal<bool>,
     #[allow(unused)] is_admin: Signal<bool>,
     on_add_item: impl Fn(String, i32) + 'static + Clone + Send,
+    on_update_item: impl Fn(String, i32) + 'static + Clone + Send,
     on_remove_item: impl Fn(String) + 'static + Clone + Send,
 ) -> impl IntoView {
     let (add_item_id, set_add_item_id) = signal(String::new());
@@ -85,10 +86,34 @@ pub fn OrderDetail(
                                         let name = resolve_name(&oi.orders_item_id);
                                         let iid = oi.orders_item_id.clone();
                                         let on_remove_item = on_remove_item.clone();
+                                        let on_update_item = on_update_item.clone();
+                                        let current_amt = oi.amt;
                                         view! {
                                             <tr class="connect-table-row">
                                                 <td class="connect-table-cell">{name}</td>
-                                                <td class="connect-table-cell">{oi.amt}</td>
+                                                <td class="connect-table-cell">
+                                                    {if !closed {
+                                                        let iid_upd = iid.clone();
+                                                        view! {
+                                                            <input
+                                                                class="connect-text-field__input"
+                                                                type="number"
+                                                                min="1"
+                                                                value=current_amt.to_string()
+                                                                style="width: 60px; text-align: center;"
+                                                                on:change=move |ev| {
+                                                                    let Some(target) = ev.target() else { return; };
+                                                                    let val: i32 = target.unchecked_into::<web_sys::HtmlInputElement>().value().parse().unwrap_or(current_amt);
+                                                                    if val != current_amt && val >= 1 {
+                                                                        on_update_item(iid_upd.clone(), val);
+                                                                    }
+                                                                }
+                                                            />
+                                                        }.into_any()
+                                                    } else {
+                                                        view! { <span>{current_amt}</span> }.into_any()
+                                                    }}
+                                                </td>
                                                 {(!closed).then(|| {
                                                     let iid = iid.clone();
                                                     let on_remove_item = on_remove_item.clone();
@@ -212,8 +237,8 @@ pub fn CreateOrderDialog(
             }
 
             let on_create = on_create.clone();
-            let reset_bd = reset.clone();
-            let reset_b = reset.clone();
+            let reset_bd = reset;
+            let reset_b = reset;
             let on_cancel_bd = on_cancel.clone();
             let on_cancel_b = on_cancel.clone();
 
@@ -247,7 +272,7 @@ pub fn CreateOrderDialog(
                                 class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
                                 on:click={
                                     let cancel = on_cancel_b.clone();
-                                    let reset = reset_b.clone();
+                                    let reset = reset_b;
                                     move |_| { reset(); cancel(); }
                                 }
                             >

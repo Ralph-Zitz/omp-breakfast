@@ -6,6 +6,13 @@ Last updated: 2026-03-08
 
 ## Critical Items
 
+### Database — `register_first_user` Not Transactional
+
+- [x] **#601 — First-user bootstrap calls 5 DB functions without a transaction — crash mid-sequence leaves irrecoverable state**
+  - File: `src/handlers/users.rs`, `src/db/users.rs`
+  - Resolution: Created `db::bootstrap_first_user()` that wraps all 5 operations (count check, user creation, role seeding, team creation, membership assignment) in a single database transaction. Password hashing runs before the transaction (CPU-bound). On failure, the transaction rolls back and the system remains in a clean state for retry.
+  - Source commands: `db-review`
+
 ### Dependencies — Vulnerable `rsa` Crate via `jsonwebtoken`
 
 - [x] **#132 — Migrated from `jsonwebtoken` to `jwt-compact 0.8.0`; vulnerable `rsa` crate eliminated**
@@ -72,6 +79,48 @@ Last updated: 2026-03-08
   - Source commands: `test-gaps`
 
 ## Important Items
+
+### Frontend — TeamsPage Fetches Users/Roles Without Pagination Params
+
+- [x] **#602 — Team member management silently drops data when >50 users or roles exist**
+  - File: `frontend/src/pages/teams.rs`
+  - Resolution: Added explicit `?limit=100` to both the users and roles fetch URLs in the add-member dialog.
+  - Source commands: `openapi-sync`, `review`
+
+### RBAC — Order Item RBAC Checks Team Order Owner, Not Line-Item Contributor
+
+- [x] **#603 — `update_order_item` and `delete_order_item` authorize based on team order creator, not the person who added the item**
+  - File: `CLAUDE.md`
+  - Resolution: Documented as intentional design in CLAUDE.md. Breakfast orders are collaborative — ownership is at the order level, not the line-item level. Order items have no per-item `user_id` column by design.
+  - Source commands: `rbac-rules`
+
+### Settings — `Bash(rm *)` Is Overly Permissive
+
+- [x] **#604 — `.claude/settings.json` allows any `rm` command including destructive ones**
+  - File: `.claude/settings.json`
+  - Resolution: Replaced `Bash(rm *)` with scoped patterns: `Bash(rm -r frontend/dist*)`, `Bash(rm -f /tmp/*)`, `Bash(rm -f *.tmp)`.
+  - Source commands: `practices-audit`
+
+### Security — Deserialization Errors May Reveal Internal Types
+
+- [x] **#605 — `serde_json` deserialization errors return struct field names and expected types to API consumers**
+  - File: `src/errors.rs`
+  - Resolution: Changed the `ActixJson` deserialization error handler to return a generic `"Invalid request body"` message instead of the raw `json_err.to_string()`. Detailed error is still logged server-side at `warn!` level.
+  - Source commands: `security-audit`
+
+### Database — Denormalized `orders.orders_team_id` Can Drift on Team Reassignment
+
+- [x] **#606 — No trigger blocks `teamorders.teamorders_team_id` UPDATE when child `orders` rows exist**
+  - File: `migrations/V10__guard_teamorders_team_id.sql`
+  - Resolution: Added V10 migration with `guard_teamorders_team_id_change()` trigger function on `teamorders` that raises an exception if `teamorders_team_id` is changed when child `orders` rows exist.
+  - Source commands: `db-review`
+
+### Database — `delete_team` Cascades Through Order History
+
+- [x] **#607 — Deleting a team silently destroys all team orders and order items via CASCADE**
+  - File: `src/handlers/teams.rs`, `src/errors.rs`
+  - Resolution: Added a pre-check in the `delete_team` handler that counts existing team orders. If any exist, returns `Error::Conflict` (HTTP 409) with a clear message. Added new `Error::Conflict` variant to the error enum with a `conflict_error_returns_409` unit test.
+  - Source commands: `db-review`
 
 ### Documentation — README.md Missing V8 Migration
 
@@ -1602,6 +1651,139 @@ Last updated: 2026-03-08
   - Fix: Changed `authed_get("/api/v1.0/teams")` to `authed_get(&format!("/api/v1.0/users/{}/teams", user_id))`. Added local `UserTeamEntry` struct for deserialization compatibility since the user-teams endpoint returns different fields than the all-teams endpoint.
   - Source commands: `review`
 
+### Documentation — Unit Test Count Stale (234 → 236)
+
+- [x] **#608 — CLAUDE.md and README.md say 234 unit tests but actual count is 236**
+  - Files: `CLAUDE.md`, `README.md`
+  - Resolution: Updated the count to 236 in both files.
+  - Source commands: `cross-ref-check`, `practices-audit`
+
+### Documentation — README Migration Count Text Says "Eight" But Lists 9
+
+- [x] **#609 — README.md says "Eight migrations" but the table lists V1–V9**
+  - File: `README.md`
+  - Resolution: Changed "Eight" to "Eleven" (now V1–V11 after V10 and V11 were added).
+  - Source commands: `cross-ref-check`
+
+### Documentation — README `make audit` Description Stale
+
+- [x] **#610 — README says `make audit` ignores RUSTSEC-2023-0071, but Makefile runs clean `cargo audit`**
+  - File: `README.md`
+  - Resolution: Removed the parenthetical about `--ignore RUSTSEC-2023-0071`.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md Missing `frontend/assets/`
+
+- [x] **#611 — `frontend/assets/` directory exists on disk but not in Project Structure tree**
+  - File: `CLAUDE.md`
+  - Resolution: Added `assets/` under `frontend/` in the structure tree.
+  - Source commands: `cross-ref-check`
+
+### RBAC — Hardcoded `"Admin"` String in `register_first_user`
+
+- [x] **#612 — Uses string literal `"Admin"` instead of `ROLE_ADMIN` constant**
+  - File: `src/db/users.rs`
+  - Resolution: Imported `ROLE_ADMIN` from `middleware::auth` and parameterized the SQL query with `$1` + `&[&ROLE_ADMIN]`.
+  - Source commands: `rbac-rules`
+
+### Testing — No Integration Tests for Avatar RBAC
+
+- [x] **#613 — `set_avatar` and `remove_avatar` RBAC (self, admin, non-admin forbidden) completely untested**
+  - Files: `src/handlers/avatars.rs`, `tests/api_tests.rs`
+  - Resolution: Added 3 API integration tests: `user_sets_own_avatar` (200), `admin_sets_other_user_avatar` (200), `non_admin_cannot_set_other_user_avatar` (403).
+  - Source commands: `rbac-rules`, `test-gaps`
+
+### Testing — No Explicit Test for `register_first_user` 403
+
+- [x] **#614 — No dedicated test asserts `POST /auth/register` returns 403 when users already exist**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `register_when_users_exist_returns_403` integration test.
+  - Source commands: `rbac-rules`, `test-gaps`
+
+### Testing — No Test for Denied Delete of Another Member's Order Item
+
+- [x] **#615 — Missing `member_cannot_delete_another_members_order_item` integration test**
+  - File: `tests/api_tests.rs`
+  - Resolution: Added `member_cannot_delete_other_members_order_item` test verifying non-owner member gets 403.
+  - Source commands: `rbac-rules`, `test-gaps`
+
+### Frontend — No UI for Updating Order Item Quantity
+
+- [x] **#616 — Backend provides `PUT .../items/{iid}` but frontend can only add/delete items, not update quantity**
+  - Files: `frontend/src/pages/orders.rs`, `frontend/src/pages/order_components.rs`
+  - Resolution: Added `do_update_item` callback in `orders.rs` and inline `<input type="number">` in `OrderDetail` component for open orders.
+  - Source commands: `api-completeness`
+
+### API Consistency — `get_avatars` Is the Only Unpaginated List Endpoint
+
+- [x] **#617 — `get_avatars` returns bare `Vec` instead of `PaginatedResponse`, unlike all other list endpoints**
+  - File: `src/handlers/avatars.rs`
+  - Resolution: Documented as intentional exception via doc comment — avatars are a small static set seeded from `minifigs/`.
+  - Source commands: `api-completeness`, `openapi-sync`
+
+### Database — No `CHECK` Constraints on Text Column Lengths
+
+- [x] **#618 — `teams.descr`, `items.descr`, `roles.title`, `teams.tname` have Rust validators but no DB-level length limits**
+  - File: `migrations/V11__text_column_check_constraints.sql`
+  - Resolution: Created V11 migration adding CHECK constraints: `teams.tname ≤ 255`, `teams.descr ≤ 1000`, `roles.title ≤ 255`, `items.descr ≤ 255`.
+  - Source commands: `db-review`
+
+### Validation — `users.email` Column Width Mismatch
+
+- [x] **#619 — `users.email` is `varchar(75)` but Rust `#[validate(email)]` has no max length — email >75 chars causes DB 500**
+  - File: `src/models.rs`
+  - Resolution: Added `length(max = 75)` to `#[validate]` on `email` fields in both `UpdateUserRequest` and `CreateUserEntry`.
+  - Source commands: `db-review`
+
+### Practices — `set_avatar` Handler Missing `validate(&json)?`
+
+- [x] **#620 — Handler accepts `Validate`-deriving struct but never calls `validate()`**
+  - File: `src/handlers/avatars.rs`
+  - Resolution: Added `validate(&json)?;` call before the avatar existence check.
+  - Source commands: `practices-audit`
+
+### Testing — Entire Avatar Subsystem Has Zero Test Coverage
+
+- [x] **#622 — `db/avatars.rs` (5 functions) + `handlers/avatars.rs` (4 handlers) completely untested**
+  - Files: `tests/api_tests.rs`, `tests/db_tests.rs`
+  - Resolution: Added DB integration tests (`insert_and_get_avatar`, `count_avatars_matches_list`, `set_user_avatar_and_clear`) and API tests (`list_avatars_returns_200`, `get_single_avatar_returns_image_with_cache_headers`). Avatar RBAC tests covered by #613.
+  - Source commands: `test-gaps`
+
+### Testing — `would_admins_remain_without` Has No Direct DB Test
+
+- [x] **#623 — Last-admin guard logic only tested indirectly via API tests**
+  - File: `tests/db_tests.rs`
+  - Resolution: Added `would_admins_remain_without_two_admins` (returns true) and `would_admins_remain_without_sole_admin` (returns false) DB tests.
+  - Source commands: `test-gaps`
+
+### Code Quality — `UserContext` Construction Duplicated 3x in `profile.rs`
+
+- [x] **#624 — Identical ~10-line `UserContext` assembly block appears 3 times**
+  - Files: `frontend/src/api.rs`, `frontend/src/pages/profile.rs`
+  - Resolution: Added `UserContext::from_entry()` constructor in `api.rs`; replaced all 3 duplicate blocks in `profile.rs` with single constructor call.
+  - Source commands: `review`
+
+### Code Quality — Local `UserTeamEntry` Duplicates `api::UserInTeams`
+
+- [x] **#625 — `orders.rs` defines `UserTeamEntry` with same fields already in `api::UserInTeams`**
+  - File: `frontend/src/pages/orders.rs`
+  - Resolution: Removed local `UserTeamEntry` struct; replaced all references with `api::UserInTeams`.
+  - Source commands: `review`
+
+### Code Quality — Repeated Modal Dialog Boilerplate
+
+- [x] **#626 — ~40 lines of overlay+dialog+header+body+footer structure duplicated across all CRUD pages**
+  - Files: `frontend/src/components/modal.rs`, `frontend/src/pages/roles.rs`, `NEW-UI-COMPONENTS.md`
+  - Resolution: Created `FormDialog` component with `open`, `title`, `submit_label`, `disabled`, `on_submit`, `on_cancel`, `children` props. Uses CSS visibility (not conditional rendering) to avoid AnyView clone limitation. Refactored `roles.rs` create/edit dialogs as proof of concept. Documented in `NEW-UI-COMPONENTS.md`.
+  - Source commands: `review`
+
+### Database — `add_team_member`/`update_member_role` Could Use CTE Instead of INSERT+SELECT
+
+- [x] **#627 — Two-query pattern in transactions could be a single `INSERT ... RETURNING` with CTE**
+  - File: `src/db/membership.rs`
+  - Resolution: Refactored both functions to use CTEs: `WITH ins AS (INSERT ... RETURNING ...) SELECT ...` and `WITH upd AS (UPDATE ... RETURNING ...) SELECT ...`. Reduces from 2 queries to 1 per operation.
+  - Source commands: `db-review`
+
 ## Informational Items
 
 ### API Design — List Endpoints Now Paginated
@@ -2914,8 +3096,29 @@ Last updated: 2026-03-08
   - Resolution: V9 migration creates `idx_users_avatar`. `database.sql` also updated.
   - Source commands: `db-review`
 
+### Security — CSP `'unsafe-inline'` Investigation
+
+- [x] **#621 — Consider SRI hashes via Trunk `--hash` to replace `'unsafe-inline'` in `script-src`**
+  - File: `src/server.rs`
+  - Resolution: Investigated — Trunk generates a different inline `<script type="module">` on each build with no built-in hash output. Bridging Trunk build output to backend CSP header is complex and fragile. Reclassified from minor to informational; `'unsafe-inline'` is documented as required in CLAUDE.md CSP section.
+  - Source commands: `security-audit`
+
+### Practices — CLAUDE.md `#[instrument]` Convention Description Imprecise
+
+- [x] **#631 — Documentation says "skip(state)" but handlers also skip `req`, `json`, `basic`, `body`**
+  - File: `CLAUDE.md`
+  - Resolution: Reworded to: "`state` is always skipped; handlers may also skip `req`, `json`, `basic`, `body` as appropriate".
+  - Source commands: `practices-audit`
+
+### Practices — CLAUDE.md "Unfinished Work" Overstates Test Gap
+
+- [x] **#632 — Says "lack comprehensive WASM test coverage" but 79 tests now exist covering all 6 pages**
+  - File: `CLAUDE.md`
+  - Resolution: Reworded to reflect current state: "79 tests cover all pages with rendering and basic interaction tests; deeper workflow and edge-case tests still missing".
+  - Source commands: `practices-audit`
+
 ## Notes
 
-- Total resolved items: 408 (6 critical, 47 important, 114 minor, 138 informational, plus items previously counted under different categories)
+- Total resolved items: 430 (6 critical, 47 important, 134 minor, 141 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

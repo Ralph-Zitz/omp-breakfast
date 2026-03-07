@@ -86,3 +86,59 @@ pub fn ConfirmModal(
         }}
     }
 }
+
+/// Generic form dialog that wraps the modal overlay/dialog/header/body/footer
+/// boilerplate. Form fields are passed as `children` and rendered inside the
+/// modal body. The submit button is disabled when `disabled` is true.
+#[component]
+pub fn FormDialog(
+    open: Signal<bool>,
+    title: &'static str,
+    #[prop(default = "Create")] submit_label: &'static str,
+    disabled: Signal<bool>,
+    on_submit: impl Fn() + 'static + Clone + Send,
+    on_cancel: impl Fn() + 'static + Clone + Send,
+    children: Children,
+) -> impl IntoView {
+    let on_cancel_backdrop = on_cancel.clone();
+    let on_cancel_btn = on_cancel;
+
+    view! {
+        <div
+            class="modal-overlay"
+            style=move || if open.get() { "" } else { "display:none" }
+            on:click=move |_| on_cancel_backdrop()
+        >
+            <div class="modal-dialog" on:click=move |ev: web_sys::MouseEvent| ev.stop_propagation()>
+                <div class="modal-header">
+                    <h2 class="modal-title">{title}</h2>
+                </div>
+                <div class="modal-body">
+                    {children()}
+                </div>
+                <div class="modal-footer">
+                    <button
+                        class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
+                        on:click={
+                            let cancel = on_cancel_btn.clone();
+                            move |_| cancel()
+                        }
+                    >
+                        <span class="connect-button__content">
+                            <span class="connect-button__label">"Cancel"</span>
+                        </span>
+                    </button>
+                    <button
+                        class="connect-button connect-button--accent connect-button--medium"
+                        disabled=move || disabled.get()
+                        on:click=move |_| on_submit()
+                    >
+                        <span class="connect-button__content">
+                            <span class="connect-button__label">{submit_label}</span>
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+}

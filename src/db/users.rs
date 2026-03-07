@@ -1,5 +1,6 @@
 use crate::errors::Error;
 use crate::from_row::{FromRow, map_rows};
+use crate::middleware::auth::ROLE_ADMIN;
 use crate::models::*;
 use argon2::password_hash::{PasswordHasher, SaltString, rand_core::OsRng};
 use deadpool_postgres::Client;
@@ -234,4 +235,107 @@ pub async fn delete_user_by_email(client: &Client, email: &str) -> Result<bool, 
         .map_err(Error::Db)?;
 
     Ok(result == 1)
+}
+
+/// Bootstraps the first user in the system within a single transaction.
+///
+/// 1. Verifies no users exist (returns `Error::Forbidden` if any do)
+/// 2. Creates the user with Argon2id-hashed password
+/// 3. Seeds the four default roles
+/// 4. Creates a "Default" bootstrap team
+/// 5. Assigns the new user as Admin in the bootstrap team
+///
+/// All steps run inside one transaction — a crash mid-sequence rolls back
+/// to a clean state, allowing re-registration.
+pub async fn bootstrap_first_user(
+    client: &mut Client,
+    user: CreateUserEntry,
+) -> Result<UserEntry, Error> {
+    // Hash password outside the transaction (CPU-bound work)
+    let password = user.password.clone();
+    let hash = tokio::task::spawn_blocking(move || {
+        let salt = SaltString::generate(&mut OsRng);
+        crate::argon2_hasher()
+            .hash_password(password.as_bytes(), &salt)
+            .map(|h| h.to_string())
+    })
+    .await
+    .map_err(|e| Error::Argon2(e.to_string()))?
+    .map_err(|err| Error::Argon2(err.to_string()))?;
+
+    let tx = client.transaction().await.map_err(Error::Db)?;
+
+    // 1. Check that no users exist
+    let count_row = tx
+        .query_one("select count(*) as cnt from users", &[])
+        .await
+        .map_err(Error::Db)?;
+    let user_count: i64 = count_row.get("cnt");
+    if user_count > 0 {
+        return Err(Error::Forbidden(
+            "Registration is closed — users already exist".to_string(),
+        ));
+    }
+
+    // 2. Create the user with the pre-hashed password
+    let user_row = tx
+        .query_one(
+            r#"
+               insert into users (firstname, lastname, email, password)
+               values ($1, $2, $3, $4)
+               returning user_id, firstname, lastname, email, avatar_id, created, changed
+            "#,
+            &[&user.firstname, &user.lastname, &user.email, &hash],
+        )
+        .await
+        .map_err(Error::Db)?;
+    let created_user = UserEntry::from_row(user_row).map_err(Error::DbMapper)?;
+
+    // 3. Seed default roles
+    tx.execute(
+        r#"
+           insert into roles (title)
+           values ('Admin'), ('Team Admin'), ('Member'), ('Guest')
+           on conflict (title) do nothing
+        "#,
+        &[],
+    )
+    .await
+    .map_err(Error::Db)?;
+
+    let admin_row = tx
+        .query_opt("select role_id from roles where title = $1", &[&ROLE_ADMIN])
+        .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("Admin role not found after seeding".to_string()))?;
+    let admin_role_id: Uuid = admin_row.get(0);
+
+    // 4. Create bootstrap team
+    let team_row = tx
+        .query_one(
+            r#"
+               insert into teams (tname, descr)
+               values ('Default', 'Bootstrap team')
+               returning team_id
+            "#,
+            &[],
+        )
+        .await
+        .map_err(Error::Db)?;
+    let team_id: Uuid = team_row.get(0);
+
+    // 5. Assign user as Admin in the bootstrap team
+    tx.execute(
+        r#"
+           insert into memberof (memberof_team_id, memberof_user_id, memberof_role_id)
+           values ($1, $2, $3)
+        "#,
+        &[&team_id, &created_user.user_id, &admin_role_id],
+    )
+    .await
+    .map_err(Error::Db)?;
+
+    tx.commit().await.map_err(Error::Db)?;
+
+    Ok(created_user)
 }

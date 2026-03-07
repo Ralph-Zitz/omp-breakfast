@@ -95,3 +95,17 @@ Custom frontend components created for OMP Breakfast that are not provided by th
   - `on_prev: impl Fn(usize)` — callback receiving the new offset when Prev is clicked
   - `on_next: impl Fn(usize)` — callback receiving the new offset when Next is clicked
 - **Rationale:** CONNECT does not provide a pagination component. Uses CONNECT button styles (`.connect-button--neutral`, `.connect-button--outline`, `.connect-button--small`) and DS spacing tokens for layout.
+
+## FormDialog
+
+- **File:** `frontend/src/components/modal.rs`
+- **Purpose:** Generic form dialog wrapping the modal overlay/dialog/header/body/footer boilerplate. Form fields are passed as `children` and rendered inside the modal body. Used by CRUD create/edit dialogs to avoid repeating ~40 lines of structural markup.
+- **Props:**
+  - `open: Signal<bool>` — controls visibility
+  - `title: &'static str` — dialog heading
+  - `submit_label: &'static str` (optional, default `"Create"`) — text for the submit button
+  - `disabled: Signal<bool>` — when true, submit button is disabled (form validation)
+  - `on_submit: impl Fn() + 'static` — callback when user clicks submit
+  - `on_cancel: impl Fn() + 'static` — callback when user cancels (also triggered by backdrop click)
+  - `children: Children` — form field markup rendered inside the modal body
+- **Rationale:** CONNECT provides modal-adjacent styling but not a reusable form dialog shell. All CRUD pages (roles, items, teams, admin) use the same overlay→dialog→header→body→footer structure with Cancel/Submit buttons. This component extracts that shared structure so individual dialogs only define their form fields and validation logic.

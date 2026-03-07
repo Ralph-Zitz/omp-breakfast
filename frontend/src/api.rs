@@ -167,6 +167,20 @@ pub struct UserContext {
 }
 
 impl UserContext {
+    /// Build a UserContext from a fetched UserEntry and team list.
+    pub fn from_entry(user: UserEntry, teams: Vec<UserInTeams>) -> Self {
+        let is_admin = teams.iter().any(|t| t.title == "Admin");
+        Self {
+            user_id: user.user_id,
+            firstname: user.firstname,
+            lastname: user.lastname,
+            email: user.email,
+            avatar_id: user.avatar_id,
+            is_admin,
+            teams,
+        }
+    }
+
     pub fn display_name(&self) -> String {
         format!("{} {}", self.firstname, self.lastname)
     }
@@ -440,16 +454,16 @@ pub async fn build_user_context(access_token: &str) -> Option<UserContext> {
     let (user_id, firstname, lastname, email, avatar_id, _display) =
         fetch_user_details(access_token).await?;
     let teams = fetch_user_teams(&user_id).await;
-    let is_admin = teams.iter().any(|t| t.title == "Admin");
-    Some(UserContext {
+    let entry = UserEntry {
         user_id,
         firstname,
         lastname,
         email,
         avatar_id,
-        is_admin,
-        teams,
-    })
+        created: String::new(),
+        changed: String::new(),
+    };
+    Some(UserContext::from_entry(entry, teams))
 }
 
 // ── Async sleep (for toast auto-dismiss) ────────────────────────────────────

@@ -1,6 +1,6 @@
 use crate::api::{
     HttpMethod, ItemEntry, OrderItemEntry, PaginatedResponse, TeamOrderEntry, UserContext,
-    authed_get, authed_request,
+    UserInTeams, authed_get, authed_request,
 };
 use crate::components::LoadingSpinner;
 use crate::components::card::PageHeader;
@@ -8,26 +8,17 @@ use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
 use crate::components::toast::{toast_error, toast_success};
 use leptos::prelude::*;
-use serde::Deserialize;
 
 #[path = "order_components.rs"]
 mod order_components;
 use order_components::{CreateOrderDialog, OrderDetail};
-
-/// Minimal team entry for the user-teams response (`/api/v1.0/users/{id}/teams`).
-/// Only the fields used by the orders page are included; extra fields are ignored.
-#[derive(Clone, Debug, Deserialize)]
-struct UserTeamEntry {
-    pub team_id: String,
-    pub tname: String,
-}
 
 #[component]
 pub fn OrdersPage() -> impl IntoView {
     let user = expect_context::<ReadSignal<Option<UserContext>>>();
 
     // User's teams for team selector
-    let (teams, set_teams) = signal(Vec::<UserTeamEntry>::new());
+    let (teams, set_teams) = signal(Vec::<UserInTeams>::new());
     let (selected_team, set_selected_team) = signal(Option::<String>::None);
     let (loading_teams, set_loading_teams) = signal(true);
 
@@ -58,24 +49,22 @@ pub fn OrdersPage() -> impl IntoView {
             .map(|u| u.user_id.clone())
             .unwrap_or_default();
         let teams_url = format!("/api/v1.0/users/{}/teams", user_id);
-        if let Some(resp) = authed_get(&teams_url).await {
-            if resp.ok() {
-                match resp.json::<PaginatedResponse<UserTeamEntry>>().await {
-                    Ok(data) => set_teams.set(data.items),
-                    Err(e) => {
-                        web_sys::console::warn_1(&format!("teams JSON parse error: {e}").into())
-                    }
-                }
+        if let Some(resp) = authed_get(&teams_url).await
+            && resp.ok()
+        {
+            match resp.json::<PaginatedResponse<UserInTeams>>().await {
+                Ok(data) => set_teams.set(data.items),
+                Err(e) => web_sys::console::warn_1(&format!("teams JSON parse error: {e}").into()),
             }
         }
         // Also fetch catalog items for the "add item" dropdown
-        if let Some(resp) = authed_get("/api/v1.0/items").await {
-            if resp.ok() {
-                match resp.json::<PaginatedResponse<ItemEntry>>().await {
-                    Ok(data) => set_catalog_items.set(data.items),
-                    Err(e) => {
-                        web_sys::console::warn_1(&format!("catalog JSON parse error: {e}").into())
-                    }
+        if let Some(resp) = authed_get("/api/v1.0/items").await
+            && resp.ok()
+        {
+            match resp.json::<PaginatedResponse<ItemEntry>>().await {
+                Ok(data) => set_catalog_items.set(data.items),
+                Err(e) => {
+                    web_sys::console::warn_1(&format!("catalog JSON parse error: {e}").into())
                 }
             }
         }
@@ -91,13 +80,13 @@ pub fn OrdersPage() -> impl IntoView {
 
         leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/orders", team_id);
-            if let Some(resp) = authed_get(&url).await {
-                if resp.ok() {
-                    match resp.json::<PaginatedResponse<TeamOrderEntry>>().await {
-                        Ok(data) => set_orders.set(data.items),
-                        Err(e) => web_sys::console::warn_1(
-                            &format!("orders JSON parse error: {e}").into(),
-                        ),
+            if let Some(resp) = authed_get(&url).await
+                && resp.ok()
+            {
+                match resp.json::<PaginatedResponse<TeamOrderEntry>>().await {
+                    Ok(data) => set_orders.set(data.items),
+                    Err(e) => {
+                        web_sys::console::warn_1(&format!("orders JSON parse error: {e}").into())
                     }
                 }
             }
@@ -113,14 +102,14 @@ pub fn OrdersPage() -> impl IntoView {
 
         leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/orders/{}/items", team_id, order_id);
-            if let Some(resp) = authed_get(&url).await {
-                if resp.ok() {
-                    match resp.json::<PaginatedResponse<OrderItemEntry>>().await {
-                        Ok(data) => set_order_items.set(data.items),
-                        Err(e) => web_sys::console::warn_1(
-                            &format!("order items JSON parse error: {e}").into(),
-                        ),
-                    }
+            if let Some(resp) = authed_get(&url).await
+                && resp.ok()
+            {
+                match resp.json::<PaginatedResponse<OrderItemEntry>>().await {
+                    Ok(data) => set_order_items.set(data.items),
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("order items JSON parse error: {e}").into(),
+                    ),
                 }
             }
             set_loading_items.set(false);
@@ -283,6 +272,46 @@ pub fn OrdersPage() -> impl IntoView {
         });
     };
 
+    let do_update_item = move |item_id: String, new_amt: i32| {
+        let team_id = match selected_team.get() {
+            Some(id) => id,
+            None => return,
+        };
+        let order = match selected_order.get() {
+            Some(o) => o,
+            None => return,
+        };
+        let order_id = order.teamorders_id.clone();
+        let body = serde_json::json!({ "orders_item_id": item_id, "amt": new_amt });
+
+        leptos::task::spawn_local_scoped(async move {
+            let url = format!(
+                "/api/v1.0/teams/{}/orders/{}/items/{}",
+                team_id, order_id, item_id
+            );
+            let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
+            match resp {
+                Some(r) if r.ok() => match r.json::<OrderItemEntry>().await {
+                    Ok(updated) => {
+                        set_order_items.update(|list| {
+                            if let Some(oi) = list
+                                .iter_mut()
+                                .find(|i| i.orders_item_id == updated.orders_item_id)
+                            {
+                                *oi = updated;
+                            }
+                        });
+                        toast_success("Quantity updated");
+                    }
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("order item update JSON parse error: {e}").into(),
+                    ),
+                },
+                _ => toast_error("Failed to update item"),
+            }
+        });
+    };
+
     view! {
         <div class="orders-page">
             <PageHeader title="Orders">
@@ -331,7 +360,7 @@ pub fn OrdersPage() -> impl IntoView {
                                 let tid = team.team_id.clone();
                                 let tid2 = team.team_id.clone();
                                 let name = team.tname.clone();
-                                let load = load_orders.clone();
+                                let load = load_orders;
                                 view! {
                                     <button
                                         class=move || {
@@ -361,7 +390,7 @@ pub fn OrdersPage() -> impl IntoView {
                                 loading=loading_orders
                                 selected_order=selected_order
                                 selected_team=selected_team
-                                on_select=load_order_items.clone()
+                                on_select=load_order_items
                                 on_delete=move |oid: String, label: String| set_delete_target.set(Some((oid, label)))
                                 on_toggle_closed=do_toggle_order_closed
                             />
@@ -374,6 +403,7 @@ pub fn OrdersPage() -> impl IntoView {
                                 loading=loading_items
                                 is_admin=is_admin
                                 on_add_item=do_add_item
+                                on_update_item=do_update_item
                                 on_remove_item=do_remove_item
                             />
                         </div>

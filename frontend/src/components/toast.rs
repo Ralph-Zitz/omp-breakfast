@@ -54,10 +54,16 @@ pub struct ToastContext {
     set_toasts: WriteSignal<Vec<Toast>>,
 }
 
-impl ToastContext {
-    pub fn new() -> Self {
+impl Default for ToastContext {
+    fn default() -> Self {
         let (toasts, set_toasts) = signal(Vec::<Toast>::new());
         Self { toasts, set_toasts }
+    }
+}
+
+impl ToastContext {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Push a toast and auto-dismiss after 5 seconds.

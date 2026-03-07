@@ -1,4 +1,4 @@
-use crate::api::{AvatarListEntry, HttpMethod, UserContext, authed_get, authed_request};
+use crate::api::{AvatarListEntry, HttpMethod, UserContext, UserEntry, authed_get, authed_request};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::role_tag_class;
@@ -57,18 +57,9 @@ pub fn ProfilePage() -> impl IntoView {
             let url = format!("/api/v1.0/users/{}/avatar", user_id);
             match authed_request(HttpMethod::Put, &url, Some(&body)).await {
                 Some(r) if r.ok() => {
-                    if let Ok(updated) = r.json::<crate::api::UserEntry>().await {
+                    if let Ok(updated) = r.json::<UserEntry>().await {
                         let teams = crate::api::fetch_user_teams(&user_id).await;
-                        let is_admin = teams.iter().any(|t| t.title == "Admin");
-                        set_user.set(Some(UserContext {
-                            user_id: updated.user_id.clone(),
-                            firstname: updated.firstname,
-                            lastname: updated.lastname,
-                            email: updated.email,
-                            avatar_id: updated.avatar_id,
-                            is_admin,
-                            teams,
-                        }));
+                        set_user.set(Some(UserContext::from_entry(updated, teams)));
                     }
                     toast_success("Avatar updated");
                     set_picker_open.set(false);
@@ -88,18 +79,9 @@ pub fn ProfilePage() -> impl IntoView {
             let url = format!("/api/v1.0/users/{}/avatar", user_id);
             match authed_request(HttpMethod::Delete, &url, None).await {
                 Some(r) if r.ok() => {
-                    if let Ok(updated) = r.json::<crate::api::UserEntry>().await {
+                    if let Ok(updated) = r.json::<UserEntry>().await {
                         let teams = crate::api::fetch_user_teams(&user_id).await;
-                        let is_admin = teams.iter().any(|t| t.title == "Admin");
-                        set_user.set(Some(UserContext {
-                            user_id: updated.user_id.clone(),
-                            firstname: updated.firstname,
-                            lastname: updated.lastname,
-                            email: updated.email,
-                            avatar_id: updated.avatar_id,
-                            is_admin,
-                            teams,
-                        }));
+                        set_user.set(Some(UserContext::from_entry(updated, teams)));
                     }
                     toast_success("Avatar removed");
                     set_picker_open.set(false);
@@ -162,18 +144,9 @@ pub fn ProfilePage() -> impl IntoView {
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => {
-                    if let Ok(updated) = r.json::<crate::api::UserEntry>().await {
+                    if let Ok(updated) = r.json::<UserEntry>().await {
                         let teams = crate::api::fetch_user_teams(&user_id).await;
-                        let is_admin = teams.iter().any(|t| t.title == "Admin");
-                        set_user.set(Some(UserContext {
-                            user_id: updated.user_id.clone(),
-                            firstname: updated.firstname,
-                            lastname: updated.lastname,
-                            email: updated.email,
-                            avatar_id: updated.avatar_id,
-                            is_admin,
-                            teams,
-                        }));
+                        set_user.set(Some(UserContext::from_entry(updated, teams)));
                     }
                     toast_success("Profile updated");
                     set_editing.set(false);

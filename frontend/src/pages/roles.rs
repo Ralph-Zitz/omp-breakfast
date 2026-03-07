@@ -1,7 +1,7 @@
 use crate::api::{HttpMethod, PaginatedResponse, RoleEntry, UserContext, authed_get, authed_request};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
-use crate::components::modal::ConfirmModal;
+use crate::components::modal::{ConfirmModal, FormDialog};
 use crate::components::toast::{toast_error, toast_success};
 use crate::components::{LoadingSpinner, PaginationBar, role_tag_class};
 use leptos::prelude::*;
@@ -27,13 +27,11 @@ pub fn RolesPage() -> impl IntoView {
         set_loading.set(true);
         leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/roles?limit={}&offset={}", limit, off);
-            if let Some(resp) = authed_get(&url).await {
-                if resp.ok() {
+            if let Some(resp) = authed_get(&url).await && resp.ok() {
                     match resp.json::<PaginatedResponse<RoleEntry>>().await {
                         Ok(data) => { set_total.set(data.total as usize); set_roles.set(data.items); }
                         Err(e) => web_sys::console::warn_1(&format!("roles JSON parse error: {e}").into()),
                     }
-                }
             }
             set_loading.set(false);
         });
@@ -259,81 +257,46 @@ fn CreateRoleDialog(
 ) -> impl IntoView {
     let (title, set_title) = signal(String::new());
 
-    let reset = move || {
+    let disabled = Signal::derive(move || title.get().trim().is_empty());
+    let on_submit = {
+        let on_create = on_create.clone();
+        move || {
+            on_create(title.get());
+            set_title.set(String::new());
+        }
+    };
+    let on_cancel_reset = move || {
         set_title.set(String::new());
+        on_cancel();
     };
 
     view! {
-        {move || {
-            if !open.get() {
-                return view! { <div class="modal-hidden" /> }.into_any();
-            }
-
-            let on_create = on_create.clone();
-            let reset_bd = reset.clone();
-            let reset_b = reset.clone();
-            let on_cancel_bd = on_cancel.clone();
-            let on_cancel_b = on_cancel.clone();
-
-            view! {
-                <div class="modal-overlay" on:click=move |_| { reset_bd(); on_cancel_bd(); }>
-                    <div class="modal-dialog" on:click=move |ev| ev.stop_propagation()>
-                        <div class="modal-header">
-                            <h2 class="modal-title">"New Role"</h2>
-                        </div>
-                        <div class="modal-body">
-                            <div class="connect-text-field">
-                                <div class="connect-label">
-                                    <label class="connect-label__text" for="role-title">"Role Title"</label>
-                                </div>
-                                <div class="connect-text-field__input-wrapper">
-                                    <input
-                                        class="connect-text-field__input"
-                                        id="role-title"
-                                        type="text"
-                                        placeholder="e.g., Coordinator"
-                                        prop:value=move || title.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_title.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                        <div class="modal-footer">
-                            <button
-                                class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
-                                on:click={
-                                    let cancel = on_cancel_b.clone();
-                                    let reset = reset_b.clone();
-                                    move |_| { reset(); cancel(); }
-                                }
-                            >
-                                <span class="connect-button__content">
-                                    <span class="connect-button__label">"Cancel"</span>
-                                </span>
-                            </button>
-                            <button
-                                class="connect-button connect-button--accent connect-button--medium"
-                                disabled=move || title.get().trim().is_empty()
-                                on:click={
-                                    let create = on_create.clone();
-                                    move |_| {
-                                        create(title.get());
-                                        set_title.set(String::new());
-                                    }
-                                }
-                            >
-                                <span class="connect-button__content">
-                                    <span class="connect-button__label">"Create"</span>
-                                </span>
-                            </button>
-                        </div>
-                    </div>
+        <FormDialog
+            open=open
+            title="New Role"
+            disabled=disabled
+            on_submit=on_submit
+            on_cancel=on_cancel_reset
+        >
+            <div class="connect-text-field">
+                <div class="connect-label">
+                    <label class="connect-label__text" for="role-title">"Role Title"</label>
                 </div>
-            }.into_any()
-        }}
+                <div class="connect-text-field__input-wrapper">
+                    <input
+                        class="connect-text-field__input"
+                        id="role-title"
+                        type="text"
+                        placeholder="e.g., Coordinator"
+                        prop:value=move || title.get()
+                        on:input=move |ev| {
+                            let Some(target) = ev.target() else { return };
+                            set_title.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                        }
+                    />
+                </div>
+            </div>
+        </FormDialog>
     }
 }
 
@@ -347,71 +310,39 @@ fn EditRoleDialog(
     let (title, set_title) = signal(role.title.clone());
     let role_id = role.role_id.clone();
 
+    let disabled = Signal::derive(move || title.get().trim().is_empty());
+    let on_submit = {
+        let on_save = on_save.clone();
+        let rid = role_id.clone();
+        move || on_save(rid.clone(), title.get())
+    };
+
     view! {
-        {move || {
-            if !open.get() {
-                return view! { <div class="modal-hidden" /> }.into_any();
-            }
-
-            let on_save = on_save.clone();
-            let on_cancel_bd = on_cancel.clone();
-            let on_cancel_b = on_cancel.clone();
-            let rid = role_id.clone();
-
-            view! {
-                <div class="modal-overlay" on:click=move |_| on_cancel_bd()>
-                    <div class="modal-dialog" on:click=move |ev| ev.stop_propagation()>
-                        <div class="modal-header">
-                            <h2 class="modal-title">"Edit Role"</h2>
-                        </div>
-                        <div class="modal-body">
-                            <div class="connect-text-field">
-                                <div class="connect-label">
-                                    <label class="connect-label__text" for="edit-role-title">"Role Title"</label>
-                                </div>
-                                <div class="connect-text-field__input-wrapper">
-                                    <input
-                                        class="connect-text-field__input"
-                                        id="edit-role-title"
-                                        type="text"
-                                        prop:value=move || title.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_title.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                        <div class="modal-footer">
-                            <button
-                                class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
-                                on:click={
-                                    let cancel = on_cancel_b.clone();
-                                    move |_| cancel()
-                                }
-                            >
-                                <span class="connect-button__content">
-                                    <span class="connect-button__label">"Cancel"</span>
-                                </span>
-                            </button>
-                            <button
-                                class="connect-button connect-button--accent connect-button--medium"
-                                disabled=move || title.get().trim().is_empty()
-                                on:click={
-                                    let save = on_save.clone();
-                                    let rid = rid.clone();
-                                    move |_| save(rid.clone(), title.get())
-                                }
-                            >
-                                <span class="connect-button__content">
-                                    <span class="connect-button__label">"Save"</span>
-                                </span>
-                            </button>
-                        </div>
-                    </div>
+        <FormDialog
+            open=open
+            title="Edit Role"
+            submit_label="Save"
+            disabled=disabled
+            on_submit=on_submit
+            on_cancel=on_cancel
+        >
+            <div class="connect-text-field">
+                <div class="connect-label">
+                    <label class="connect-label__text" for="edit-role-title">"Role Title"</label>
                 </div>
-            }.into_any()
-        }}
+                <div class="connect-text-field__input-wrapper">
+                    <input
+                        class="connect-text-field__input"
+                        id="edit-role-title"
+                        type="text"
+                        prop:value=move || title.get()
+                        on:input=move |ev| {
+                            let Some(target) = ev.target() else { return };
+                            set_title.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                        }
+                    />
+                </div>
+            </div>
+        </FormDialog>
     }
 }

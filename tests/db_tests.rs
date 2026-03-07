@@ -3523,3 +3523,168 @@ async fn check_team_access_team_admin() {
         .await
         .expect("cleanup");
 }
+
+// ===========================================================================
+// Avatar subsystem DB tests (#622)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn insert_and_get_avatar() {
+    let client = test_client().await;
+    let avatar_id = Uuid::now_v7();
+    let name = format!("test-avatar-{}", avatar_id);
+    let data = b"\x89PNG\r\n\x1a\n fake png";
+    let content_type = "image/png";
+
+    db::insert_avatar(&client, avatar_id, &name, data, content_type)
+        .await
+        .expect("insert_avatar should succeed");
+
+    // Fetch it back
+    let (fetched_data, fetched_ct) = db::get_avatar(&client, avatar_id)
+        .await
+        .expect("get_avatar should succeed");
+    assert_eq!(fetched_data, data);
+    assert_eq!(fetched_ct, content_type);
+
+    // It should appear in the list
+    let list = db::get_avatars(&client)
+        .await
+        .expect("get_avatars should succeed");
+    assert!(
+        list.iter().any(|a| a.avatar_id == avatar_id),
+        "inserted avatar should appear in get_avatars list"
+    );
+
+    // Cleanup: delete directly (no db function for deletion, use raw SQL)
+    client
+        .execute("DELETE FROM avatars WHERE avatar_id = $1", &[&avatar_id])
+        .await
+        .expect("cleanup avatar");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn count_avatars_matches_list() {
+    let client = test_client().await;
+
+    let count = db::count_avatars(&client)
+        .await
+        .expect("count_avatars should succeed");
+    let list = db::get_avatars(&client)
+        .await
+        .expect("get_avatars should succeed");
+
+    assert_eq!(
+        count as usize,
+        list.len(),
+        "count_avatars should match get_avatars length"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn set_user_avatar_and_clear() {
+    let client = test_client().await;
+    let user = create_test_user(&client).await;
+
+    // Insert a test avatar
+    let avatar_id = Uuid::now_v7();
+    let name = format!("set-avatar-{}", avatar_id);
+    db::insert_avatar(&client, avatar_id, &name, b"fake", "image/png")
+        .await
+        .expect("insert_avatar");
+
+    // Set the avatar on the user
+    let updated = db::set_user_avatar(&client, user.user_id, Some(avatar_id))
+        .await
+        .expect("set_user_avatar should succeed");
+    assert_eq!(updated.avatar_id, Some(avatar_id));
+
+    // Clear the avatar
+    let cleared = db::set_user_avatar(&client, user.user_id, None)
+        .await
+        .expect("set_user_avatar(None) should succeed");
+    assert_eq!(cleared.avatar_id, None);
+
+    // Cleanup
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup user");
+    client
+        .execute("DELETE FROM avatars WHERE avatar_id = $1", &[&avatar_id])
+        .await
+        .expect("cleanup avatar");
+}
+
+// ===========================================================================
+// would_admins_remain_without DB test (#623)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn would_admins_remain_without_two_admins() {
+    let mut client = test_client().await;
+    let roles = ensure_roles(&client).await;
+    let admin1 = create_test_user(&client).await;
+    let admin2 = create_test_user(&client).await;
+    let team = create_test_team(&client).await;
+
+    db::add_team_member(&mut client, team.team_id, admin1.user_id, roles["Admin"])
+        .await
+        .expect("add admin1");
+    db::add_team_member(&mut client, team.team_id, admin2.user_id, roles["Admin"])
+        .await
+        .expect("add admin2");
+
+    // With 2 admins, excluding one should still leave admins
+    let remains = db::would_admins_remain_without(&client, team.team_id, admin1.user_id)
+        .await
+        .expect("would_admins_remain_without should succeed");
+    assert!(
+        remains,
+        "should still have admins after excluding one of two"
+    );
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup team");
+    db::delete_user(&client, admin1.user_id)
+        .await
+        .expect("cleanup admin1");
+    db::delete_user(&client, admin2.user_id)
+        .await
+        .expect("cleanup admin2");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn would_admins_remain_without_sole_admin() {
+    let mut client = test_client().await;
+    let roles = ensure_roles(&client).await;
+    let admin = create_test_user(&client).await;
+    let team = create_test_team(&client).await;
+
+    db::add_team_member(&mut client, team.team_id, admin.user_id, roles["Admin"])
+        .await
+        .expect("add admin");
+
+    // Sole admin — excluding them should return false
+    let remains = db::would_admins_remain_without(&client, team.team_id, admin.user_id)
+        .await
+        .expect("would_admins_remain_without should succeed");
+    assert!(
+        !remains,
+        "should have no admins after excluding the sole admin"
+    );
+
+    // Cleanup
+    db::delete_team(&client, team.team_id)
+        .await
+        .expect("cleanup team");
+    db::delete_user(&client, admin.user_id)
+        .await
+        .expect("cleanup admin");
+}

@@ -328,10 +328,8 @@ fn LoginForm(
     let form_ref = NodeRef::<leptos::html::Form>::new();
 
     let on_keydown = move |ev: web_sys::KeyboardEvent| {
-        if ev.key() == "Enter" {
-            if let Some(form) = form_ref.get() {
-                let _ = form.request_submit();
-            }
+        if ev.key() == "Enter" && let Some(form) = form_ref.get() {
+            let _ = form.request_submit();
         }
     };
 
@@ -357,7 +355,7 @@ fn LoginForm(
                         />
                     }.into_any()
                 } else {
-                    view! {}.into_any()
+                    ().into_any()
                 }
             }}
             <UsernameField username set_username />

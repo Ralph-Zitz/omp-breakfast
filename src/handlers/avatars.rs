@@ -3,6 +3,7 @@ use crate::{
     errors::{Error, ErrorResponse},
     handlers::*,
     models::*,
+    validate::validate,
 };
 use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
@@ -10,6 +11,9 @@ use actix_web::{
 use tracing::instrument;
 
 /// GET /api/v1.0/avatars — list available avatars (id + name, no binary data).
+///
+/// Returns a bare `Vec` instead of `PaginatedResponse` — intentional exception:
+/// avatars are a small, static set seeded from `minifigs/` at startup.
 #[utoipa::path(
     get,
     path = "/api/v1.0/avatars",
@@ -97,6 +101,8 @@ pub async fn set_avatar(
 
     // RBAC: self, admin, or team admin of shared team
     require_self_or_admin_or_team_admin(&client, &req, user_id).await?;
+
+    validate(&json)?;
 
     // Verify the avatar exists
     let _ = db::get_avatar(&client, json.avatar_id).await?;

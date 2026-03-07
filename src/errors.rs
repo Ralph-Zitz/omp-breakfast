@@ -43,6 +43,8 @@ pub enum Error {
     Forbidden(String),
     #[error("{0}")]
     Unauthorized(String),
+    #[error("{0}")]
+    Conflict(String),
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
@@ -192,7 +194,7 @@ impl ResponseError for Error {
                 JsonPayloadError::Deserialize(json_err) if json_err.is_data() => {
                     warn!(error = %json_err, "JSON deserialization error");
                     HttpResponse::UnprocessableEntity().json(ErrorResponse {
-                        error: json_err.to_string(),
+                        error: "Invalid request body".to_string(),
                     })
                 }
                 _ => {
@@ -223,6 +225,12 @@ impl ResponseError for Error {
             Error::Unauthorized(e) => {
                 warn!(error = %e, "Unauthorized");
                 HttpResponse::Unauthorized().json(ErrorResponse {
+                    error: e.to_string(),
+                })
+            }
+            Error::Conflict(e) => {
+                warn!(error = %e, "Conflict");
+                HttpResponse::Conflict().json(ErrorResponse {
                     error: e.to_string(),
                 })
             }
@@ -343,6 +351,13 @@ mod tests {
     }
 
     #[test]
+    fn conflict_error_returns_409() {
+        let err = Error::Conflict("resource conflict".into());
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+    }
+
+    #[test]
     fn error_responses_do_not_leak_internal_details() {
         // 5xx errors should return generic "Internal server error" to clients
         let err = Error::Argon2("secret hash details".into());
@@ -393,7 +408,10 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let body = to_bytes(resp.into_body()).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert!(json["error"].as_str().unwrap().contains("invalid type"));
+        assert_eq!(
+            json["error"], "Invalid request body",
+            "deserialization details must not leak to client"
+        );
     }
 
     // ── ActixJson catch-all (parse error) branch (#464) ──────────────────────

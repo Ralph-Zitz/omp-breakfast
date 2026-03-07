@@ -252,10 +252,8 @@ fn LogoutButton() -> impl IntoView {
             if let Some(ref at) = access {
                 revoke_token_server_side(at, at).await;
             }
-            if let Some(ref rt) = refresh {
-                if let Some(ref at) = access {
-                    revoke_token_server_side(at, rt).await;
-                }
+            if let Some(ref rt) = refresh && let Some(ref at) = access {
+                revoke_token_server_side(at, rt).await;
             }
         });
     };

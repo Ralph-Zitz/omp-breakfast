@@ -55,7 +55,7 @@ make frontend-dev   # serves at http://127.0.0.1:8081
 
 The project has three test suites:
 
-**Unit tests** (234 tests) — no external dependencies:
+**Unit tests** (236 tests) — no external dependencies:
 
 ```bash
 make test-unit     # or: cargo test
@@ -95,7 +95,7 @@ make db-down       # stop and remove test DB
 
 ## Database Initialization
 
-The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Eight migrations exist:
+The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Eleven migrations exist:
 
 | Migration | Description |
 | --- | --- |
@@ -108,10 +108,12 @@ The application uses [Refinery](https://github.com/rust-db/refinery) for schema 
 | V7 | Drop redundant idx_users_email and idx_teams_name indexes |
 | V8 | Avatars table + users.avatar_id FK column |
 | V9 | Avatar FK index + token_blacklist.revoked_at NOT NULL |
+| V10 | Guard teamorders_team_id with trigger |
+| V11 | CHECK constraints on text column lengths |
 
 **Production:** The application runs pending migrations automatically at startup. No seed data is inserted. The first user to register via the login page becomes the global Admin.
 
-**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all nine migrations and creates the Refinery tracking table. On first startup, the application's migration runner detects the migrations are already applied and continues normally. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
+**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all eleven migrations and creates the Refinery tracking table. On first startup, the application's migration runner detects the migrations are already applied and continues normally. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
 
 **Manual database reset (development only):**
 
@@ -136,7 +138,7 @@ docker compose up -d     # reinitialize from scratch
 | `make db-down` | Stop and remove test DB |
 | `make check` | Run `cargo check` |
 | `make fmt` | Run `cargo fmt` |
-| `make audit` | Run `cargo audit` (ignores RUSTSEC-2023-0071 — unfixable `rsa` transitive dep) |
+| `make audit` | Run `cargo audit` |
 | `make audit-install` | Install `cargo-audit` |
 
 ## Configuration

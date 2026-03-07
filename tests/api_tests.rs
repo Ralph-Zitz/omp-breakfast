@@ -8129,3 +8129,407 @@ async fn update_user_email_invalidates_both_cache_keys() {
         .to_request();
     test::call_service(&app, req).await;
 }
+
+// ===========================================================================
+// Register returns 403 when users already exist (#614)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn register_when_users_exist_returns_403() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    // First registration succeeds (admin bootstrap)
+    let _admin_auth: Auth = register_admin(&app).await;
+
+    // Second registration must fail with 403
+    let uid = Uuid::now_v7();
+    let req = test::TestRequest::post()
+        .uri("/auth/register")
+        .peer_addr(PEER)
+        .set_json(json!({
+            "firstname": "Second",
+            "lastname": "User",
+            "email": format!("second-{}@test.local", uid),
+            "password": "Very Secret"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "registration should be forbidden when users already exist"
+    );
+}
+
+// ===========================================================================
+// Avatar RBAC tests (#613)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn user_sets_own_avatar() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let uid = Uuid::now_v7();
+    let email = format!("avatar-self-{}@test.local", uid);
+    let (user_auth, user_id) =
+        create_and_login_user(&app, admin_token, "Ava", "Self", &email, "Very Secret").await;
+    let token = &user_auth.access_token;
+
+    // Get available avatars
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/avatars")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let avatars: Vec<Value> = test::read_body_json(resp).await;
+
+    if avatars.is_empty() {
+        // No avatars seeded — skip the rest (test infra issue, not a code bug)
+        return;
+    }
+    let avatar_id = avatars[0]["avatar_id"].as_str().unwrap();
+
+    // Set own avatar → 200
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}/avatar", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"avatar_id": avatar_id}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "user should set their own avatar");
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn admin_sets_other_user_avatar() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let uid = Uuid::now_v7();
+    let email = format!("avatar-admin-{}@test.local", uid);
+    let (_user_auth, user_id) =
+        create_and_login_user(&app, admin_token, "Ava", "Admin", &email, "Very Secret").await;
+
+    // Get available avatars
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/avatars")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let avatars: Vec<Value> = test::read_body_json(resp).await;
+
+    if avatars.is_empty() {
+        return;
+    }
+    let avatar_id = avatars[0]["avatar_id"].as_str().unwrap();
+
+    // Admin sets another user's avatar → 200
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}/avatar", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({"avatar_id": avatar_id}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "admin should set another user's avatar");
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn non_admin_cannot_set_other_user_avatar() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let uid = Uuid::now_v7();
+
+    // Create two regular users in a team as Member
+    let email_a = format!("avatar-a-{}@test.local", uid);
+    let email_b = format!("avatar-b-{}@test.local", uid);
+    let (auth_a, user_a_id) =
+        create_and_login_user(&app, admin_token, "Ava", "A", &email_a, "Very Secret").await;
+    let (_auth_b, user_b_id) =
+        create_and_login_user(&app, admin_token, "Ava", "B", &email_b, "Very Secret").await;
+
+    let team_id = create_test_team(&app, admin_token, &format!("AvaTeam-{}", uid)).await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    add_member(&app, admin_token, &team_id, &user_a_id, &member_role_id).await;
+    add_member(&app, admin_token, &team_id, &user_b_id, &member_role_id).await;
+
+    // Get available avatars
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/avatars")
+        .insert_header(("Authorization", format!("Bearer {}", &auth_a.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let avatars: Vec<Value> = test::read_body_json(resp).await;
+
+    if avatars.is_empty() {
+        return;
+    }
+    let avatar_id = avatars[0]["avatar_id"].as_str().unwrap();
+
+    // User A tries to set User B's avatar → 403
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}/avatar", user_b_id))
+        .insert_header(("Authorization", format!("Bearer {}", &auth_a.access_token)))
+        .set_json(json!({"avatar_id": avatar_id}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "member should not set another user's avatar"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_a_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_b_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ===========================================================================
+// Order item RBAC — member cannot delete another's order item (#615)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn member_cannot_delete_other_members_order_item() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let uid = Uuid::now_v7();
+
+    // Create a Team Admin who owns the order
+    let ta_email = format!("oi-ta-{}@test.local", uid);
+    let (ta_auth, ta_user_id) =
+        create_and_login_user(&app, admin_token, "OI", "TA", &ta_email, "Very Secret").await;
+    let ta_token = &ta_auth.access_token;
+
+    // Create a regular member
+    let mem_email = format!("oi-mem-{}@test.local", uid);
+    let (mem_auth, mem_user_id) =
+        create_and_login_user(&app, admin_token, "OI", "Mem", &mem_email, "Very Secret").await;
+    let mem_token = &mem_auth.access_token;
+
+    // Set up team + membership
+    let team_id = create_test_team(&app, admin_token, &format!("OIRbac-{}", uid)).await;
+    let ta_role_id = find_role_id(&app, admin_token, "Team Admin").await;
+    let member_role_id = find_role_id(&app, admin_token, "Member").await;
+    add_member(&app, admin_token, &team_id, &ta_user_id, &ta_role_id).await;
+    add_member(&app, admin_token, &team_id, &mem_user_id, &member_role_id).await;
+
+    // Create a catalog item
+    let item_id = create_test_item(&app, admin_token, &format!("OIRbacItem-{}", uid), 3.00).await;
+
+    // Team Admin creates an order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .set_json(json!({"duedate": "2026-07-01"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // Member adds an item (allowed for any team member)
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", mem_token)))
+        .set_json(json!({"orders_item_id": item_id, "amt": 2}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201, "member should add item to order");
+
+    // Regular member tries to delete the order item → should be 403
+    // (member is not the order owner and not a team admin)
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items/{}",
+            team_id, order_id, item_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", mem_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "member should not delete order items on order they don't own"
+    );
+
+    // Cleanup: TA deletes order item, order, then admin cleans up users/team/item
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items/{}",
+            team_id, order_id, item_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", mem_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ===========================================================================
+// Avatar subsystem API tests (#622)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn list_avatars_returns_200() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/avatars")
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", admin_auth.access_token),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "should list avatars");
+    let avatars: Vec<Value> = test::read_body_json(resp).await;
+    // At minimum, seeded avatars should be present (from minifigs/)
+    assert!(
+        !avatars.is_empty(),
+        "avatar list should contain seeded entries"
+    );
+    // Each entry should have avatar_id and name
+    assert!(
+        avatars[0]["avatar_id"].as_str().is_some(),
+        "avatar should have avatar_id"
+    );
+    assert!(
+        avatars[0]["name"].as_str().is_some(),
+        "avatar should have name"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn get_single_avatar_returns_image_with_cache_headers() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    // Get list to find an avatar_id
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/avatars")
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let avatars: Vec<Value> = test::read_body_json(resp).await;
+
+    if avatars.is_empty() {
+        return;
+    }
+    let avatar_id = avatars[0]["avatar_id"].as_str().unwrap();
+
+    // Fetch single avatar
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/avatars/{}", avatar_id))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "should serve avatar image");
+
+    // Check Cache-Control header
+    let cache_control = resp
+        .headers()
+        .get("cache-control")
+        .expect("should have Cache-Control header")
+        .to_str()
+        .unwrap();
+    assert!(
+        cache_control.contains("immutable"),
+        "avatar should be served with immutable cache header"
+    );
+
+    // Check Content-Type starts with image/
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .expect("should have Content-Type header")
+        .to_str()
+        .unwrap();
+    assert!(
+        content_type.starts_with("image/"),
+        "avatar content type should be an image type, got: {}",
+        content_type
+    );
+}

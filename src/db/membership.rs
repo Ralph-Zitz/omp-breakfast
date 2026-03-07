@@ -225,34 +225,23 @@ pub async fn add_team_member(
     let statement = tx
         .prepare(
             r#"
-               insert into memberof (memberof_team_id, memberof_user_id, memberof_role_id)
-               values ($1, $2, $3)
-            "#,
-        )
-        .await
-        .map_err(Error::Db)?;
-
-    tx.execute(&statement, &[&team_id, &user_id, &role_id])
-        .await
-        .map_err(Error::Db)?;
-
-    // Return the joined result
-    let query = tx
-        .prepare(
-            r#"
-                select user_id, firstname, lastname, email, title, memberof.joined, memberof.changed as role_changed
-                from memberof
-                join users on users.user_id = memberof.memberof_user_id
-                join roles on roles.role_id = memberof.memberof_role_id
-                where memberof_team_id = $1
-                  and memberof_user_id = $2
+               with ins as (
+                   insert into memberof (memberof_team_id, memberof_user_id, memberof_role_id)
+                   values ($1, $2, $3)
+                   returning memberof_user_id, memberof_role_id, joined, changed
+               )
+               select u.user_id, u.firstname, u.lastname, u.email,
+                      r.title, ins.joined, ins.changed as role_changed
+               from ins
+               join users u on u.user_id = ins.memberof_user_id
+               join roles r on r.role_id = ins.memberof_role_id
             "#,
         )
         .await
         .map_err(Error::Db)?;
 
     let row = tx
-        .query_one(&query, &[&team_id, &user_id])
+        .query_one(&statement, &[&team_id, &user_id, &role_id])
         .await
         .map_err(Error::Db)?;
 
@@ -298,41 +287,26 @@ pub async fn update_member_role(
     let statement = tx
         .prepare(
             r#"
-               update memberof set memberof_role_id = $1
-               where memberof_team_id = $2 and memberof_user_id = $3
-            "#,
-        )
-        .await
-        .map_err(Error::Db)?;
-
-    let updated = tx
-        .execute(&statement, &[&role_id, &team_id, &user_id])
-        .await
-        .map_err(Error::Db)?;
-
-    if updated == 0 {
-        return Err(Error::NotFound("member not found in team".to_string()));
-    }
-
-    // Return the joined result
-    let query = tx
-        .prepare(
-            r#"
-                select user_id, firstname, lastname, email, title, memberof.joined, memberof.changed as role_changed
-                from memberof
-                join users on users.user_id = memberof.memberof_user_id
-                join roles on roles.role_id = memberof.memberof_role_id
-                where memberof_team_id = $1
-                  and memberof_user_id = $2
+               with upd as (
+                   update memberof set memberof_role_id = $1
+                   where memberof_team_id = $2 and memberof_user_id = $3
+                   returning memberof_user_id, memberof_role_id, joined, changed
+               )
+               select u.user_id, u.firstname, u.lastname, u.email,
+                      r.title, upd.joined, upd.changed as role_changed
+               from upd
+               join users u on u.user_id = upd.memberof_user_id
+               join roles r on r.role_id = upd.memberof_role_id
             "#,
         )
         .await
         .map_err(Error::Db)?;
 
     let row = tx
-        .query_one(&query, &[&team_id, &user_id])
+        .query_opt(&statement, &[&role_id, &team_id, &user_id])
         .await
-        .map_err(Error::Db)?;
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("member not found in team".to_string()))?;
 
     let result = UsersInTeam::from_row_ref(&row)?;
 

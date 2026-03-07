@@ -30,8 +30,7 @@ pub fn AdminPage() -> impl IntoView {
         set_loading.set(true);
         leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/users?limit={}&offset={}", limit, off);
-            if let Some(resp) = authed_get(&url).await {
-                if resp.ok() {
+            if let Some(resp) = authed_get(&url).await && resp.ok() {
                     match resp.json::<PaginatedResponse<UserEntry>>().await {
                         Ok(data) => {
                             set_total.set(data.total as usize);
@@ -41,7 +40,6 @@ pub fn AdminPage() -> impl IntoView {
                             web_sys::console::warn_1(&format!("users JSON parse error: {e}").into())
                         }
                     }
-                }
             }
             set_loading.set(false);
         });
@@ -365,8 +363,8 @@ fn CreateUserDialog(
             }
 
             let on_create = on_create.clone();
-            let reset_bd = reset.clone();
-            let reset_b = reset.clone();
+            let reset_bd = reset;
+            let reset_b = reset;
             let on_cancel_bd = on_cancel.clone();
             let on_cancel_b = on_cancel.clone();
 
@@ -456,7 +454,7 @@ fn CreateUserDialog(
                                 class="connect-button connect-button--neutral connect-button--outline connect-button--medium"
                                 on:click={
                                     let cancel = on_cancel_b.clone();
-                                    let reset = reset_b.clone();
+                                    let reset = reset_b;
                                     move |_| { reset(); cancel(); }
                                 }
                             >
