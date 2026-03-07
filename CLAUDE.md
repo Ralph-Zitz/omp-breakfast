@@ -129,11 +129,11 @@ config/
   docker-base.yml  – Sanitized base config for Docker images (all secret fields empty; supply via env vars)
   production.yml   – Prod overrides
 database.sql       – Full schema (deprecated — kept for manual dev resets only)
-init_dev_db.sh     – Docker development database initialization script (runs migrations V1–V13)
+init_dev_db.sh     – Test database initialization script (auto-discovers and applies all migration files; used only by postgres-setup in docker-compose.test.yml)
 Dockerfile.breakfast – Multi-stage Docker build for the application
 Dockerfile.postgres  – Custom Postgres image with init scripts
-docker-compose.yml   – Development stack (app + Postgres)
-docker-compose.test.yml – Test stack overlay (port 5433)
+docker-compose.yml   – Development stack (app + Postgres; migrations handled by refinery on app startup)
+docker-compose.test.yml – Test stack overlay (port 5433 + postgres-setup service for schema init)
 frontend-issues/       – Screenshots and descriptions of UI issues (for bug reporting)
 frontend-fixes/        – Documentation of UI fixes based on resolved frontend issues
 LICENSE            – MIT license

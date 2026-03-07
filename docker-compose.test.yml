@@ -1,5 +1,17 @@
 # Test-specific overrides: isolate test DB on a different port
 services:
+  postgres-setup:
+    image: postgres:18.3
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    links:
+      - postgres
+    entrypoint: ["bash", "/init_dev_db.sh"]
+    volumes:
+      - ./init_dev_db.sh:/init_dev_db.sh
+      - ./migrations:/migrations
   postgres:
     ports:
       - "5433:5432"

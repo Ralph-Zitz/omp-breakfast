@@ -19,8 +19,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      postgres-setup:
-        condition: service_completed_successfully
     deploy:
       resources:
         limits:
@@ -31,18 +29,6 @@ services:
       - BREAKFAST_PG_USER=actix
       - BREAKFAST_PG_PASSWORD=actix
       - ENV=development
-  postgres-setup:
-    image: postgres:18.3
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
-    links:
-      - postgres
-    entrypoint: ["bash", "/init_dev_db.sh"]
-    volumes:
-      - ./init_dev_db.sh:/init_dev_db.sh
-      - ./migrations:/migrations
   postgres:
     build:
       dockerfile: Dockerfile.postgres
