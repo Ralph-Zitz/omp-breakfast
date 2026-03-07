@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-15
+Last updated: 2026-03-16
 
 ## Critical Items
 
@@ -78,7 +78,49 @@ Last updated: 2026-03-15
   - Fix: Added three API integration tests exercising all three paths: `self_password_change_without_current_password_returns_422`, `self_password_change_with_wrong_current_password_returns_403`, `self_password_change_with_correct_current_password_succeeds`.
   - Source commands: `test-gaps`
 
+### RBAC — Team Admin Can Reset Global Admin Password (Account Takeover)
+
+- [x] **#667 — `update_user` handler does not call `guard_admin_demotion` — Team Admin can reset a Global Admin's password**
+  - File: `src/handlers/users.rs`, `update_user` handler
+  - Resolution: Added `guard_admin_demotion(&client, &req, uid).await?;` after `require_self_or_admin_or_team_admin` in the `update_user` handler. Non-admin users can no longer modify a Global Admin's user record (including password).
+  - Source commands: `rbac-rules`
+
 ## Important Items
+
+### RBAC — Team Admin Can Delete a Global Admin's Account
+
+- [x] **#668 — `delete_user` and `delete_user_by_email` do not call `guard_admin_demotion` — Team Admin can delete a Global Admin**
+  - File: `src/handlers/users.rs`, `delete_user` and `delete_user_by_email` handlers
+  - Resolution: Added `guard_admin_demotion(&client, &req, uid).await?;` after `require_self_or_admin_or_team_admin` in both handlers. Only a Global Admin can now delete another Global Admin's account.
+  - Source commands: `rbac-rules`
+
+### Database — `memberof.memberof_user_id` ON DELETE CASCADE Bypasses Last-Admin Guard
+
+- [x] **#669 — Deleting the last global admin user silently cascades through `memberof`, bypassing `guard_last_admin_membership`**
+  - File: `migrations/V15__restrict_cascade_fks.sql`, `src/db/users.rs`
+  - Resolution: Created migration V15 changing `memberof.memberof_user_id` FK from ON DELETE CASCADE to ON DELETE RESTRICT. Rewrote `delete_user` and `delete_user_by_email` DB functions to use transactions that explicitly delete memberof rows before deleting the user.
+  - Source commands: `db-review`
+
+### Database — `teamorders` and `orders` ON DELETE CASCADE FKs Violate Documented RESTRICT Convention
+
+- [x] **#670 — `teamorders.teamorders_team_id` and `orders.orders_team_id` use ON DELETE CASCADE despite documented convention of RESTRICT**
+  - File: `migrations/V15__restrict_cascade_fks.sql`
+  - Resolution: Migration V15 also changes `teamorders.teamorders_team_id` and `orders.orders_team_id` FKs from ON DELETE CASCADE to ON DELETE RESTRICT. Defense-in-depth alongside the handler-level 409 guard.
+  - Source commands: `db-review`
+
+### Testing — Frontend First-User Registration Flow Has Zero Test Coverage
+
+- [x] **#671 — Login page dual-mode detection (`setup_required: true` → registration form) is completely untested**
+  - File: `frontend/tests/ui_login.rs`, `frontend/tests/ui_helpers.rs`
+  - Resolution: Added 3 WASM tests: `test_registration_form_renders_when_setup_required` (verifies registration form with name fields), `test_registration_short_password_shows_validation_error` (validates 8-char minimum), `test_registration_success_redirects_to_dashboard` (full flow). Added `install_mock_fetch_setup_required` and `install_mock_fetch_registration_success` mock helpers.
+  - Source commands: `test-gaps`
+
+### Testing — `authed_request` POST/PUT/DELETE Methods Untested
+
+- [x] **#672 — Only `authed_get` is tested — token refresh retry with body-forwarding for mutations has no coverage**
+  - File: `frontend/tests/ui_session.rs`, `frontend/tests/ui_helpers.rs`
+  - Resolution: Added 3 WASM tests: `test_authed_post_sends_body_and_auth_header`, `test_authed_put_sends_body_and_auth_header`, `test_authed_delete_sends_auth_header_no_body`. Added `install_mock_fetch_mutation_echo` mock and request-recording helpers (`last_request_method`, `last_request_auth`, `last_request_body`).
+  - Source commands: `test-gaps`
 
 ### Frontend — TeamsPage Fetches Users/Roles Without Pagination Params
 
@@ -3554,6 +3596,6 @@ Last updated: 2026-03-15
 
 ## Notes
 
-- Total resolved items: 517 (6 critical, 49 important, 146 minor, 183 informational, plus items previously counted under different categories)
+- Total resolved items: 523 (7 critical, 54 important, 146 minor, 183 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

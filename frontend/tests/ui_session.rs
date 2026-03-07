@@ -535,3 +535,142 @@ async fn test_authed_get_double_failure_falls_back_to_login() {
     let _ = js_sys::eval("delete window.__double_fail_refresh_count");
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 14 · authed_request POST/PUT/DELETE mutation tests (#672)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[wasm_bindgen_test]
+async fn test_authed_post_sends_body_and_auth_header() {
+    let id = "t-authed-post";
+    clear_tokens();
+    install_mock_fetch_mutation_echo();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    // Log in to populate tokens
+    set_input(id, "input#username", "john@example.com");
+    set_input(id, "input#password", "password123");
+    flush(50).await;
+    submit_form(id);
+    flush(500).await;
+
+    // Now call authed_request with POST
+    use breakfast_frontend::api::{HttpMethod, authed_request};
+    let body = serde_json::json!({"name": "test-item", "price": 3.50});
+    let resp = authed_request(HttpMethod::Post, "/api/v1.0/items", Some(&body)).await;
+    flush(100).await;
+
+    assert!(resp.is_some(), "POST should return a response");
+    assert_eq!(resp.as_ref().unwrap().status(), 200, "should get 200");
+
+    let method = last_request_method();
+    assert_eq!(
+        method.as_deref(),
+        Some("POST"),
+        "recorded method should be POST"
+    );
+
+    let auth = last_request_auth();
+    assert!(
+        auth.as_ref().map_or(false, |a| a.starts_with("Bearer ")),
+        "should include Bearer auth header, got: {:?}",
+        auth
+    );
+
+    let body_str = last_request_body();
+    assert!(
+        body_str.as_ref().map_or(false, |b| b.contains("test-item")),
+        "POST body should contain the JSON payload, got: {:?}",
+        body_str
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+    let _ = js_sys::eval("delete window.__last_request");
+}
+
+#[wasm_bindgen_test]
+async fn test_authed_put_sends_body_and_auth_header() {
+    let id = "t-authed-put";
+    clear_tokens();
+    install_mock_fetch_mutation_echo();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    // Log in
+    set_input(id, "input#username", "john@example.com");
+    set_input(id, "input#password", "password123");
+    flush(50).await;
+    submit_form(id);
+    flush(500).await;
+
+    use breakfast_frontend::api::{HttpMethod, authed_request};
+    let body = serde_json::json!({"firstname": "Updated"});
+    let resp = authed_request(HttpMethod::Put, "/api/v1.0/users/12345678-1234-1234-1234-1234567890ab", Some(&body)).await;
+    flush(100).await;
+
+    assert!(resp.is_some(), "PUT should return a response");
+    let method = last_request_method();
+    assert_eq!(
+        method.as_deref(),
+        Some("PUT"),
+        "recorded method should be PUT"
+    );
+
+    let body_str = last_request_body();
+    assert!(
+        body_str.as_ref().map_or(false, |b| b.contains("Updated")),
+        "PUT body should contain the JSON payload, got: {:?}",
+        body_str
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+    let _ = js_sys::eval("delete window.__last_request");
+}
+
+#[wasm_bindgen_test]
+async fn test_authed_delete_sends_auth_header_no_body() {
+    let id = "t-authed-del";
+    clear_tokens();
+    install_mock_fetch_mutation_echo();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    // Log in
+    set_input(id, "input#username", "john@example.com");
+    set_input(id, "input#password", "password123");
+    flush(50).await;
+    submit_form(id);
+    flush(500).await;
+
+    use breakfast_frontend::api::{HttpMethod, authed_request};
+    let resp = authed_request(HttpMethod::Delete, "/api/v1.0/items/some-id", None).await;
+    flush(100).await;
+
+    assert!(resp.is_some(), "DELETE should return a response");
+    let method = last_request_method();
+    assert_eq!(
+        method.as_deref(),
+        Some("DELETE"),
+        "recorded method should be DELETE"
+    );
+
+    let auth = last_request_auth();
+    assert!(
+        auth.as_ref().map_or(false, |a| a.starts_with("Bearer ")),
+        "should include Bearer auth header, got: {:?}",
+        auth
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+    let _ = js_sys::eval("delete window.__last_request");
+}
+

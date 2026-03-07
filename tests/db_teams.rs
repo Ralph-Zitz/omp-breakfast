@@ -164,17 +164,18 @@ async fn update_team_nonexistent_returns_error() {
 // Group 9: FK Cascade Behaviour
 // ===========================================================================
 
-/// Deleting a team cascades to memberof, teamorders, and orders.
+/// Deleting a team with existing memberships and orders is blocked by RESTRICT FKs.
+/// Once dependencies are removed, the team can be deleted.
 #[actix_web::test]
 #[ignore]
-async fn delete_team_cascades_membership_and_orders() {
+async fn delete_team_blocked_by_restrict_fks_until_deps_removed() {
     let mut client = test_client().await;
 
     // Create isolated team, user, item
     let team = db::create_team(
         &client,
         CreateTeamEntry {
-            tname: format!("dbtest-cascade-{}", Uuid::now_v7()),
+            tname: format!("dbtest-restrict-{}", Uuid::now_v7()),
             descr: None,
         },
     )
@@ -183,7 +184,7 @@ async fn delete_team_cascades_membership_and_orders() {
     let user = db::create_user(
         &client,
         CreateUserEntry {
-            firstname: "Cascade".to_string(),
+            firstname: "Restrict".to_string(),
             lastname: "Test".to_string(),
             email: unique_email(),
             password: "password123".to_string(),
@@ -194,7 +195,7 @@ async fn delete_team_cascades_membership_and_orders() {
     let item = db::create_item(
         &client,
         CreateItemEntry {
-            descr: format!("dbtest-cascade-item-{}", Uuid::now_v7()),
+            descr: format!("dbtest-restrict-item-{}", Uuid::now_v7()),
             price: Decimal::from_str("3.00").unwrap(),
         },
     )
@@ -232,24 +233,25 @@ async fn delete_team_cascades_membership_and_orders() {
     .await
     .unwrap();
 
-    // Delete the team — should cascade
+    // Attempt to delete the team — should fail due to RESTRICT FKs
+    let result = db::delete_team(&client, team.team_id).await;
+    assert!(
+        result.is_err(),
+        "delete_team should fail when orders/memberships exist"
+    );
+
+    // Cleanup: remove order items, team orders, membership, then team
+    db::delete_team_orders(&client, team.team_id).await.unwrap();
+    db::remove_team_member(&mut client, team.team_id, user.user_id)
+        .await
+        .unwrap();
+
+    // Now deletion should succeed
     let deleted = db::delete_team(&client, team.team_id).await.unwrap();
     assert!(deleted);
 
-    // Membership should be gone
-    let (members, _) = db::get_team_users(&client, team.team_id, 100, 0)
-        .await
-        .unwrap();
-    assert!(members.is_empty(), "membership should be cascade-deleted");
-
-    // Team orders should be gone
-    let (orders, _) = db::get_team_orders(&client, team.team_id, 100, 0)
-        .await
-        .unwrap();
-    assert!(orders.is_empty(), "team orders should be cascade-deleted");
-
-    // Cleanup: user and item are independent, not cascaded
-    db::delete_user(&client, user.user_id).await.unwrap();
+    // Cleanup remaining independent resources
+    db::delete_user(&mut client, user.user_id).await.unwrap();
     db::delete_item(&client, item.item_id).await.unwrap();
 }
 

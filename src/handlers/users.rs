@@ -285,10 +285,13 @@ pub async fn delete_user(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let uid = path.into_inner();
-    let client: Client = get_client(&state.pool).await?;
+    let mut client: Client = get_client(&state.pool).await?;
 
     // RBAC: self, global admin, or team admin of a shared team
     require_self_or_admin_or_team_admin(&client, &req, uid).await?;
+
+    // Prevent non-admin users from deleting a global Admin's account
+    guard_admin_demotion(&client, &req, uid).await?;
 
     // Prevent the last admin from deleting themselves
     let caller_id = requesting_user_id(&req);
@@ -304,7 +307,7 @@ pub async fn delete_user(
     // Fetch user email before deletion so we can invalidate the auth cache after
     let user_email = db::get_user(&client, uid).await.ok().map(|u| u.email);
 
-    let deleted = db::delete_user(&client, uid).await?;
+    let deleted = db::delete_user(&mut client, uid).await?;
     if deleted {
         // Invalidate auth cache after successful deletion
         if let Some(email) = user_email {
@@ -341,12 +344,15 @@ pub async fn delete_user_by_email(
         return Err(Error::Validation("Invalid email format".to_string()));
     }
 
-    let client: Client = get_client(&state.pool).await?;
+    let mut client: Client = get_client(&state.pool).await?;
 
     // RBAC: self, global admin, or team admin of a shared team
     match db::get_user_by_email(&client, &email).await {
         Ok(user) => {
             require_self_or_admin_or_team_admin(&client, &req, user.user_id).await?;
+
+            // Prevent non-admin users from deleting a global Admin's account
+            guard_admin_demotion(&client, &req, user.user_id).await?;
 
             // Prevent the last admin from deleting themselves
             let caller_id = requesting_user_id(&req);
@@ -367,7 +373,7 @@ pub async fn delete_user_by_email(
         }
     }
 
-    let deleted = db::delete_user_by_email(&client, &email).await?;
+    let deleted = db::delete_user_by_email(&mut client, &email).await?;
     if deleted {
         // Invalidate the auth cache so the deleted user cannot authenticate
         let _ = invalidate_cache(state.clone(), &email);
@@ -404,6 +410,9 @@ pub async fn update_user(
 
     // RBAC: self, global admin, or team admin of a shared team
     require_self_or_admin_or_team_admin(&client, &req, uid).await?;
+
+    // Prevent non-admin users from modifying a global Admin's account
+    guard_admin_demotion(&client, &req, uid).await?;
 
     let update_req = json.into_inner();
 

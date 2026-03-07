@@ -14,55 +14,11 @@ This file is **generated and maintained by the project assessment process** defi
 
 ## Critical Items
 
-### RBAC — Team Admin Can Reset Global Admin Password (Account Takeover)
-
-- [ ] **#667 — `update_user` handler does not call `guard_admin_demotion` — Team Admin can reset a Global Admin's password**
-  - File: `src/handlers/users.rs`, `update_user` handler (~line 395–453)
-  - Problem: `update_user` calls `require_self_or_admin_or_team_admin` but does NOT call `guard_admin_demotion`. A Team Admin who shares a team with a Global Admin can call `PUT /api/v1.0/users/{admin_id}` with a new `password`. Since `is_self_update` is `false`, `current_password` verification is skipped. The Team Admin can then log in as the Global Admin with the new password — full account takeover.
-  - Fix: Add `guard_admin_demotion(&client, &req, uid).await?;` after the `require_self_or_admin_or_team_admin` call and before the password-change logic. This prevents non-admin users from modifying a Global Admin's user record (including password). Alternatively, refine the guard to only block password changes by non-admins against admin users, while still allowing Team Admins to update non-sensitive fields (name, email) of admin users they share a team with.
-  - Source commands: `rbac-rules`
+_No open critical items._
 
 ## Important Items
 
-### RBAC — Team Admin Can Delete a Global Admin's Account
-
-- [ ] **#668 — `delete_user` and `delete_user_by_email` do not call `guard_admin_demotion` — Team Admin can delete a Global Admin**
-  - File: `src/handlers/users.rs`, `delete_user` handler (~line 282–310), `delete_user_by_email` handler (~line 332–370)
-  - Problem: Neither handler calls `guard_admin_demotion`. A Team Admin sharing a team with a Global Admin can delete the Admin's entire user account. This is more destructive than removing the Admin from a team (which IS guarded by `guard_admin_demotion` in `remove_team_member`). The existing last-admin self-deletion check only triggers for self-deletions, not cross-user deletions by a Team Admin.
-  - Fix: Add `guard_admin_demotion(&client, &req, uid).await?;` after `require_self_or_admin_or_team_admin` in both `delete_user` and `delete_user_by_email`. This ensures only a Global Admin can delete another Global Admin's account.
-  - Source commands: `rbac-rules`
-
-### Database — `memberof.memberof_user_id` ON DELETE CASCADE Bypasses Last-Admin Guard
-
-- [ ] **#669 — Deleting the last global admin user silently cascades through `memberof`, bypassing `guard_last_admin_membership`**
-  - File: `migrations/V1__initial_schema.sql` (memberof FK definition)
-  - Problem: `memberof.memberof_user_id` references `users(user_id) ON DELETE CASCADE`. If the last global admin is deleted via `delete_user()`, the CASCADE silently removes all their `memberof` rows — including the Admin role membership — without triggering `guard_last_admin_membership` (which only runs in membership-change handlers). The DB itself does not enforce a "≥1 admin" invariant.
-  - Fix: Create a new migration changing the FK to `ON DELETE RESTRICT`: `ALTER TABLE memberof DROP CONSTRAINT memberof_memberof_user_id_fkey; ALTER TABLE memberof ADD CONSTRAINT memberof_memberof_user_id_fkey FOREIGN KEY (memberof_user_id) REFERENCES users(user_id) ON DELETE RESTRICT;`. This forces the application to explicitly remove team memberships before deleting a user, giving guards a chance to fire. Update `delete_user` handler to explicitly remove memberships first (which triggers the last-admin guard).
-  - Source commands: `db-review`
-
-### Database — `teamorders` and `orders` ON DELETE CASCADE FKs Violate Documented RESTRICT Convention
-
-- [ ] **#670 — `teamorders.teamorders_team_id` and `orders.orders_team_id` use ON DELETE CASCADE despite documented convention of RESTRICT**
-  - File: `migrations/V1__initial_schema.sql` (teamorders and orders FK definitions)
-  - Problem: While the `delete_team` handler has an application-level 409 guard (#607), the DB-level CASCADE FKs remain on `teamorders.teamorders_team_id` and `orders.orders_team_id`. A direct DB operation or future code path bypassing the handler guard would destroy all order history silently. The documented convention in CLAUDE.md states "FK constraints use ON DELETE RESTRICT."
-  - Fix: Create a new migration changing both FKs to `ON DELETE RESTRICT`. The handler-level guard already prevents team deletion when orders exist, so this change adds defense-in-depth.
-  - Source commands: `db-review`
-
-### Testing — Frontend First-User Registration Flow Has Zero Test Coverage
-
-- [ ] **#671 — Login page dual-mode detection (`setup_required: true` → registration form) is completely untested**
-  - File: `frontend/src/pages/login.rs`, `frontend/tests/ui_login.rs`
-  - Problem: No WASM test mocks `/health` with `setup_required: true`. The registration form rendering, name/password validation in registration mode, and successful `POST /auth/register` flow are all untested.
-  - Fix: Add WASM tests: (1) Mock `/health` → `{"up": true, "setup_required": true}`, verify registration form renders with name fields. (2) Submit with short password, verify validation error. (3) Submit valid data, mock `/auth/register` success, verify redirect to dashboard.
-  - Source commands: `test-gaps`
-
-### Testing — `authed_request` POST/PUT/DELETE Methods Untested
-
-- [ ] **#672 — Only `authed_get` is tested — token refresh retry with body-forwarding for mutations has no coverage**
-  - File: `frontend/src/api.rs`, `frontend/tests/ui_session.rs`
-  - Problem: The `authed_request` function with `HttpMethod::Post`, `Put`, and `Delete` — including body-forwarding and 401 retry logic — has no test coverage. Every CRUD page depends on these functions.
-  - Fix: Add WASM tests: (1) Mock fetch accepting POST with Auth header and body, verify correct transmission. (2) Mock 401-then-refresh-then-200 for POST with body, verify retry includes body.
-  - Source commands: `test-gaps`
+_No open important items._
 
 ## Minor Items
 
@@ -261,7 +217,7 @@ See that file for the full history of resolved findings.
 - **`cargo audit`:** Clean — 0 vulnerabilities in 437 dependencies.
 - **`cargo fmt --all --check`:** Passes clean.
 - **Test counts verified (2026-03-07):** 248 unit (226 lib + 22 healthcheck), 168 API integration (ignored), 120 DB integration (ignored), 79 WASM.
-- Open items summary: 1 critical, 5 important, 14 minor, 11 informational.
+- Open items summary: 0 critical, 0 important, 14 minor, 11 informational.
 - 31 new findings in this session: #667–#697.
 - Highest finding number: #697.
 - **0 regressions** — all 517 previously resolved items cross-checked, none regressed.

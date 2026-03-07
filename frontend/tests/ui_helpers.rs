@@ -125,6 +125,28 @@ pub fn mock_token(sub: &str) -> String {
 
 // ─── Fetch mocking helpers ──────────────────────────────────────────────────
 
+/// Install a minimal mock that only handles `/health` with `setup_required: false`
+/// and returns 404 for everything else. Use in tests that mount `App` without
+/// needing any other API interaction.
+pub fn install_mock_fetch_health_false() {
+    js_sys::eval(
+        r#"(() => {
+            window.__original_fetch = window.fetch;
+            window.fetch = function(input) {
+                var url = (typeof input === 'string') ? input : input.url;
+                if (url.endsWith('/health')) {
+                    return Promise.resolve(new Response(
+                        JSON.stringify({"up":true,"setup_required":false}),
+                        { status: 200, headers: { "Content-Type": "application/json" } }
+                    ));
+                }
+                return Promise.resolve(new Response("Not Found", { status: 404 }));
+            };
+        })()"#,
+    )
+    .expect("install_mock_fetch_health_false failed");
+}
+
 /// Replace `window.fetch` with a mock that returns a successful auth
 /// response for `POST /auth`, user details for `GET /api/v1.0/users/*`,
 /// empty team list for `GET /api/v1.0/users/*/teams`, and accepts
@@ -136,6 +158,14 @@ pub fn install_mock_fetch_success() {
             window.__original_fetch = window.fetch;
             window.fetch = function(input) {{
                 var url = (typeof input === 'string') ? input : input.url;
+
+                // GET /health
+                if (url.endsWith('/health')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up":true,"setup_required":false}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
 
                 // POST /auth (login)
                 if (url.endsWith('/auth')) {{
@@ -196,6 +226,12 @@ pub fn install_mock_fetch_failure() {
             window.__original_fetch = window.fetch;
             window.fetch = function(input) {
                 var url = (typeof input === 'string') ? input : input.url;
+                if (url.endsWith('/health')) {
+                    return Promise.resolve(new Response(
+                        JSON.stringify({"up":true,"setup_required":false}),
+                        { status: 200, headers: { "Content-Type": "application/json" } }
+                    ));
+                }
                 if (url.endsWith('/auth')) {
                     return Promise.resolve(new Response(
                         JSON.stringify({"error":"Unauthorized"}),
@@ -229,6 +265,12 @@ pub fn install_mock_fetch_rate_limited() {
             window.__original_fetch = window.fetch;
             window.fetch = function(input) {
                 var url = (typeof input === 'string') ? input : input.url;
+                if (url.endsWith('/health')) {
+                    return Promise.resolve(new Response(
+                        JSON.stringify({"up":true,"setup_required":false}),
+                        { status: 200, headers: { "Content-Type": "application/json" } }
+                    ));
+                }
                 if (url.endsWith('/auth')) {
                     return Promise.resolve(new Response(
                         JSON.stringify({"error":"Too Many Requests"}),
@@ -249,6 +291,12 @@ pub fn install_mock_fetch_server_error() {
             window.__original_fetch = window.fetch;
             window.fetch = function(input) {
                 var url = (typeof input === 'string') ? input : input.url;
+                if (url.endsWith('/health')) {
+                    return Promise.resolve(new Response(
+                        JSON.stringify({"up":true,"setup_required":false}),
+                        { status: 200, headers: { "Content-Type": "application/json" } }
+                    ));
+                }
                 if (url.endsWith('/auth')) {
                     return Promise.resolve(new Response(
                         JSON.stringify({"error":"Internal Server Error"}),
@@ -272,6 +320,223 @@ pub fn restore_fetch() {
             }
         })()"#,
     );
+}
+
+// ─── Registration (first-user) helpers ──────────────────────────────────────
+
+/// Install a fetch mock where `/health` returns `setup_required: true`,
+/// `POST /auth/register` returns 201, and login + user-fetch succeed.
+pub fn install_mock_fetch_registration_success() {
+    let token = mock_token("12345678-1234-1234-1234-1234567890ab");
+    let js = format!(
+        r#"(() => {{
+            window.__original_fetch = window.fetch;
+            window.fetch = function(input, init) {{
+                var url = (typeof input === 'string') ? input : input.url;
+                var method = 'GET';
+                if (init && init.method) {{ method = init.method; }}
+                else if (typeof input !== 'string' && input.method) {{ method = input.method; }}
+
+                if (url.endsWith('/health') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up": true, "setup_required": true}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+                if (url.endsWith('/auth/register') && method === 'POST') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{
+                            "user_id": "12345678-1234-1234-1234-1234567890ab",
+                            "firstname": "Admin",
+                            "lastname": "User",
+                            "email": "admin@example.com",
+                            "created": "2025-01-01T00:00:00Z",
+                            "changed": "2025-01-01T00:00:00Z"
+                        }}),
+                        {{ status: 201, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+                if (url.endsWith('/auth') && method === 'POST') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{
+                            access_token: "{token}",
+                            refresh_token: "mock_refresh",
+                            token_type: "Bearer",
+                            expires_in: 900
+                        }}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+                if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+                if (url.includes('/api/v1.0/users/')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{
+                            user_id: "12345678-1234-1234-1234-1234567890ab",
+                            firstname: "Admin",
+                            lastname: "User",
+                            email: "admin@example.com",
+                            created: "2025-01-01T00:00:00Z",
+                            changed: "2025-01-01T00:00:00Z"
+                        }}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+                if (url.includes('/auth/revoke')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up": true}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+                return Promise.resolve(new Response("Not Found", {{ status: 404 }}));
+            }};
+        }})()"#,
+        token = token
+    );
+    js_sys::eval(&js).expect("install_mock_fetch_registration_success failed");
+}
+
+/// Install a fetch mock where `/health` returns `setup_required: true`
+/// and all other requests return 404.
+pub fn install_mock_fetch_setup_required() {
+    js_sys::eval(
+        r#"(() => {
+            window.__original_fetch = window.fetch;
+            window.fetch = function(input, init) {
+                var url = (typeof input === 'string') ? input : input.url;
+                var method = 'GET';
+                if (init && init.method) { method = init.method; }
+                else if (typeof input !== 'string' && input.method) { method = input.method; }
+
+                if (url.endsWith('/health') && method === 'GET') {
+                    return Promise.resolve(new Response(
+                        JSON.stringify({"up": true, "setup_required": true}),
+                        { status: 200, headers: { "Content-Type": "application/json" } }
+                    ));
+                }
+                return Promise.resolve(new Response("Not Found", { status: 404 }));
+            };
+        })()"#,
+    )
+    .expect("install_mock_fetch_setup_required failed");
+}
+
+// ─── authed_request mutation helpers ────────────────────────────────────────
+
+/// Install a fetch mock that records the last POST/PUT/DELETE request details
+/// and returns 200 with the echoed method.
+pub fn install_mock_fetch_mutation_echo() {
+    let token = mock_token("12345678-1234-1234-1234-1234567890ab");
+    let js = format!(
+        r#"(() => {{
+            window.__original_fetch = window.fetch;
+            window.__last_request = null;
+            window.fetch = function(input, init) {{
+                var url = (typeof input === 'string') ? input : input.url;
+                var method = 'GET';
+                if (init && init.method) {{ method = init.method; }}
+                else if (typeof input !== 'string' && input.method) {{ method = input.method; }}
+
+                // GET /health
+                if (url.endsWith('/health')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up":true,"setup_required":false}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // POST /auth (login)
+                if (url.endsWith('/auth') && method === 'POST' && !url.includes('/refresh')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{
+                            access_token: "{token}",
+                            refresh_token: "mock_refresh",
+                            token_type: "Bearer",
+                            expires_in: 900
+                        }}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/users/*/teams
+                if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // GET /api/v1.0/users/*
+                if (url.includes('/api/v1.0/users/') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{
+                            user_id: "12345678-1234-1234-1234-1234567890ab",
+                            firstname: "John",
+                            lastname: "Doe",
+                            email: "john@example.com",
+                            created: "2025-01-01T00:00:00Z",
+                            changed: "2025-01-01T00:00:00Z"
+                        }}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
+                // Record and echo mutation requests
+                var auth = '';
+                if (init && init.headers) {{
+                    if (init.headers.Authorization) {{ auth = init.headers.Authorization; }}
+                    else if (typeof init.headers.get === 'function') {{ auth = init.headers.get('Authorization') || ''; }}
+                }} else if (typeof input !== 'string' && typeof input.headers === 'object' && typeof input.headers.get === 'function') {{
+                    auth = input.headers.get('Authorization') || '';
+                }}
+                var body = null;
+                if (init && init.body) {{ body = init.body; }}
+                else if (typeof input !== 'string' && input.body) {{
+                    // gloo_net passes a Request object; read its body if available
+                    // For Request objects, body is a ReadableStream; use text() instead
+                    var req = input;
+                    window.__last_request = {{ url: url, method: method, auth: auth, body: null }};
+                    return req.text().then(function(bodyText) {{
+                        window.__last_request.body = bodyText || null;
+                        return new Response(
+                            JSON.stringify({{ method: method, url: url }}),
+                            {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                        );
+                    }});
+                }}
+                window.__last_request = {{ url: url, method: method, auth: auth, body: body }};
+                return Promise.resolve(new Response(
+                    JSON.stringify({{ method: method, url: url }}),
+                    {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                ));
+            }};
+        }})()"#,
+        token = token
+    );
+    js_sys::eval(&js).expect("install_mock_fetch_mutation_echo failed");
+}
+
+/// Read the last recorded request from the mutation echo mock.
+pub fn last_request_method() -> Option<String> {
+    js_sys::eval("window.__last_request && window.__last_request.method")
+        .ok()
+        .and_then(|v| v.as_string())
+}
+
+pub fn last_request_auth() -> Option<String> {
+    js_sys::eval("window.__last_request && window.__last_request.auth")
+        .ok()
+        .and_then(|v| v.as_string())
+}
+
+pub fn last_request_body() -> Option<String> {
+    js_sys::eval("window.__last_request && window.__last_request.body")
+        .ok()
+        .and_then(|v| v.as_string())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -298,6 +563,12 @@ pub fn install_mock_fetch_user_401() {
             window.__original_fetch = window.fetch;
             window.fetch = function(input) {
                 var url = (typeof input === 'string') ? input : input.url;
+                if (url.endsWith('/health')) {
+                    return Promise.resolve(new Response(
+                        JSON.stringify({"up":true,"setup_required":false}),
+                        { status: 200, headers: { "Content-Type": "application/json" } }
+                    ));
+                }
                 if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {
                     return Promise.resolve(new Response(
                         JSON.stringify({"items":[],"total":0,"limit":50,"offset":0}),
@@ -462,6 +733,14 @@ pub fn install_mock_fetch_double_failure() {
                 if (init && init.method) {{ method = init.method; }}
                 else if (typeof input !== 'string' && input.method) {{ method = input.method; }}
 
+                // GET /health
+                if (url.endsWith('/health')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up":true,"setup_required":false}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
+
                 // POST /auth (initial login — succeeds)
                 if (url.endsWith('/auth') && method === 'POST' && !url.includes('/refresh') && !url.includes('/revoke')) {{
                     return Promise.resolve(new Response(
@@ -590,6 +869,14 @@ pub fn install_mock_fetch_full() {
                 var method = 'GET';
                 if (init && init.method) {{ method = init.method; }}
                 else if (typeof input !== 'string' && input.method) {{ method = input.method; }}
+
+                // GET /health
+                if (url.endsWith('/health')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up":true,"setup_required":false}}),
+                        {{ status: 200, headers: {{ "Content-Type": "application/json" }} }}
+                    ));
+                }}
 
                 // POST /auth (login)
                 if (url.endsWith('/auth') && method === 'POST' && !url.includes('/refresh')) {{
@@ -869,6 +1156,13 @@ pub fn install_mock_fetch_full_with_second_user() {
                 if (init && init.method) {{ method = init.method; }}
                 else if (typeof input !== 'string' && input.method) {{ method = input.method; }}
 
+                // GET /health
+                if (url.endsWith('/health')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up":true,"setup_required":false}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
                 // POST /auth (login)
                 if (url.endsWith('/auth') && method === 'POST' && !url.includes('/refresh')) {{
                     return Promise.resolve(new Response(
@@ -985,6 +1279,12 @@ pub fn install_mock_fetch_with_user_crud() {
                 if (init && init.method) {{ method = init.method; }}
                 else if (typeof input !== 'string' && input.method) {{ method = input.method; }}
 
+                if (url.endsWith('/health')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up":true,"setup_required":false}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
                 if (url.endsWith('/auth') && method === 'POST' && !url.includes('/refresh')) {{
                     return Promise.resolve(new Response(
                         JSON.stringify({{access_token:"{token}",refresh_token:"mock_refresh",token_type:"Bearer",expires_in:900}}),

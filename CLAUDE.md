@@ -162,6 +162,7 @@ migrations/
   V12__cleanup_index_and_constraints.sql – Drop unused idx_teamorders_id_due, NOT NULL on orders_team_id
   V13__pickup_user.sql – Adds pickup_user_id column to teamorders table (FK to users, partial index)
   V14__user_text_check_constraints.sql – CHECK constraints on users.firstname (≤50), users.lastname (≤50), users.email (≤255)
+  V15__restrict_cascade_fks.sql – Change memberof.memberof_user_id, teamorders.teamorders_team_id, orders.orders_team_id FKs from CASCADE to RESTRICT
 tests/
   common/          – Shared test helpers (setup, state, DB utilities)
   api_auth.rs      – Auth API integration tests (login, register, refresh, revoke)
@@ -187,7 +188,7 @@ tests/
 
 - CORS is enforced via `actix-cors` middleware with an explicit same-origin allowlist (methods: GET/POST/PUT/DELETE/OPTIONS; headers: Authorization, Content-Type, Accept; max-age: 3600s)
 - Every handler returns `Result<impl Responder, Error>` using the custom `errors::Error` enum
-- DB functions take a `&Client` and return `Result<T, Error>`, using `.map_err(Error::Db)?` pattern. Functions that perform multi-step mutations (`add_team_member`, `update_member_role`, `remove_team_member`) take `&mut Client` and wrap operations in a database transaction.
+- DB functions take a `&Client` and return `Result<T, Error>`, using `.map_err(Error::Db)?` pattern. Functions that perform multi-step mutations (`add_team_member`, `update_member_role`, `remove_team_member`, `delete_user`, `delete_user_by_email`) take `&mut Client` and wrap operations in a database transaction.
 - **Update functions must return 404 (not 500) when the target resource does not exist.** Use `query_opt()` + `.ok_or_else(|| Error::NotFound(...))` — never `query_one()`, which maps missing rows to a generic DB error (500). This is a permanent design decision; do not revert to `query_one()` in update functions.
 - All handlers are instrumented with `#[instrument(..., level = "debug")]` — `state` is always skipped; handlers may also skip `req`, `json`, `basic`, `body` as appropriate
 - Validation uses `validate(&json)?` before any DB call
@@ -408,7 +409,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ## Unfinished Work
 
 - No client-side routing library (manual signal-based page switching, by design)
-- Frontend WASM tests cover all pages with rendering and basic interaction tests (79 tests); deeper workflow and edge-case tests for individual pages are still missing
+- Frontend WASM tests cover all pages with rendering and basic interaction tests (85 tests); deeper workflow and edge-case tests for individual pages are still missing
 
 ## Testing
 
@@ -423,7 +424,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Frontend
 
-- 79 WASM tests in `frontend/tests/ui_*.rs` (run in headless Chrome via `wasm-pack`)
+- 85 WASM tests in `frontend/tests/ui_*.rs` (run in headless Chrome via `wasm-pack`)
 - Test categories:
   - JWT decode (4 tests): valid token, missing segments, bad base64, invalid JSON
   - Login page rendering (3 tests): brand/form elements, email attributes, password attributes
@@ -445,6 +446,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
   - Orders page interactions (1 test): create order dialog opens
   - Profile page interactions (3 tests): edit mode toggle, password field reveal, cancel exits edit
   - Admin dialogs (7 tests): CreateUserDialog open/fields/disabled/cancel, EditUserDialog open/fields/cancel
+  - First-user registration (3 tests): registration form renders when setup_required, short password validation error, successful registration redirects to dashboard
+  - authed_request mutations (3 tests): POST sends body and auth header, PUT sends body and auth header, DELETE sends auth header without body
 - Mocking strategy: overrides `window.fetch` via `js_sys::eval` to intercept `gloo-net` HTTP calls; uses `Promise`-based `setTimeout` wrapper for async timing (no `gloo-timers` dependency)
 - Run frontend tests: `make test-frontend` or `cd frontend && wasm-pack test --headless --chrome`
 - Note: ChromeDriver version must match installed Chrome version

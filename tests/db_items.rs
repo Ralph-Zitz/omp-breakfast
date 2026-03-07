@@ -287,7 +287,7 @@ async fn delete_item_with_order_reference_is_restricted() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }

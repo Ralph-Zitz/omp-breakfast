@@ -46,7 +46,7 @@ async fn create_team_order_returns_entry() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -78,7 +78,7 @@ async fn create_team_order_with_user_id() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -114,7 +114,7 @@ async fn get_team_orders_returns_created_data() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -150,7 +150,7 @@ async fn get_team_order_by_id() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -199,7 +199,7 @@ async fn update_team_order_changes_fields() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -236,7 +236,7 @@ async fn delete_team_order_returns_true_then_false() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -285,7 +285,7 @@ async fn delete_team_orders_bulk() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -351,7 +351,7 @@ async fn create_order_item_returns_entry() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -435,7 +435,7 @@ async fn get_order_items_returns_list() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -497,7 +497,7 @@ async fn get_order_item_by_id() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -565,7 +565,7 @@ async fn update_order_item_changes_amt() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -633,7 +633,7 @@ async fn delete_order_item_returns_true_then_false() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -703,7 +703,7 @@ async fn duplicate_order_item_returns_error() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -804,7 +804,7 @@ async fn is_team_order_closed_returns_false_for_open_order() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -854,7 +854,7 @@ async fn is_team_order_closed_returns_true_for_closed_order() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -936,7 +936,7 @@ async fn delete_team_order_cascades_order_items() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -1011,7 +1011,7 @@ async fn update_team_order_partial_preserves_existing_values() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -1021,7 +1021,7 @@ async fn update_team_order_partial_preserves_existing_values() {
 #[actix_web::test]
 #[ignore]
 async fn create_team_order_with_nonexistent_team_id_fails() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let user = create_test_user(&client).await;
     let fake_team_id = Uuid::now_v7();
 
@@ -1042,7 +1042,7 @@ async fn create_team_order_with_nonexistent_team_id_fails() {
     );
 
     // Cleanup
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -1087,7 +1087,7 @@ async fn count_team_orders_returns_correct_count() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -1190,7 +1190,7 @@ async fn reopen_team_order_creates_copy_of_closed_order() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -1224,7 +1224,7 @@ async fn reopen_team_order_rejects_open_order() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -1310,7 +1310,7 @@ async fn get_order_total_returns_correct_sum() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -1345,7 +1345,7 @@ async fn get_order_total_returns_zero_for_empty_order() {
     db::delete_team(&client, team.team_id)
         .await
         .expect("cleanup");
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }

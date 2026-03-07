@@ -84,7 +84,7 @@ async fn count_avatars_matches_list() {
 #[actix_web::test]
 #[ignore]
 async fn set_user_avatar_and_clear() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let user = create_test_user(&client).await;
 
     // Insert a test avatar
@@ -107,7 +107,7 @@ async fn set_user_avatar_and_clear() {
     assert_eq!(cleared.avatar_id, None);
 
     // Cleanup
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup user");
     client

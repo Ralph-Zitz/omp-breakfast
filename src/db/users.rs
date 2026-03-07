@@ -193,18 +193,28 @@ pub async fn update_user(
     }
 }
 
-/// Deletes a user by ID. Returns `true` if a row was deleted, `false` if
-/// the user did not exist.
-pub async fn delete_user(client: &Client, uid: Uuid) -> Result<bool, Error> {
-    let statement = client
-        .prepare("delete from users where user_id = $1")
+/// Deletes a user by ID within a transaction. Removes all team
+/// memberships first (memberof FK is ON DELETE RESTRICT), then
+/// deletes the user row. Returns `true` if a row was deleted,
+/// `false` if the user did not exist.
+pub async fn delete_user(client: &mut Client, uid: Uuid) -> Result<bool, Error> {
+    let tx = client.transaction().await.map_err(Error::Db)?;
+
+    let del_memberships = tx
+        .prepare("delete from memberof where memberof_user_id = $1")
+        .await
+        .map_err(Error::Db)?;
+    tx.execute(&del_memberships, &[&uid])
         .await
         .map_err(Error::Db)?;
 
-    let result = client
-        .execute(&statement, &[&uid])
+    let del_user = tx
+        .prepare("delete from users where user_id = $1")
         .await
         .map_err(Error::Db)?;
+    let result = tx.execute(&del_user, &[&uid]).await.map_err(Error::Db)?;
+
+    tx.commit().await.map_err(Error::Db)?;
 
     Ok(result == 1)
 }
@@ -221,18 +231,41 @@ pub async fn count_users(client: &Client) -> Result<i64, Error> {
     Ok(row.get("cnt"))
 }
 
-/// Deletes a user by email address. Returns `true` if a row was deleted,
-/// `false` if no user matched.
-pub async fn delete_user_by_email(client: &Client, email: &str) -> Result<bool, Error> {
-    let statement = client
-        .prepare("delete from users where email = $1")
+/// Deletes a user by email address within a transaction. Removes all
+/// team memberships first (memberof FK is ON DELETE RESTRICT), then
+/// deletes the user row. Returns `true` if a row was deleted, `false`
+/// if no user matched.
+pub async fn delete_user_by_email(client: &mut Client, email: &str) -> Result<bool, Error> {
+    let tx = client.transaction().await.map_err(Error::Db)?;
+
+    // Look up user_id for membership cleanup
+    let lookup = tx
+        .prepare("select user_id from users where email = $1")
+        .await
+        .map_err(Error::Db)?;
+    let user_row = tx.query_opt(&lookup, &[&email]).await.map_err(Error::Db)?;
+
+    let Some(row) = user_row else {
+        tx.commit().await.map_err(Error::Db)?;
+        return Ok(false);
+    };
+    let uid: Uuid = row.get(0);
+
+    let del_memberships = tx
+        .prepare("delete from memberof where memberof_user_id = $1")
+        .await
+        .map_err(Error::Db)?;
+    tx.execute(&del_memberships, &[&uid])
         .await
         .map_err(Error::Db)?;
 
-    let result = client
-        .execute(&statement, &[&email])
+    let del_user = tx
+        .prepare("delete from users where user_id = $1")
         .await
         .map_err(Error::Db)?;
+    let result = tx.execute(&del_user, &[&uid]).await.map_err(Error::Db)?;
+
+    tx.commit().await.map_err(Error::Db)?;
 
     Ok(result == 1)
 }

@@ -16,7 +16,7 @@ use uuid::Uuid;
 #[actix_web::test]
 #[ignore]
 async fn create_user_returns_entry_with_correct_fields() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let email = unique_email();
 
     let user = db::create_user(
@@ -37,7 +37,7 @@ async fn create_user_returns_entry_with_correct_fields() {
     assert!(!user.user_id.is_nil(), "should have a generated UUID");
 
     // Cleanup
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -45,7 +45,7 @@ async fn create_user_returns_entry_with_correct_fields() {
 #[actix_web::test]
 #[ignore]
 async fn get_user_by_id_returns_matching_user() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let email = unique_email();
 
     let created = db::create_user(
@@ -68,7 +68,7 @@ async fn get_user_by_id_returns_matching_user() {
     assert_eq!(fetched.firstname, "GetById");
 
     // Cleanup
-    db::delete_user(&client, created.user_id)
+    db::delete_user(&mut client, created.user_id)
         .await
         .expect("cleanup");
 }
@@ -76,7 +76,7 @@ async fn get_user_by_id_returns_matching_user() {
 #[actix_web::test]
 #[ignore]
 async fn get_user_by_email_returns_update_user_entry() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let email = unique_email();
 
     let created = db::create_user(
@@ -103,7 +103,7 @@ async fn get_user_by_email_returns_update_user_entry() {
     );
 
     // Cleanup
-    db::delete_user(&client, created.user_id)
+    db::delete_user(&mut client, created.user_id)
         .await
         .expect("cleanup");
 }
@@ -111,14 +111,14 @@ async fn get_user_by_email_returns_update_user_entry() {
 #[actix_web::test]
 #[ignore]
 async fn get_users_returns_created_data() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let user = create_test_user(&client).await;
     let (users, total) = db::get_users(&client, 100, 0)
         .await
         .expect("get_users should succeed");
     assert!(total >= 1, "should have at least 1 user, got {}", total);
     assert!(users.iter().any(|u| u.user_id == user.user_id));
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -126,7 +126,7 @@ async fn get_users_returns_created_data() {
 #[actix_web::test]
 #[ignore]
 async fn update_user_without_password_preserves_hash() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let email = unique_email();
 
     let created = db::create_user(
@@ -167,7 +167,7 @@ async fn update_user_without_password_preserves_hash() {
     assert_eq!(refreshed.password, original_hash);
 
     // Cleanup
-    db::delete_user(&client, created.user_id)
+    db::delete_user(&mut client, created.user_id)
         .await
         .expect("cleanup");
 }
@@ -175,7 +175,7 @@ async fn update_user_without_password_preserves_hash() {
 #[actix_web::test]
 #[ignore]
 async fn update_user_with_password_changes_hash() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let email = unique_email();
 
     let created = db::create_user(
@@ -216,7 +216,7 @@ async fn update_user_with_password_changes_hash() {
     );
 
     // Cleanup
-    db::delete_user(&client, created.user_id)
+    db::delete_user(&mut client, created.user_id)
         .await
         .expect("cleanup");
 }
@@ -224,7 +224,7 @@ async fn update_user_with_password_changes_hash() {
 #[actix_web::test]
 #[ignore]
 async fn delete_user_returns_true_then_false() {
-    let client = test_client().await;
+    let mut client = test_client().await;
 
     let user = db::create_user(
         &client,
@@ -238,17 +238,17 @@ async fn delete_user_returns_true_then_false() {
     .await
     .unwrap();
 
-    let deleted = db::delete_user(&client, user.user_id).await.unwrap();
+    let deleted = db::delete_user(&mut client, user.user_id).await.unwrap();
     assert!(deleted, "first delete should return true");
 
-    let deleted_again = db::delete_user(&client, user.user_id).await.unwrap();
+    let deleted_again = db::delete_user(&mut client, user.user_id).await.unwrap();
     assert!(!deleted_again, "second delete should return false");
 }
 
 #[actix_web::test]
 #[ignore]
 async fn delete_user_by_email_returns_true_then_false() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let email = unique_email();
 
     db::create_user(
@@ -263,10 +263,10 @@ async fn delete_user_by_email_returns_true_then_false() {
     .await
     .unwrap();
 
-    let deleted = db::delete_user_by_email(&client, &email).await.unwrap();
+    let deleted = db::delete_user_by_email(&mut client, &email).await.unwrap();
     assert!(deleted);
 
-    let deleted_again = db::delete_user_by_email(&client, &email).await.unwrap();
+    let deleted_again = db::delete_user_by_email(&mut client, &email).await.unwrap();
     assert!(!deleted_again);
 }
 
@@ -281,7 +281,7 @@ async fn get_user_nonexistent_returns_error() {
 #[actix_web::test]
 #[ignore]
 async fn create_duplicate_user_returns_error() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let email = unique_email();
 
     let user = db::create_user(
@@ -310,7 +310,7 @@ async fn create_duplicate_user_returns_error() {
     assert!(result.is_err(), "duplicate email should fail");
 
     // Cleanup
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -353,7 +353,7 @@ async fn update_user_nonexistent_returns_error() {
 #[actix_web::test]
 #[ignore]
 async fn create_user_sets_timestamps() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let email = unique_email();
     let before = Utc::now();
 
@@ -382,7 +382,7 @@ async fn create_user_sets_timestamps() {
     );
 
     // Cleanup
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }
@@ -390,7 +390,7 @@ async fn create_user_sets_timestamps() {
 #[actix_web::test]
 #[ignore]
 async fn update_user_updates_changed_timestamp() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let email = unique_email();
 
     let created = db::create_user(
@@ -432,15 +432,16 @@ async fn update_user_updates_changed_timestamp() {
     assert_eq!(updated.created, created.created);
 
     // Cleanup
-    db::delete_user(&client, created.user_id)
+    db::delete_user(&mut client, created.user_id)
         .await
         .expect("cleanup");
 }
 
-/// Deleting a user cascades to memberof but is restricted by teamorders FK.
+/// Deleting a user cleans up memberof rows (handled within the DB function's
+/// transaction since memberof FK is ON DELETE RESTRICT).
 #[actix_web::test]
 #[ignore]
-async fn delete_user_cascades_membership() {
+async fn delete_user_cleans_up_membership() {
     let mut client = test_client().await;
 
     let team = db::create_team(
@@ -477,7 +478,7 @@ async fn delete_user_cascades_membership() {
     assert!(!members.is_empty());
 
     // Delete user — membership should cascade
-    db::delete_user(&client, user.user_id).await.unwrap();
+    db::delete_user(&mut client, user.user_id).await.unwrap();
 
     let (members, _) = db::get_team_users(&client, team.team_id, 100, 0)
         .await
@@ -497,7 +498,7 @@ async fn delete_user_cascades_membership() {
 #[actix_web::test]
 #[ignore]
 async fn get_password_hash_returns_argon2_hash() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let email = unique_email();
 
     let created = db::create_user(
@@ -529,7 +530,7 @@ async fn get_password_hash_returns_argon2_hash() {
         .expect("hash should verify against original password");
 
     // Cleanup
-    db::delete_user(&client, created.user_id)
+    db::delete_user(&mut client, created.user_id)
         .await
         .expect("cleanup");
 }
@@ -551,7 +552,7 @@ async fn get_password_hash_returns_not_found_for_nonexistent_user() {
 #[actix_web::test]
 #[ignore]
 async fn count_users_returns_positive_count() {
-    let client = test_client().await;
+    let mut client = test_client().await;
 
     // Ensure at least one user exists
     let user = create_test_user(&client).await;
@@ -562,7 +563,7 @@ async fn count_users_returns_positive_count() {
     assert!(count >= 1, "should have at least one user");
 
     // Cleanup
-    db::delete_user(&client, user.user_id)
+    db::delete_user(&mut client, user.user_id)
         .await
         .expect("cleanup");
 }

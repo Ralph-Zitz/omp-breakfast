@@ -16,6 +16,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 async fn test_login_page_renders_brand_and_form() {
     let id = "t-login-render";
     clear_tokens();
+    install_mock_fetch_health_false();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
     flush(100).await;
@@ -28,12 +29,14 @@ async fn test_login_page_renders_brand_and_form() {
     assert!(contains_text(id, "Sign In"), "button label");
 
     remove_test_container(id);
+    restore_fetch();
 }
 
 #[wasm_bindgen_test]
 async fn test_email_input_attributes() {
     let id = "t-email-attrs";
     clear_tokens();
+    install_mock_fetch_health_false();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
     flush(100).await;
@@ -51,12 +54,14 @@ async fn test_email_input_attributes() {
     assert_eq!(username.autocomplete(), "username");
 
     remove_test_container(id);
+    restore_fetch();
 }
 
 #[wasm_bindgen_test]
 async fn test_password_input_attributes() {
     let id = "t-pwd-attrs";
     clear_tokens();
+    install_mock_fetch_health_false();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
     flush(100).await;
@@ -74,8 +79,8 @@ async fn test_password_input_attributes() {
     assert_eq!(pwd.autocomplete(), "current-password");
 
     remove_test_container(id);
+    restore_fetch();
 }
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  3 · Client-side validation tests
 // ═══════════════════════════════════════════════════════════════════════════
@@ -84,6 +89,7 @@ async fn test_password_input_attributes() {
 async fn test_empty_form_shows_validation_error() {
     let id = "t-empty-form";
     clear_tokens();
+    install_mock_fetch_health_false();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
     flush(100).await;
@@ -97,12 +103,14 @@ async fn test_empty_form_shows_validation_error() {
     );
 
     remove_test_container(id);
+    restore_fetch();
 }
 
 #[wasm_bindgen_test]
 async fn test_email_only_shows_validation_error() {
     let id = "t-email-only";
     clear_tokens();
+    install_mock_fetch_health_false();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
     flush(100).await;
@@ -118,12 +126,14 @@ async fn test_email_only_shows_validation_error() {
     );
 
     remove_test_container(id);
+    restore_fetch();
 }
 
 #[wasm_bindgen_test]
 async fn test_password_only_shows_validation_error() {
     let id = "t-pwd-only";
     clear_tokens();
+    install_mock_fetch_health_false();
     let container = create_test_container(id);
     let _handle = leptos::mount::mount_to(container.clone(), app::App);
     flush(100).await;
@@ -139,6 +149,7 @@ async fn test_password_only_shows_validation_error() {
     );
 
     remove_test_container(id);
+    restore_fetch();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -295,6 +306,102 @@ async fn test_server_error_login_shows_500_message() {
         html
     );
     assert!(html.contains("Sign In"), "still on login page");
+
+    remove_test_container(id);
+    restore_fetch();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 13 · First-user registration tests (#671)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[wasm_bindgen_test]
+async fn test_registration_form_renders_when_setup_required() {
+    let id = "t-reg-render";
+    clear_tokens();
+    install_mock_fetch_setup_required();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(500).await;
+
+    let html = inner_html(id);
+    assert!(
+        html.contains("Create") && html.contains("admin account"),
+        "should show registration heading, got: {}",
+        html
+    );
+    assert!(
+        has_element(id, "input#firstname"),
+        "should have firstname input"
+    );
+    assert!(
+        has_element(id, "input#lastname"),
+        "should have lastname input"
+    );
+    assert!(
+        has_element(id, "input#username"),
+        "should have email input"
+    );
+    assert!(
+        has_element(id, "input#password"),
+        "should have password input"
+    );
+
+    remove_test_container(id);
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_registration_short_password_shows_validation_error() {
+    let id = "t-reg-short-pw";
+    clear_tokens();
+    install_mock_fetch_setup_required();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(500).await;
+
+    set_input(id, "input#firstname", "Admin");
+    set_input(id, "input#lastname", "User");
+    set_input(id, "input#username", "admin@example.com");
+    set_input(id, "input#password", "short");
+    flush(50).await;
+    submit_form(id);
+    flush(100).await;
+
+    let html = inner_html(id);
+    assert!(
+        html.contains("at least 8 characters"),
+        "should show password length error, got: {}",
+        html
+    );
+
+    remove_test_container(id);
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_registration_success_redirects_to_dashboard() {
+    let id = "t-reg-success";
+    clear_tokens();
+    install_mock_fetch_registration_success();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(500).await;
+
+    set_input(id, "input#firstname", "Admin");
+    set_input(id, "input#lastname", "User");
+    set_input(id, "input#username", "admin@example.com");
+    set_input(id, "input#password", "securepassword123");
+    flush(50).await;
+    submit_form(id);
+    flush(800).await;
+
+    let html = inner_html(id);
+    assert!(
+        html.contains("Welcome") || html.contains("Dashboard"),
+        "should redirect to dashboard after registration, got: {}",
+        html
+    );
 
     remove_test_container(id);
     restore_fetch();
