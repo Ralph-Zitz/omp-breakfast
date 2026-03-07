@@ -127,6 +127,8 @@ body {
 }
 
 .sidebar__user-info {
+    display: flex;
+    flex-direction: column;
     min-width: 0;
     overflow: hidden;
 }
@@ -668,6 +670,13 @@ form {
 }
 
 .connect-table-cell {
+    vertical-align: middle;
+}
+
+/* Tags inside table cells: override display:flex to inline-flex so
+   vertical-align on the cell properly centers them with adjacent text. */
+.connect-table-cell .connect-tag {
+    display: inline-flex;
     vertical-align: middle;
 }
 

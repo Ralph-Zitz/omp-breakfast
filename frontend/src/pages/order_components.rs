@@ -16,6 +16,7 @@ pub fn OrderDetail(
     on_update_item: impl Fn(String, i32) + 'static + Clone + Send,
     on_remove_item: impl Fn(String) + 'static + Clone + Send,
     on_assign_pickup: impl Fn(Option<String>) + 'static + Clone + Send,
+    on_update_duedate: impl Fn(Option<String>) + 'static + Clone + Send,
 ) -> impl IntoView {
     let (add_item_id, set_add_item_id) = signal(String::new());
     let (add_qty, set_add_qty) = signal("1".to_string());
@@ -47,12 +48,26 @@ pub fn OrderDetail(
             let cat = catalog.get();
 
             // Resolve item names from catalog
+            let cat_for_price = cat.clone();
             let resolve_name = move |item_id: &str| -> String {
                 cat.iter()
                     .find(|i| i.item_id == item_id)
                     .map(|i| i.descr.clone())
                     .unwrap_or_else(|| item_id.to_string())
             };
+
+            // Resolve item price from catalog
+            let resolve_price = move |item_id: &str| -> f64 {
+                cat_for_price.iter()
+                    .find(|i| i.item_id == item_id)
+                    .and_then(|i| i.price.parse::<f64>().ok())
+                    .unwrap_or(0.0)
+            };
+
+            // Compute grand total
+            let grand_total: f64 = item_list.iter()
+                .map(|oi| resolve_price(&oi.orders_item_id) * oi.amt as f64)
+                .sum();
 
             view! {
                 <div class="card">
@@ -65,6 +80,45 @@ pub fn OrderDetail(
                         } else {
                             view! { <span /> }.into_any()
                         }}
+                    </div>
+
+                    // Due date
+                    <div style="margin-bottom: var(--ds-layout-spacing-300, 16px);">
+                        <div class="connect-text-field">
+                            <div class="connect-label">
+                                <label class="connect-label__text" for="detail-duedate">"Due Date"</label>
+                            </div>
+                            {if closed {
+                                let date_display = ord.duedate.clone().unwrap_or_else(|| "No date".to_string());
+                                view! { <p class="text-muted">{date_display}</p> }.into_any()
+                            } else {
+                                let on_update = on_update_duedate.clone();
+                                let current_date = ord.duedate.clone().unwrap_or_default();
+                                let today = {
+                                    let d = js_sys::Date::new_0();
+                                    let y = d.get_full_year();
+                                    let m = d.get_month() + 1;
+                                    let day = d.get_date();
+                                    format!("{y:04}-{m:02}-{day:02}")
+                                };
+                                view! {
+                                    <div class="connect-text-field__input-wrapper">
+                                        <input
+                                            class="connect-text-field__input"
+                                            id="detail-duedate"
+                                            type="date"
+                                            min=today
+                                            prop:value=current_date
+                                            on:change=move |ev| {
+                                                let Some(target) = ev.target() else { return; };
+                                                let val = target.unchecked_into::<web_sys::HtmlInputElement>().value();
+                                                on_update(if val.is_empty() { None } else { Some(val) });
+                                            }
+                                        />
+                                    </div>
+                                }.into_any()
+                            }}
+                        </div>
                     </div>
 
                     // Pickup user assignment
@@ -119,6 +173,7 @@ pub fn OrderDetail(
                                     <tr>
                                         <th class="connect-table-header-cell">"Item"</th>
                                         <th class="connect-table-header-cell">"Qty"</th>
+                                        <th class="connect-table-header-cell" style="text-align: right;">"Total"</th>
                                         {(!closed).then(|| view! {
                                             <th class="connect-table-header-cell connect-table-header-cell--actions">"Remove"</th>
                                         })}
@@ -127,6 +182,7 @@ pub fn OrderDetail(
                                 <tbody class="connect-table-body">
                                     {item_list.into_iter().map(|oi| {
                                         let name = resolve_name(&oi.orders_item_id);
+                                        let line_total = resolve_price(&oi.orders_item_id) * oi.amt as f64;
                                         let iid = oi.orders_item_id.clone();
                                         let on_remove_item = on_remove_item.clone();
                                         let on_update_item = on_update_item.clone();
@@ -157,6 +213,9 @@ pub fn OrderDetail(
                                                         view! { <span>{current_amt}</span> }.into_any()
                                                     }}
                                                 </td>
+                                                <td class="connect-table-cell" style="text-align: right;">
+                                                    {format!("{:.2} kr", line_total)}
+                                                </td>
                                                 {(!closed).then(|| {
                                                     let iid = iid.clone();
                                                     let on_remove_item = on_remove_item.clone();
@@ -181,6 +240,9 @@ pub fn OrderDetail(
                                     }).collect::<Vec<_>>()}
                                 </tbody>
                             </table>
+                            <div style="display: flex; justify-content: flex-end; margin-top: var(--ds-layout-spacing-200, 8px); padding-right: var(--ds-layout-spacing-200, 8px);">
+                                <strong>{format!("Order Total: {:.2} kr", grand_total)}</strong>
+                            </div>
                         }.into_any()
                     }}
 

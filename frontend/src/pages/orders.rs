@@ -351,6 +351,47 @@ pub fn OrdersPage() -> impl IntoView {
         });
     };
 
+    let do_update_duedate = move |duedate: Option<String>| {
+        let team_id = match selected_team.get() {
+            Some(id) => id,
+            None => return,
+        };
+        let order = match selected_order.get() {
+            Some(o) => o,
+            None => return,
+        };
+        let order_id = order.teamorders_id.clone();
+        let body = match duedate {
+            Some(d) if !d.is_empty() => serde_json::json!({ "duedate": d }),
+            _ => serde_json::json!({ "duedate": null }),
+        };
+
+        leptos::task::spawn_local_scoped(async move {
+            let url = format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id);
+            let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
+            match resp {
+                Some(r) if r.ok() => match r.json::<TeamOrderEntry>().await {
+                    Ok(updated) => {
+                        set_orders.update(|list| {
+                            if let Some(o) = list
+                                .iter_mut()
+                                .find(|o| o.teamorders_id == updated.teamorders_id)
+                            {
+                                *o = updated.clone();
+                            }
+                        });
+                        set_selected_order.set(Some(updated));
+                        toast_success("Due date updated");
+                    }
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("duedate update JSON parse error: {e}").into(),
+                    ),
+                },
+                _ => toast_error("Failed to update due date"),
+            }
+        });
+    };
+
     let do_assign_pickup = move |pickup_user_id: Option<String>| {
         let team_id = match selected_team.get() {
             Some(id) => id,
@@ -490,6 +531,7 @@ pub fn OrdersPage() -> impl IntoView {
                                 on_update_item=do_update_item
                                 on_remove_item=do_remove_item
                                 on_assign_pickup=do_assign_pickup
+                                on_update_duedate=do_update_duedate
                             />
                         </div>
                     </div>

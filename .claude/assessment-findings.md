@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-09
+Last assessed: 2026-03-07
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -18,11 +18,85 @@ _No open critical items._
 
 ## Important Items
 
-_No open important items._
+### Database — Race Condition in First-User Bootstrap
+
+- [ ] **#633 — `bootstrap_first_user` allows concurrent first-user registrations with different emails**
+  - File: `src/db/users.rs` (`bootstrap_first_user` function)
+  - Problem: The bootstrap transaction uses default READ COMMITTED isolation. Two concurrent `POST /auth/register` requests could both see `count_users() == 0` and both create a "first user" with different emails. This bypasses the single-bootstrap design.
+  - Fix: Add `SELECT pg_advisory_xact_lock(0)` at the start of the transaction, or use `SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`, or add `SELECT count(*) FROM users FOR UPDATE` to prevent concurrent readers from both seeing zero.
+  - Source commands: `db-review`
+
+### Testing — Avatars Feature Completely Untested
+
+- [ ] **#634 — Zero API integration tests and zero DB integration tests for the avatars feature**
+  - Files: `src/handlers/avatars.rs`, `src/db/avatars.rs`, `tests/api_tests.rs`, `tests/db_tests.rs`
+  - Problem: All 4 avatar API endpoints (list, serve, set, remove) and all 5 avatar DB functions (get_avatars, get_avatar, insert_avatar, count_avatars, set_user_avatar) have no test coverage. Cache behavior, 404 handling, and RBAC are untested.
+  - Fix: Add API integration tests for get_avatars, get_avatar (hit/miss), set_avatar (self, admin, forbidden), remove_avatar. Add DB tests for insert_avatar, get_avatar, count_avatars, set_user_avatar.
+  - Source commands: `test-gaps`
 
 ## Minor Items
 
-_No open minor items._
+### Documentation — CLAUDE.md API Integration Test Count Stale (156 → 160)
+
+- [ ] **#635 — CLAUDE.md states 156 API integration tests but actual count is 160**
+  - File: `CLAUDE.md` (Testing section)
+  - Fix: Update "156 API integration tests" to "160 API integration tests".
+  - Source commands: `cross-ref-check`, `practices-audit`
+
+### Documentation — README.md Test Counts and Migration Count Stale
+
+- [ ] **#636 — README.md unit test count (236→238), API integration count (145→160), and migration count (12→13) diverge from reality**
+  - File: `README.md`
+  - Problem: README says 236 unit tests (actual 238), 145 API tests (actual 160), "twelve migrations" (actual 13). V13__pickup_user.sql is missing from the migration table.
+  - Fix: Update all three counts, add V13 row to migration table.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md Missing 3 DB Functions in Inventory
+
+- [ ] **#637 — `bootstrap_first_user`, `reopen_team_order`, `get_order_total` not listed in CLAUDE.md function inventories**
+  - File: `CLAUDE.md` (Project Structure, db module descriptions)
+  - Fix: Add `bootstrap_first_user` to users.rs list, `reopen_team_order` to orders.rs list, `get_order_total` to order_items.rs list.
+  - Source commands: `cross-ref-check`
+
+### Performance — Avatar Cache Clones Bytes on Every Request
+
+- [ ] **#638 — Avatar image bytes are `Vec<u8>::clone()`d per response from the DashMap cache**
+  - File: `src/handlers/avatars.rs`
+  - Problem: Avatars are pre-resized PNGs (~10–50 KB each). Cloning on every serve negates some caching benefit. Under load, this creates unnecessary allocations.
+  - Fix: Change `DashMap<Uuid, (Vec<u8>, String)>` to `DashMap<Uuid, (Arc<Vec<u8>>, String)>` for cheap reference-counted cloning.
+  - Source commands: `review`
+
+### Safety — Frontend `unchecked_into()` DOM Cast in order_components.rs
+
+- [ ] **#639 — `target.unchecked_into::<HtmlInputElement>()` can panic if DOM element type doesn't match**
+  - File: `frontend/src/pages/order_components.rs`
+  - Problem: A WASM panic kills the entire SPA. While unlikely in practice (the target is always an input), the unchecked cast is fragile.
+  - Fix: Use `target.dyn_ref::<web_sys::HtmlInputElement>()` with a guard clause instead.
+  - Source commands: `review`
+
+### Testing — Closed Order Update/Delete Enforcement Untested
+
+- [ ] **#640 — No API test verifies that update/delete of order items is blocked on closed orders**
+  - File: `tests/api_tests.rs`
+  - Problem: Only adding items to closed orders is tested. Updating or deleting items on closed orders has no test coverage.
+  - Fix: Add `cannot_update_item_in_closed_order` and `cannot_delete_item_from_closed_order` API integration tests.
+  - Source commands: `test-gaps`
+
+### Testing — Reopen Order Endpoint Untested
+
+- [ ] **#641 — `POST /api/v1.0/teams/{team_id}/orders/{order_id}/reopen` has no API integration test**
+  - File: `tests/api_tests.rs`
+  - Problem: The reopen endpoint exists and is functional but has zero test coverage.
+  - Fix: Add `reopen_closed_order_creates_new_open_order` API integration test.
+  - Source commands: `test-gaps`
+
+### Testing — Pickup User Assignment RBAC Untested
+
+- [ ] **#642 — No test verifies pickup user validation (team membership check) or RBAC (admin/team-admin required for changes)**
+  - File: `tests/api_tests.rs`
+  - Problem: Assigning a non-team-member as pickup user and changing an existing pickup assignment by a non-admin are both untested.
+  - Fix: Add `assign_pickup_user_not_in_team_returns_error` and `only_team_admin_can_change_pickup_user` API integration tests.
+  - Source commands: `test-gaps`
 
 ## Informational Items
 
@@ -179,17 +253,25 @@ See that file for the full history of resolved findings.
 
 ## Notes
 
-- **CONNECT Design System:** `git pull` on 2026-03-06 reported "Already up to date." No migration needed.
+- **CONNECT Design System:** `git pull` on 2026-03-07 reported "Already up to date." No migration needed.
 - **`cargo audit`:** Clean — 0 vulnerabilities in 437 dependencies.
-- **`cargo outdated`:** All root dependencies at latest versions.
 - **`cargo fmt --all --check`:** Passes clean.
-- **Test counts verified (2026-03-06):** 234 unit (212 lib + 22 healthcheck), 145 API integration (ignored), 104 DB integration (ignored), 79 WASM.
-- **`cargo audit` (2026-03-06):** Exit code 0. No vulnerabilities. RUSTSEC-2023-0071 resolved — `jsonwebtoken` replaced with `jwt-compact 0.8.0`, `--ignore` flag removed from Makefile.
-- **CONNECT Design System (2026-03-06):** `git pull` fetched new commits (3.0.0-RC1, 2.9.0, etc.). CSS changes to checkbox-group, dropdown, inline-alert, menu, radio-group, tag, text-field, utility-button — **none used by our frontend**. Token additions (opacity variants) are non-breaking. SCSS removal has no impact (we only use CSS imports). **No migration required.**
-- Open items summary: 0 critical, 0 important, 0 minor, 23 informational.
-- 8 findings resolved in session of 2026-03-09: #325, #350, #374, #395, #440, #441, #445, #520.
-- 1 stale finding resolved: #439 (referenced file does not exist).
-- Highest finding number: #632.
+- **Test counts verified (2026-03-07):** 238 unit (216 lib + 22 healthcheck), 160 API integration (ignored), 109 DB integration (ignored), 79 WASM.
+- Open items summary: 0 critical, 2 important, 8 minor, 23 informational.
+- 10 new findings in session of 2026-03-07: #633–#642.
+- Highest finding number: #642.
+
+### Re-assessment — 2026-03-07
+
+- **All 10 commands re-run + CONNECT Design System updated:** 10 new findings surfaced (0 critical, 2 important, 8 minor, 0 new informational).
+- **#633 (Important):** Bootstrap race condition — concurrent first-user registrations could both succeed.
+- **#634 (Important):** Avatars feature has zero test coverage (API + DB).
+- **#635–#637 (Minor):** Documentation drift — CLAUDE.md test count, README.md counts/migration, CLAUDE.md function inventories.
+- **#638 (Minor):** Avatar cache clones bytes inefficiently.
+- **#639 (Minor):** Frontend unchecked DOM cast.
+- **#640–#642 (Minor):** Missing API tests for closed order enforcement, reopen endpoint, pickup user RBAC.
+- **False positive discarded:** Practices audit flagged `edition = "2024"` as invalid — this is valid in Rust 1.85+ (project uses 1.93.1).
+- **Security audit note:** TLS keys in Dockerfile already documented as DEV ONLY with production instructions in comments — not a new finding.
 
 ### Re-assessment — 2026-03-06
 

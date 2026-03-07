@@ -33,16 +33,16 @@ pub fn DashboardPage() -> impl IntoView {
                             <div class="card dashboard-teams-card">
                                 <div class="dashboard-stats">
                                     <div class="stat-card">
-                                        <span class="stat-card__value">{team_count}</span>
                                         <span class="stat-card__label">{if team_count == 1 { "Team" } else { "Teams" }}</span>
+                                        <span class="stat-card__value">{team_count}</span>
                                     </div>
                                     <div class="stat-card">
+                                        <span class="stat-card__label">"Role"</span>
                                         <span class="connect-tag connect-tag--medium connect-tag--primary-default stat-card__tag">
                                             <span class="connect-tag__text-wrapper">
                                                 <span class="connect-tag__text">{role_label}</span>
                                             </span>
                                         </span>
-                                        <span class="stat-card__label">"Role"</span>
                                     </div>
                                 </div>
 
