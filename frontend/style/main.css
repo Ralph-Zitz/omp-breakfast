@@ -30,6 +30,27 @@ body {
     min-height: 100dvh;
 }
 
+/* ── CONNECT component overrides ──────────────────────────────────────────── */
+/*
+ * Layout principle: tag text alignment
+ *
+ * The CONNECT `connect-tag` component has internal horizontal padding on its
+ * `.connect-tag__text-wrapper` (currently 8px via --ds-layout-spacing-100).
+ * This causes the visible tag text to sit indented from its container edge,
+ * misaligning it with labels, column headers, or other content above/beside it.
+ *
+ * We remove the left padding globally so tag text always aligns flush-left
+ * with surrounding content. This applies to all contexts: table cells, stat
+ * cards, flex columns, list items, etc. The right padding is preserved to
+ * maintain visual breathing room on the trailing edge of the pill.
+ *
+ * If a component needs the original left padding, opt back in with:
+ *   .my-component .connect-tag__text-wrapper { padding-left: var(--ds-layout-spacing-100); }
+ */
+.connect-tag .connect-tag__text-wrapper {
+    padding-left: 0;
+}
+
 /* ── App root ─────────────────────────────────────────────────────────────── */
 
 .app {
