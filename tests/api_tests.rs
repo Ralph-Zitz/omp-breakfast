@@ -1314,21 +1314,24 @@ async fn create_duplicate_item_returns_409() {
     let app = test_app!(state);
     let auth: Auth = register_admin(&app).await;
     let token = &auth.access_token;
+    let dup_item_name = format!("dup-item-{}", Uuid::now_v7());
 
     // Create an item
     let req = test::TestRequest::post()
         .uri("/api/v1.0/items")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"descr": "zzz-duplicate-test-item", "price": "1.00"}))
+        .set_json(json!({"descr": dup_item_name, "price": "1.00"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
+    let created: Value = test::read_body_json(resp).await;
+    let item_id = created["item_id"].as_str().unwrap();
 
     // Try to create a second item with the same description → 409
     let req = test::TestRequest::post()
         .uri("/api/v1.0/items")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"descr": "zzz-duplicate-test-item", "price": "2.00"}))
+        .set_json(json!({"descr": dup_item_name, "price": "2.00"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -1338,23 +1341,11 @@ async fn create_duplicate_item_returns_409() {
     );
 
     // Clean up: delete the item
-    let req = test::TestRequest::get()
-        .uri("/api/v1.0/items")
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
-    let resp = test::call_service(&app, req).await;
-    let items = paginated_items(test::read_body_json(resp).await);
-    if let Some(item) = items
-        .iter()
-        .find(|i| i["descr"].as_str() == Some("zzz-duplicate-test-item"))
-    {
-        let item_id = item["item_id"].as_str().unwrap();
-        let req = test::TestRequest::delete()
-            .uri(&format!("/api/v1.0/items/{}", item_id))
-            .insert_header(("Authorization", format!("Bearer {}", token)))
-            .to_request();
-        test::call_service(&app, req).await;
-    }
+    test::call_service(&app, req).await;
 }
 
 #[actix_web::test]
@@ -1393,13 +1384,14 @@ async fn admin_can_update_other_user() {
     let token = &auth.access_token;
 
     // Create a temporary user to update
+    let temp_email = format!("temp-admin-upd-{}@test.local", Uuid::now_v7());
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .set_json(json!({
             "firstname": "Temp",
             "lastname": "User",
-            "email": "temp.admin.update@test.com",
+            "email": temp_email,
             "password": "securepassword"
         }))
         .to_request();
@@ -1415,7 +1407,7 @@ async fn admin_can_update_other_user() {
         .set_json(json!({
             "firstname": "Updated",
             "lastname": "ByAdmin",
-            "email": "temp.admin.update@test.com"
+            "email": temp_email
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1450,7 +1442,7 @@ async fn admin_can_delete_other_user() {
         .set_json(json!({
             "firstname": "Temp",
             "lastname": "Delete",
-            "email": "temp.admin.delete@test.com",
+            "email": format!("temp-admin-del-{}@test.local", Uuid::now_v7()),
             "password": "securepassword"
         }))
         .to_request();
@@ -3656,7 +3648,7 @@ async fn create_user_then_authenticate_round_trip() {
     let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    let test_email = "roundtrip.test@example.com";
+    let test_email = format!("roundtrip-{}@test.local", Uuid::now_v7());
     let test_password = "RoundTrip!Pass123";
 
     // 1. Create a new user via the API
@@ -3998,7 +3990,7 @@ async fn update_user_password_then_reauthenticate() {
     let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    let test_email = "pwchange.test@example.com";
+    let test_email = format!("pwchange-{}@test.local", Uuid::now_v7());
     let original_password = "OriginalPass!123";
     let new_password = "ChangedPass!456";
 
@@ -4178,7 +4170,7 @@ async fn user_teams_returns_empty_for_user_with_no_teams() {
         .set_json(json!({
             "firstname": "NoTeam",
             "lastname": "User",
-            "email": "noteam@test.local",
+            "email": format!("noteam-{}@test.local", Uuid::now_v7()),
             "password": "securepassword"
         }))
         .to_request();
@@ -4293,7 +4285,7 @@ async fn admin_can_update_team() {
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"tname": "UpdateMe Team", "descr": "Original"}))
+        .set_json(json!({"tname": format!("UpdateMe-{}", Uuid::now_v7()), "descr": "Original"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -4373,7 +4365,7 @@ async fn create_item_returns_location_header() {
     let req = test::TestRequest::post()
         .uri("/api/v1.0/items")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"descr": "location-test-item", "price": "1.50"}))
+        .set_json(json!({"descr": format!("loc-item-{}", Uuid::now_v7()), "price": "1.50"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -4586,7 +4578,7 @@ async fn admin_can_delete_user_by_email() {
     let token = &auth.access_token;
 
     // Create a temp user
-    let email = "deleteme.byemail@test.local";
+    let email = format!("deleteme-{}@test.local", Uuid::now_v7());
     let req = test::TestRequest::post()
         .uri("/api/v1.0/users")
         .insert_header(("Authorization", format!("Bearer {}", token)))
@@ -4822,7 +4814,7 @@ async fn team_users_returns_empty_for_team_with_no_members() {
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"tname": "EmptyTeamUsersTest", "descr": "no members"}))
+        .set_json(json!({"tname": format!("EmptyTeam-{}", Uuid::now_v7()), "descr": "no members"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -5446,7 +5438,7 @@ async fn create_user_returns_location_header() {
         .set_json(json!({
             "firstname": "LocHdr",
             "lastname": "Test",
-            "email": "lochdr.test294@test.com",
+            "email": format!("lochdr-{}@test.local", Uuid::now_v7()),
             "password": "securepassword"
         }))
         .to_request();
@@ -5482,7 +5474,7 @@ async fn create_team_returns_location_header() {
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"tname": "LocHdr Team 294", "descr": "temp"}))
+        .set_json(json!({"tname": format!("LocHdrTeam-{}", Uuid::now_v7()), "descr": "temp"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -5516,7 +5508,7 @@ async fn create_role_returns_location_header() {
     let req = test::TestRequest::post()
         .uri("/api/v1.0/roles")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"title": "LocHdrRole294", "descr": "temp"}))
+        .set_json(json!({"title": format!("LocHdrRole-{}", Uuid::now_v7()), "descr": "temp"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -5551,7 +5543,7 @@ async fn create_team_order_returns_location_header() {
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"tname": "LocHdr Order Team 294", "descr": "temp"}))
+        .set_json(json!({"tname": format!("LocHdrOrder-{}", Uuid::now_v7()), "descr": "temp"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -5660,7 +5652,7 @@ async fn add_team_member_returns_location_header() {
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"tname": "LocHdr Member Team 294", "descr": "temp"}))
+        .set_json(json!({"tname": format!("LocHdrMember-{}", Uuid::now_v7()), "descr": "temp"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -5674,7 +5666,7 @@ async fn add_team_member_returns_location_header() {
         .set_json(json!({
             "firstname": "LocMember",
             "lastname": "Test",
-            "email": "locmember.test294@test.com",
+            "email": format!("locmember-{}@test.local", Uuid::now_v7()),
             "password": "securepassword"
         }))
         .to_request();
@@ -5770,7 +5762,7 @@ async fn self_password_change_without_current_password_returns_422() {
     let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    let test_email = "selfpw-no-current@example.com";
+    let test_email = format!("selfpw-nocur-{}@test.local", Uuid::now_v7());
     let test_password = "OriginalPass!123";
 
     // Create user
@@ -5780,7 +5772,7 @@ async fn self_password_change_without_current_password_returns_422() {
         .set_json(json!({
             "firstname": "SelfPw",
             "lastname": "NoCurrent",
-            "email": test_email,
+            "email": &test_email,
             "password": test_password
         }))
         .to_request();
@@ -5840,7 +5832,7 @@ async fn self_password_change_with_wrong_current_password_returns_403() {
     let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    let test_email = "selfpw-wrong@example.com";
+    let test_email = format!("selfpw-wrong-{}@test.local", Uuid::now_v7());
     let test_password = "OriginalPass!123";
 
     // Create user
@@ -5850,7 +5842,7 @@ async fn self_password_change_with_wrong_current_password_returns_403() {
         .set_json(json!({
             "firstname": "SelfPw",
             "lastname": "WrongCurrent",
-            "email": test_email,
+            "email": &test_email,
             "password": test_password
         }))
         .to_request();
@@ -5911,7 +5903,7 @@ async fn self_password_change_with_correct_current_password_succeeds() {
     let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    let test_email = "selfpw-correct@example.com";
+    let test_email = format!("selfpw-ok-{}@test.local", Uuid::now_v7());
     let test_password = "OriginalPass!123";
     let new_password = "ChangedPass!456";
 
@@ -5922,7 +5914,7 @@ async fn self_password_change_with_correct_current_password_succeeds() {
         .set_json(json!({
             "firstname": "SelfPw",
             "lastname": "Correct",
-            "email": test_email,
+            "email": &test_email,
             "password": test_password
         }))
         .to_request();
@@ -6002,7 +5994,7 @@ async fn lockout_lifecycle_5_failures_then_429_then_success_clears() {
     let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    let test_email = "lockout-lifecycle@example.com";
+    let test_email = format!("lockout-{}@test.local", Uuid::now_v7());
     let test_password = "LockoutTest!123";
 
     // Create a test user
@@ -6012,7 +6004,7 @@ async fn lockout_lifecycle_5_failures_then_429_then_success_clears() {
         .set_json(json!({
             "firstname": "Lockout",
             "lastname": "Test",
-            "email": test_email,
+            "email": &test_email,
             "password": test_password
         }))
         .to_request();
@@ -6063,7 +6055,7 @@ async fn lockout_lifecycle_5_failures_then_429_then_success_clears() {
     );
 
     // 3. Clear lockout by directly manipulating state (simulates window expiry)
-    state.login_attempts.remove(test_email);
+    state.login_attempts.remove(&test_email);
 
     // 4. Correct password should now succeed
     let req = test::TestRequest::post()
@@ -6104,7 +6096,7 @@ async fn non_admin_user_can_delete_own_account() {
     let admin_auth: Auth = register_admin(&app).await;
     let admin_token = &admin_auth.access_token;
 
-    let test_email = "self-delete@example.com";
+    let test_email = format!("selfdelete-{}@test.local", Uuid::now_v7());
     let test_password = "SelfDelete!123";
 
     // Create a test user
@@ -6114,7 +6106,7 @@ async fn non_admin_user_can_delete_own_account() {
         .set_json(json!({
             "firstname": "SelfDel",
             "lastname": "Test",
-            "email": test_email,
+            "email": &test_email,
             "password": test_password
         }))
         .to_request();
@@ -6682,10 +6674,11 @@ async fn create_team_with_duplicate_name_returns_409() {
     let token = &auth.access_token;
 
     // Create first team
+    let dup_team_name = format!("DupTeam-{}", Uuid::now_v7());
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"tname": "DuplicateTeamName432", "descr": "first"}))
+        .set_json(json!({"tname": dup_team_name, "descr": "first"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201, "first team should be created");
@@ -6696,7 +6689,7 @@ async fn create_team_with_duplicate_name_returns_409() {
     let req = test::TestRequest::post()
         .uri("/api/v1.0/teams")
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"tname": "DuplicateTeamName432", "descr": "duplicate"}))
+        .set_json(json!({"tname": dup_team_name, "descr": "duplicate"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
