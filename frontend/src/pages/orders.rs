@@ -1,6 +1,6 @@
 use crate::api::{
     HttpMethod, ItemEntry, OrderItemEntry, PaginatedResponse, TeamOrderEntry, UserContext,
-    UserInTeams, authed_get, authed_request,
+    UserInTeams, UsersInTeam, authed_get, authed_request,
 };
 use crate::components::LoadingSpinner;
 use crate::components::card::PageHeader;
@@ -33,6 +33,9 @@ pub fn OrdersPage() -> impl IntoView {
 
     // Available items catalog for adding to orders
     let (catalog_items, set_catalog_items) = signal(Vec::<ItemEntry>::new());
+
+    // Team members for pickup user selection
+    let (team_members, set_team_members) = signal(Vec::<UsersInTeam>::new());
 
     // Create order dialog
     let (show_create_order, set_show_create_order) = signal(false);
@@ -90,6 +93,18 @@ pub fn OrdersPage() -> impl IntoView {
                     }
                 }
             }
+            // Fetch team members for pickup user dropdown
+            let members_url = format!("/api/v1.0/teams/{}/users", team_id);
+            if let Some(resp) = authed_get(&members_url).await
+                && resp.ok()
+            {
+                match resp.json::<PaginatedResponse<UsersInTeam>>().await {
+                    Ok(data) => set_team_members.set(data.items),
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("team members JSON parse error: {e}").into(),
+                    ),
+                }
+            }
             set_loading_orders.set(false);
         });
     };
@@ -116,15 +131,23 @@ pub fn OrdersPage() -> impl IntoView {
         });
     };
 
-    let do_create_order = move |duedate: Option<String>| {
+    let do_create_order = move |duedate: Option<String>, pickup_user_id: Option<String>| {
         let team_id = match selected_team.get() {
             Some(id) => id,
             None => return,
         };
-        let body = match duedate {
-            Some(d) if !d.is_empty() => serde_json::json!({ "duedate": d }),
-            _ => serde_json::json!({}),
-        };
+        let mut body = serde_json::Map::new();
+        if let Some(d) = duedate {
+            if !d.is_empty() {
+                body.insert("duedate".into(), serde_json::Value::String(d));
+            }
+        }
+        if let Some(pid) = pickup_user_id {
+            if !pid.is_empty() {
+                body.insert("pickup_user_id".into(), serde_json::Value::String(pid));
+            }
+        }
+        let body = serde_json::Value::Object(body);
         leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/teams/{}/orders", team_id);
             let resp = authed_request(HttpMethod::Post, &url, Some(&body)).await;
@@ -312,6 +335,49 @@ pub fn OrdersPage() -> impl IntoView {
         });
     };
 
+    let do_assign_pickup = move |pickup_user_id: Option<String>| {
+        let team_id = match selected_team.get() {
+            Some(id) => id,
+            None => return,
+        };
+        let order = match selected_order.get() {
+            Some(o) => o,
+            None => return,
+        };
+        let order_id = order.teamorders_id.clone();
+        let body = match pickup_user_id {
+            Some(pid) if !pid.is_empty() => {
+                serde_json::json!({ "pickup_user_id": pid })
+            }
+            _ => serde_json::json!({ "pickup_user_id": null }),
+        };
+
+        leptos::task::spawn_local_scoped(async move {
+            let url = format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id);
+            let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
+            match resp {
+                Some(r) if r.ok() => match r.json::<TeamOrderEntry>().await {
+                    Ok(updated) => {
+                        set_orders.update(|list| {
+                            if let Some(o) = list
+                                .iter_mut()
+                                .find(|o| o.teamorders_id == updated.teamorders_id)
+                            {
+                                *o = updated.clone();
+                            }
+                        });
+                        set_selected_order.set(Some(updated));
+                        toast_success("Pickup person updated");
+                    }
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("pickup update JSON parse error: {e}").into(),
+                    ),
+                },
+                _ => toast_error("Failed to update pickup person"),
+            }
+        });
+    };
+
     view! {
         <div class="orders-page">
             <PageHeader title="Orders">
@@ -390,6 +456,7 @@ pub fn OrdersPage() -> impl IntoView {
                                 loading=loading_orders
                                 selected_order=selected_order
                                 selected_team=selected_team
+                                team_members=team_members
                                 on_select=load_order_items
                                 on_delete=move |oid: String, label: String| set_delete_target.set(Some((oid, label)))
                                 on_toggle_closed=do_toggle_order_closed
@@ -402,9 +469,11 @@ pub fn OrdersPage() -> impl IntoView {
                                 catalog=catalog_items
                                 loading=loading_items
                                 is_admin=is_admin
+                                team_members=team_members
                                 on_add_item=do_add_item
                                 on_update_item=do_update_item
                                 on_remove_item=do_remove_item
+                                on_assign_pickup=do_assign_pickup
                             />
                         </div>
                     </div>
@@ -413,6 +482,7 @@ pub fn OrdersPage() -> impl IntoView {
 
             <CreateOrderDialog
                 open=show_create_order.into()
+                team_members=team_members
                 on_create=do_create_order
                 on_cancel=move || set_show_create_order.set(false)
             />
@@ -443,6 +513,7 @@ fn OrdersList(
     loading: ReadSignal<bool>,
     selected_order: ReadSignal<Option<TeamOrderEntry>>,
     selected_team: ReadSignal<Option<String>>,
+    team_members: ReadSignal<Vec<UsersInTeam>>,
     on_select: impl Fn(String, TeamOrderEntry) + 'static + Clone + Send,
     on_delete: impl Fn(String, String) + 'static + Clone + Send,
     on_toggle_closed: impl Fn(String, bool) + 'static + Clone + Send,
@@ -480,6 +551,7 @@ fn OrdersList(
                         <thead class="connect-table-header">
                             <tr>
                                 <th class="connect-table-header-cell">"Due Date"</th>
+                                <th class="connect-table-header-cell">"Pickup"</th>
                                 <th class="connect-table-header-cell">"Status"</th>
                                 <th class="connect-table-header-cell connect-table-header-cell--actions">"Actions"</th>
                             </tr>
@@ -493,6 +565,16 @@ fn OrdersList(
                                 let due = order.duedate.clone().unwrap_or_else(|| "No date".to_string());
                                 let due_label = due.clone();
                                 let closed = order.closed;
+
+                                // Resolve pickup user name
+                                let pickup_name = {
+                                    let members = team_members.get();
+                                    order.pickup_user_id.as_ref().and_then(|pid| {
+                                        members.iter().find(|m| m.user_id == *pid)
+                                            .map(|m| format!("{} {}", m.firstname, m.lastname))
+                                    }).unwrap_or_else(|| "—".to_string())
+                                };
+
                                 let is_selected = move || {
                                     selected_order.get().as_ref().map(|o| o.teamorders_id.as_str()) == Some(oid.as_str())
                                 };
@@ -523,6 +605,7 @@ fn OrdersList(
                                         }
                                     >
                                         <td class="connect-table-cell">{due.clone()}</td>
+                                        <td class="connect-table-cell">{pickup_name.clone()}</td>
                                         <td class="connect-table-cell">
                                             {if closed {
                                                 view! {

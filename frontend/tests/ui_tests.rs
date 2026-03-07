@@ -1719,6 +1719,7 @@ fn install_mock_fetch_full() {
                             teamorders_id: "aaaa1111-0000-0000-0000-000000000001",
                             teamorders_team_id: "bbbb2222-0000-0000-0000-000000000001",
                             teamorders_user_id: "12345678-1234-1234-1234-1234567890ab",
+                            pickup_user_id: null,
                             duedate: "2025-08-01",
                             closed: false,
                             created: "2025-01-01T00:00:00Z",

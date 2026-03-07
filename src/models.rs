@@ -384,6 +384,7 @@ pub struct TeamOrderEntry {
     pub teamorders_id: Uuid,
     pub teamorders_team_id: Uuid,
     pub teamorders_user_id: Uuid,
+    pub pickup_user_id: Option<Uuid>,
     pub duedate: Option<chrono::NaiveDate>,
     pub closed: bool,
     pub created: DateTime<Utc>,
@@ -393,6 +394,8 @@ pub struct TeamOrderEntry {
 #[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
 pub struct CreateTeamOrderEntry {
     pub duedate: Option<chrono::NaiveDate>,
+    /// Optional team member to pick up the order.
+    pub pickup_user_id: Option<Uuid>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, ToSchema)]
@@ -403,6 +406,11 @@ pub struct UpdateTeamOrderEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duedate: Option<Option<chrono::NaiveDate>>,
     pub closed: Option<bool>,
+    /// `None` = field absent (preserve existing value).
+    /// `Some(None)` = explicitly clear the pickup user.
+    /// `Some(Some(id))` = assign a new pickup user.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pickup_user_id: Option<Option<Uuid>>,
 }
 
 // ── Memberof models ─────────────────────────────────────────────────────────

@@ -108,8 +108,8 @@ frontend/
       items.rs     – Item catalog page (browse, create, edit, delete items)
       loading.rs   – Loading page (session restoration spinner)
       login.rs     – Login/registration page (LoginHeader, LoginForm, ErrorAlert, NameField, fields; dual-mode: login or first-user registration)
-      orders.rs    – Order management page (team orders, line items, totals)
-      order_components.rs – Order sub-components (OrderDetail, CreateOrderDialog)
+      orders.rs    – Order management page (team orders, line items, totals, pickup user assignment)
+      order_components.rs – Order sub-components (OrderDetail, CreateOrderDialog, pickup user selector)
       profile.rs   – User profile page (view/edit profile, change password)
       roles.rs     – Role management page (view/assign roles, admin-gated)
       teams.rs     – Team management page (CRUD teams, members, team roles)
@@ -129,7 +129,7 @@ config/
   docker-base.yml  – Sanitized base config for Docker images (all secret fields empty; supply via env vars)
   production.yml   – Prod overrides
 database.sql       – Full schema (deprecated — kept for manual dev resets only)
-init_dev_db.sh     – Docker development database initialization script
+init_dev_db.sh     – Docker development database initialization script (runs migrations V1–V13)
 Dockerfile.breakfast – Multi-stage Docker build for the application
 Dockerfile.postgres  – Custom Postgres image with init scripts
 docker-compose.yml   – Development stack (app + Postgres)
@@ -154,6 +154,7 @@ migrations/
   V10__guard_teamorders_team_id.sql – Guard teamorders_team_id with trigger
   V11__text_column_check_constraints.sql – CHECK constraints on text column lengths
   V12__cleanup_index_and_constraints.sql – Drop unused idx_teamorders_id_due, NOT NULL on orders_team_id
+  V13__pickup_user.sql – Adds pickup_user_id column to teamorders table (FK to users, partial index)
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
   db_tests.rs      – DB function integration tests (ignored without running DB)
@@ -179,6 +180,7 @@ tests/
 - Admin-or-Team-Admin RBAC: `require_admin_or_team_admin` helper checks if user holds "Admin" or "Team Admin" role in any team (via `db::is_admin_or_team_admin`); gates user creation.
 - Team RBAC: `require_team_member` and `require_team_admin` helpers gate team-scoped mutations; both allow global Admin bypass. `require_team_admin` checks for "Team Admin" role in the specific team.
 - Order RBAC: `require_order_owner_or_team_admin` gates single-order mutations (update, delete); allows the order creator, a Team Admin for the team, or a global Admin. Regular members and guests may only mutate their own orders.
+- Pickup user RBAC: Each team order can optionally have a `pickup_user_id` — the team member responsible for collecting the order. The pickup user must belong to the same team (validated via `get_member_role` on create and update). Once a pickup user is assigned (`order.pickup_user_id.is_some()`), only a global Admin or Team Admin for the order's team may change the assignment (enforced via `require_team_admin`). First-time assignment is allowed by any team member who can update the order.
 - Order Items RBAC: Creating an order item requires team membership (any role — by design, all team members may add items to a breakfast order). Updating or deleting an order item requires `require_order_owner_or_team_admin` (same as team orders) — this checks the **team order creator** (`teamorders.teamorders_user_id`), not the individual line-item contributor, because order items have no per-item `user_id` column. This is intentional: breakfast orders are collaborative, so ownership is at the order level, not the line-item level. Adding items to a closed order is blocked by `guard_open_order`.
 - Admin role guard: `guard_admin_role_assignment` prevents non-admin users from assigning the "Admin" role. Called after `require_team_admin` in membership handlers (add member, update role). Only global Admins may grant Admin privileges; Team Admins may assign any other role.
 - Admin demotion guard: `guard_admin_demotion` prevents non-admin users from demoting or removing a global Admin. Called after `require_team_admin` in `update_member_role` and `remove_team_member` handlers. If the target user is a global Admin, only another global Admin may change their role or remove them from a team. Team Admins cannot modify global Admins' memberships.
@@ -390,7 +392,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### Backend
 
 - 238 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 152 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 156 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
 - 109 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)

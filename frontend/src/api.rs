@@ -98,6 +98,7 @@ pub struct TeamOrderEntry {
     pub teamorders_id: String,
     pub teamorders_team_id: String,
     pub teamorders_user_id: String,
+    pub pickup_user_id: Option<String>,
     pub duedate: Option<String>,
     pub closed: bool,
     #[allow(dead_code)]

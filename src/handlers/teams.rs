@@ -280,6 +280,17 @@ pub async fn create_team_order(
     require_team_member(&client, &req, tid).await?;
     let user_id = requesting_user_id(&req)
         .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
+
+    // Validate that the pickup user (if specified) is a member of this team
+    if let Some(pickup_id) = json.pickup_user_id {
+        let role = db::get_member_role(&client, tid, pickup_id).await?;
+        if role.is_none() {
+            return Err(Error::Validation(
+                "Pickup user must be a member of this team".to_string(),
+            ));
+        }
+    }
+
     let order = db::create_team_order(&client, tid, user_id, json.into_inner()).await?;
     let mut response = HttpResponse::Created();
     if let Ok(url) = req.url_for(
@@ -379,6 +390,25 @@ pub async fn update_team_order(
     // Fetch the order to check ownership
     let order = db::get_team_order(&client, team_id, order_id).await?;
     require_order_owner_or_team_admin(&client, &req, team_id, order.teamorders_user_id).await?;
+
+    // If the order already has a pickup user and the request wants to change it,
+    // only a global Admin or Team Admin for this team may do so.
+    if let Some(ref new_pickup) = json.pickup_user_id {
+        if order.pickup_user_id.is_some() {
+            // The pickup user is being changed — require Admin or Team Admin
+            require_team_admin(&client, &req, team_id).await?;
+        }
+        // Validate that the new pickup user (if not clearing) is a team member
+        if let Some(pickup_id) = new_pickup {
+            let role = db::get_member_role(&client, team_id, *pickup_id).await?;
+            if role.is_none() {
+                return Err(Error::Validation(
+                    "Pickup user must be a member of this team".to_string(),
+                ));
+            }
+        }
+    }
+
     let order = db::update_team_order(&client, team_id, order_id, json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(order))
 }

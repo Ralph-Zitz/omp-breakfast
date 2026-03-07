@@ -122,6 +122,7 @@ impl_from_row!(TeamOrderEntry {
     teamorders_id,
     teamorders_team_id,
     teamorders_user_id,
+    pickup_user_id,
     duedate,
     closed,
     created,

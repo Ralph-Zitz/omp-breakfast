@@ -1,4 +1,4 @@
-use crate::api::{ItemEntry, OrderItemEntry, TeamOrderEntry};
+use crate::api::{ItemEntry, OrderItemEntry, TeamOrderEntry, UsersInTeam};
 use crate::components::icons::{Icon, IconKind};
 use crate::components::LoadingSpinner;
 use leptos::prelude::*;
@@ -11,9 +11,11 @@ pub fn OrderDetail(
     catalog: ReadSignal<Vec<ItemEntry>>,
     loading: ReadSignal<bool>,
     #[allow(unused)] is_admin: Signal<bool>,
+    team_members: ReadSignal<Vec<UsersInTeam>>,
     on_add_item: impl Fn(String, i32) + 'static + Clone + Send,
     on_update_item: impl Fn(String, i32) + 'static + Clone + Send,
     on_remove_item: impl Fn(String) + 'static + Clone + Send,
+    on_assign_pickup: impl Fn(Option<String>) + 'static + Clone + Send,
 ) -> impl IntoView {
     let (add_item_id, set_add_item_id) = signal(String::new());
     let (add_qty, set_add_qty) = signal("1".to_string());
@@ -63,6 +65,47 @@ pub fn OrderDetail(
                         } else {
                             view! { <span /> }.into_any()
                         }}
+                    </div>
+
+                    // Pickup user assignment
+                    <div style="margin-bottom: var(--ds-layout-spacing-300, 16px);">
+                        <div class="connect-text-field">
+                            <div class="connect-label">
+                                <label class="connect-label__text" for="detail-pickup">"Pickup Person"</label>
+                            </div>
+                            {if closed {
+                                let members = team_members.get();
+                                let pickup_name = ord.pickup_user_id.as_ref().and_then(|pid| {
+                                    members.iter().find(|m| m.user_id == *pid)
+                                        .map(|m| format!("{} {}", m.firstname, m.lastname))
+                                }).unwrap_or_else(|| "None".to_string());
+                                view! { <p class="text-muted">{pickup_name}</p> }.into_any()
+                            } else {
+                                let on_assign = on_assign_pickup.clone();
+                                let current_pickup = ord.pickup_user_id.clone().unwrap_or_default();
+                                let members = team_members.get();
+                                view! {
+                                    <select
+                                        id="detail-pickup"
+                                        class="connect-text-field__input"
+                                        prop:value=current_pickup.clone()
+                                        on:change=move |ev| {
+                                            let Some(target) = ev.target() else { return; };
+                                            let val = target.unchecked_into::<web_sys::HtmlSelectElement>().value();
+                                            on_assign(if val.is_empty() { None } else { Some(val) });
+                                        }
+                                    >
+                                        <option value="">"None"</option>
+                                        {members.into_iter().map(|m| {
+                                            let uid = m.user_id.clone();
+                                            let selected = uid == current_pickup;
+                                            let label = format!("{} {}", m.firstname, m.lastname);
+                                            view! { <option value=uid selected=selected>{label}</option> }
+                                        }).collect::<Vec<_>>()}
+                                    </select>
+                                }.into_any()
+                            }}
+                        </div>
                     </div>
 
                     {if item_list.is_empty() {
@@ -221,13 +264,16 @@ pub fn OrderDetail(
 #[component]
 pub fn CreateOrderDialog(
     open: Signal<bool>,
-    on_create: impl Fn(Option<String>) + 'static + Clone + Send,
+    team_members: ReadSignal<Vec<UsersInTeam>>,
+    on_create: impl Fn(Option<String>, Option<String>) + 'static + Clone + Send,
     on_cancel: impl Fn() + 'static + Clone + Send,
 ) -> impl IntoView {
     let (duedate, set_duedate) = signal(String::new());
+    let (pickup_user, set_pickup_user) = signal(String::new());
 
     let reset = move || {
         set_duedate.set(String::new());
+        set_pickup_user.set(String::new());
     };
 
     view! {
@@ -266,6 +312,27 @@ pub fn CreateOrderDialog(
                                     />
                                 </div>
                             </div>
+                            <div class="connect-text-field" style="margin-top: var(--ds-layout-spacing-300, 16px);">
+                                <div class="connect-label">
+                                    <label class="connect-label__text" for="order-pickup">"Pickup Person (optional)"</label>
+                                </div>
+                                <select
+                                    id="order-pickup"
+                                    class="connect-text-field__input"
+                                    prop:value=move || pickup_user.get()
+                                    on:change=move |ev| {
+                                        let Some(target) = ev.target() else { return; };
+                                        set_pickup_user.set(target.unchecked_into::<web_sys::HtmlSelectElement>().value());
+                                    }
+                                >
+                                    <option value="">"None"</option>
+                                    {team_members.get().into_iter().map(|m| {
+                                        let uid = m.user_id.clone();
+                                        let label = format!("{} {}", m.firstname, m.lastname);
+                                        view! { <option value=uid>{label}</option> }
+                                    }).collect::<Vec<_>>()}
+                                </select>
+                            </div>
                         </div>
                         <div class="modal-footer">
                             <button
@@ -286,8 +353,13 @@ pub fn CreateOrderDialog(
                                     let create = on_create.clone();
                                     move |_| {
                                         let d = duedate.get();
-                                        create(if d.is_empty() { None } else { Some(d) });
+                                        let p = pickup_user.get();
+                                        create(
+                                            if d.is_empty() { None } else { Some(d) },
+                                            if p.is_empty() { None } else { Some(p) },
+                                        );
                                         set_duedate.set(String::new());
+                                        set_pickup_user.set(String::new());
                                     }
                                 }
                             >

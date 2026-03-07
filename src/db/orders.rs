@@ -18,7 +18,8 @@ pub async fn get_team_orders(
         .prepare(
             r#"
                 select teamorders_id, teamorders_team_id, teamorders_user_id,
-                       duedate, closed, created, changed, count(*) over() as total_count
+                       pickup_user_id, duedate, closed, created, changed,
+                       count(*) over() as total_count
                 from teamorders
                 where teamorders_team_id = $1
                 order by created desc
@@ -49,7 +50,7 @@ pub async fn get_team_order(
         .prepare(
             r#"
                 select teamorders_id, teamorders_team_id, teamorders_user_id,
-                       duedate, closed, created, changed
+                       pickup_user_id, duedate, closed, created, changed
                 from teamorders
                 where teamorders_id = $1 and teamorders_team_id = $2
                 limit 1
@@ -79,28 +80,31 @@ pub async fn create_team_order(
     let statement = client
         .prepare(
             r#"
-               insert into teamorders (teamorders_team_id, teamorders_user_id, duedate)
-               values ($1, $2, $3)
+               insert into teamorders (teamorders_team_id, teamorders_user_id, duedate, pickup_user_id)
+               values ($1, $2, $3, $4)
                returning teamorders_id, teamorders_team_id, teamorders_user_id,
-                         duedate, closed, created, changed
+                         pickup_user_id, duedate, closed, created, changed
             "#,
         )
         .await
         .map_err(Error::Db)?;
 
     client
-        .query_one(&statement, &[&team_id, &user_id, &order.duedate])
+        .query_one(
+            &statement,
+            &[&team_id, &user_id, &order.duedate, &order.pickup_user_id],
+        )
         .await
         .map(TeamOrderEntry::from_row)?
         .map_err(Error::DbMapper)
 }
 
 /// Updates a team order. `COALESCE` preserves existing values when fields are
-/// absent from the request. For `duedate`, the triple-option pattern
-/// (`Option<Option<NaiveDate>>`) is used:
-///   - `None` → field absent, preserve existing value (CASE WHEN $5)
+/// absent from the request. For `duedate` and `pickup_user_id`, the
+/// triple-option pattern (`Option<Option<T>>`) is used:
+///   - `None` → field absent, preserve existing value (CASE WHEN $N)
 ///   - `Some(None)` → explicitly clear to NULL
-///   - `Some(Some(date))` → set to the new date
+///   - `Some(Some(val))` → set to the new value
 ///
 /// `teamorders_user_id` is intentionally excluded — order ownership cannot be
 /// reassigned after creation.
@@ -117,16 +121,21 @@ pub async fn update_team_order(
         Some(d) => (d, true),
         None => (None, false),
     };
+    let (pickup_val, update_pickup) = match order.pickup_user_id {
+        Some(p) => (p, true),
+        None => (None, false),
+    };
 
     let statement = client
         .prepare(
             r#"
                update teamorders
                set duedate = CASE WHEN $5::boolean THEN $1 ELSE duedate END,
-                   closed = COALESCE($2, closed)
+                   closed = COALESCE($2, closed),
+                   pickup_user_id = CASE WHEN $6::boolean THEN $7 ELSE pickup_user_id END
                where teamorders_id = $3 and teamorders_team_id = $4
                returning teamorders_id, teamorders_team_id, teamorders_user_id,
-                         duedate, closed, created, changed
+                         pickup_user_id, duedate, closed, created, changed
             "#,
         )
         .await
@@ -141,6 +150,8 @@ pub async fn update_team_order(
                 &order_id,
                 &team_id,
                 &update_duedate,
+                &update_pickup,
+                &pickup_val,
             ],
         )
         .await

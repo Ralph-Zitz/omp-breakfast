@@ -104,12 +104,14 @@ CREATE TABLE teamorders (
   teamorders_id uuid DEFAULT uuidv7 () PRIMARY KEY,
   teamorders_team_id uuid NOT NULL,
   teamorders_user_id uuid NOT NULL,
+  pickup_user_id uuid,
   duedate date,
   closed boolean NOT NULL DEFAULT FALSE,
   created timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   changed timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (teamorders_team_id) REFERENCES teams (team_id) ON DELETE CASCADE,
-  FOREIGN KEY (teamorders_user_id) REFERENCES users (user_id) ON DELETE RESTRICT
+  FOREIGN KEY (teamorders_user_id) REFERENCES users (user_id) ON DELETE RESTRICT,
+  FOREIGN KEY (pickup_user_id) REFERENCES users (user_id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_teamorders_id_due ON teamorders (teamorders_team_id, duedate);

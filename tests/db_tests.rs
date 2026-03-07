@@ -966,6 +966,7 @@ async fn create_team_order_returns_entry() {
         user.user_id,
         CreateTeamOrderEntry {
             duedate: Some(NaiveDate::from_ymd_opt(2026, 6, 15).unwrap()),
+            pickup_user_id: None,
         },
     )
     .await
@@ -1000,7 +1001,10 @@ async fn create_team_order_with_user_id() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .expect("create_team_order with user should succeed");
@@ -1029,7 +1033,10 @@ async fn get_team_orders_returns_created_data() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -1062,7 +1069,10 @@ async fn get_team_order_by_id() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -1095,7 +1105,10 @@ async fn update_team_order_changes_fields() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -1107,6 +1120,7 @@ async fn update_team_order_changes_fields() {
         UpdateTeamOrderEntry {
             duedate: Some(Some(NaiveDate::from_ymd_opt(2026, 12, 25).unwrap())),
             closed: Some(true),
+            pickup_user_id: None,
         },
     )
     .await
@@ -1140,7 +1154,10 @@ async fn delete_team_order_returns_true_then_false() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -1175,7 +1192,10 @@ async fn delete_team_orders_bulk() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -1184,7 +1204,10 @@ async fn delete_team_orders_bulk() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -1233,7 +1256,10 @@ async fn create_order_item_returns_entry() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -1280,7 +1306,10 @@ async fn get_order_items_returns_list() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -1372,7 +1401,10 @@ async fn get_order_item_by_id() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -1431,7 +1463,10 @@ async fn update_order_item_changes_amt() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -1496,7 +1531,10 @@ async fn delete_order_item_returns_true_then_false() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -1561,7 +1599,10 @@ async fn duplicate_order_item_returns_error() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -2605,6 +2646,7 @@ async fn update_team_order_nonexistent_returns_error() {
         UpdateTeamOrderEntry {
             duedate: None,
             closed: None,
+            pickup_user_id: None,
         },
     )
     .await;
@@ -2762,6 +2804,7 @@ async fn is_team_order_closed_returns_false_for_open_order() {
         user.user_id,
         CreateTeamOrderEntry {
             duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 25).unwrap()),
+            pickup_user_id: None,
         },
     )
     .await
@@ -2797,6 +2840,7 @@ async fn is_team_order_closed_returns_true_for_closed_order() {
         user.user_id,
         CreateTeamOrderEntry {
             duedate: Some(NaiveDate::from_ymd_opt(2026, 12, 26).unwrap()),
+            pickup_user_id: None,
         },
     )
     .await
@@ -2810,6 +2854,7 @@ async fn is_team_order_closed_returns_true_for_closed_order() {
         UpdateTeamOrderEntry {
             duedate: Some(Some(NaiveDate::from_ymd_opt(2026, 12, 26).unwrap())),
             closed: Some(true),
+            pickup_user_id: None,
         },
     )
     .await
@@ -3030,7 +3075,10 @@ async fn delete_team_cascades_membership_and_orders() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -3088,7 +3136,10 @@ async fn delete_team_order_cascades_order_items() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -3198,7 +3249,10 @@ async fn delete_item_with_order_reference_is_restricted() {
         &client,
         team.team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await
     .unwrap();
@@ -3254,6 +3308,7 @@ async fn update_team_order_partial_preserves_existing_values() {
         user.user_id,
         CreateTeamOrderEntry {
             duedate: Some(NaiveDate::from_ymd_opt(2026, 8, 1).unwrap()),
+            pickup_user_id: None,
         },
     )
     .await
@@ -3267,6 +3322,7 @@ async fn update_team_order_partial_preserves_existing_values() {
         UpdateTeamOrderEntry {
             duedate: None,
             closed: Some(true),
+            pickup_user_id: None,
         },
     )
     .await
@@ -3280,6 +3336,7 @@ async fn update_team_order_partial_preserves_existing_values() {
         UpdateTeamOrderEntry {
             duedate: None,
             closed: None,
+            pickup_user_id: None,
         },
     )
     .await
@@ -3320,7 +3377,10 @@ async fn create_team_order_with_nonexistent_team_id_fails() {
         &client,
         fake_team_id,
         user.user_id,
-        CreateTeamOrderEntry { duedate: None },
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
     )
     .await;
 
