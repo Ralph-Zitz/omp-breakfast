@@ -172,42 +172,61 @@ pub fn OrdersPage() -> impl IntoView {
             Some(id) => id,
             None => return,
         };
-        let body = serde_json::json!({ "closed": !currently_closed });
-        leptos::task::spawn_local_scoped(async move {
-            let url = format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id);
-            let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
-            match resp {
-                Some(r) if r.ok() => match r.json::<TeamOrderEntry>().await {
-                    Ok(updated) => {
-                        set_orders.update(|list| {
-                            if let Some(o) = list
-                                .iter_mut()
-                                .find(|o| o.teamorders_id == updated.teamorders_id)
-                            {
-                                *o = updated.clone();
-                            }
-                        });
-                        if selected_order
-                            .get()
-                            .map(|o| o.teamorders_id == updated.teamorders_id)
-                            .unwrap_or(false)
-                        {
-                            set_selected_order.set(Some(updated));
+        if currently_closed {
+            // Reopen: duplicate the old order via the /reopen endpoint
+            leptos::task::spawn_local_scoped(async move {
+                let url = format!(
+                    "/api/v1.0/teams/{}/orders/{}/reopen",
+                    team_id, order_id
+                );
+                let resp = authed_request(HttpMethod::Post, &url, None).await;
+                match resp {
+                    Some(r) if r.ok() => match r.json::<TeamOrderEntry>().await {
+                        Ok(new_order) => {
+                            set_orders.update(|list| list.insert(0, new_order));
+                            toast_success("Order reopened as a new order");
                         }
-                        let msg = if currently_closed {
-                            "Order reopened"
-                        } else {
-                            "Order closed"
-                        };
-                        toast_success(msg);
-                    }
-                    Err(e) => web_sys::console::warn_1(
-                        &format!("order toggle JSON parse error: {e}").into(),
-                    ),
-                },
-                _ => toast_error("Failed to update order"),
-            }
-        });
+                        Err(e) => web_sys::console::warn_1(
+                            &format!("order reopen JSON parse error: {e}").into(),
+                        ),
+                    },
+                    _ => toast_error("Failed to reopen order"),
+                }
+            });
+        } else {
+            // Close the order
+            let body = serde_json::json!({ "closed": true });
+            leptos::task::spawn_local_scoped(async move {
+                let url = format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id);
+                let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
+                match resp {
+                    Some(r) if r.ok() => match r.json::<TeamOrderEntry>().await {
+                        Ok(updated) => {
+                            set_orders.update(|list| {
+                                if let Some(o) = list
+                                    .iter_mut()
+                                    .find(|o| o.teamorders_id == updated.teamorders_id)
+                                {
+                                    *o = updated.clone();
+                                }
+                            });
+                            if selected_order
+                                .get()
+                                .map(|o| o.teamorders_id == updated.teamorders_id)
+                                .unwrap_or(false)
+                            {
+                                set_selected_order.set(Some(updated));
+                            }
+                            toast_success("Order closed");
+                        }
+                        Err(e) => web_sys::console::warn_1(
+                            &format!("order close JSON parse error: {e}").into(),
+                        ),
+                    },
+                    _ => toast_error("Failed to close order"),
+                }
+            });
+        }
     };
 
     let do_delete_order = move |order_id: String| {
@@ -518,7 +537,6 @@ fn OrdersList(
     on_delete: impl Fn(String, String) + 'static + Clone + Send,
     on_toggle_closed: impl Fn(String, bool) + 'static + Clone + Send,
 ) -> impl IntoView {
-    let user = expect_context::<ReadSignal<Option<UserContext>>>();
     view! {
         {move || {
             if loading.get() {
@@ -545,124 +563,181 @@ fn OrdersList(
                 }.into_any();
             }
 
+            let open_orders: Vec<_> = order_list.iter().filter(|o| !o.closed).cloned().collect();
+            let closed_orders: Vec<_> = order_list.iter().filter(|o| o.closed).cloned().collect();
+
             view! {
+                // Active orders section
                 <div class="card">
-                    <table class="connect-table connect-table--medium">
-                        <thead class="connect-table-header">
-                            <tr>
-                                <th class="connect-table-header-cell">"Due Date"</th>
-                                <th class="connect-table-header-cell">"Pickup"</th>
-                                <th class="connect-table-header-cell">"Status"</th>
-                                <th class="connect-table-header-cell connect-table-header-cell--actions">"Actions"</th>
-                            </tr>
-                        </thead>
-                        <tbody class="connect-table-body">
-                            {order_list.into_iter().map(|order| {
-                                let oid = order.teamorders_id.clone();
-                                let oid_del = order.teamorders_id.clone();
-                                let order_owner_id = order.teamorders_user_id.clone();
-                                let order_team_id = order.teamorders_team_id.clone();
-                                let due = order.duedate.clone().unwrap_or_else(|| "No date".to_string());
-                                let due_label = due.clone();
-                                let closed = order.closed;
-
-                                // Resolve pickup user name
-                                let pickup_name = {
-                                    let members = team_members.get();
-                                    order.pickup_user_id.as_ref().and_then(|pid| {
-                                        members.iter().find(|m| m.user_id == *pid)
-                                            .map(|m| format!("{} {}", m.firstname, m.lastname))
-                                    }).unwrap_or_else(|| "—".to_string())
-                                };
-
-                                let is_selected = move || {
-                                    selected_order.get().as_ref().map(|o| o.teamorders_id.as_str()) == Some(oid.as_str())
-                                };
-                                let can_delete = move || {
-                                    let ctx = user.get();
-                                    match ctx {
-                                        Some(ref u) if u.is_admin => true,
-                                        Some(ref u) if u.user_id == order_owner_id => true,
-                                        Some(ref u) => u.teams.iter().any(|t| t.team_id == order_team_id && t.title == "Team Admin"),
-                                        None => false,
-                                    }
-                                };
-                                let team_id_click = team_id.clone();
-                                let order_click = order.clone();
-                                let on_select = on_select.clone();
-                                let on_delete = on_delete.clone();
-                                let on_toggle = on_toggle_closed.clone();
-
-                                view! {
-                                    <tr
-                                        class=move || if is_selected() { "connect-table-row connect-table-row--selected" } else { "connect-table-row" }
-                                        style="cursor: pointer;"
-                                        on:click={
-                                            let order_click = order_click.clone();
-                                            let team_id_click = team_id_click.clone();
-                                            let on_select = on_select.clone();
-                                            move |_| on_select(team_id_click.clone(), order_click.clone())
-                                        }
-                                    >
-                                        <td class="connect-table-cell">{due.clone()}</td>
-                                        <td class="connect-table-cell">{pickup_name.clone()}</td>
-                                        <td class="connect-table-cell">
-                                            {if closed {
-                                                view! {
-                                                    <span class="connect-tag connect-tag--small connect-tag--neutral-default">"Closed"</span>
-                                                }.into_any()
-                                            } else {
-                                                view! {
-                                                    <span class="connect-tag connect-tag--small connect-tag--positive-default">"Open"</span>
-                                                }.into_any()
-                                            }}
-                                        </td>
-                                        <td class="connect-table-cell connect-table-cell--actions">
-                                            {move || can_delete().then(|| {
-                                                let oid_toggle = oid_del.clone();
-                                                let oid_del2 = oid_del.clone();
-                                                let due_label = due_label.clone();
-                                                let on_delete = on_delete.clone();
-                                                let on_toggle = on_toggle.clone();
-                                                view! {
-                                                    <button
-                                                        aria-label=if closed { "Reopen order" } else { "Close order" }
-                                                        class="connect-button connect-button--neutral connect-button--outline connect-button--small"
-                                                        on:click=move |ev| {
-                                                            ev.stop_propagation();
-                                                            on_toggle(oid_toggle.clone(), closed);
-                                                        }
-                                                    >
-                                                        <span class="connect-button__content">
-                                                            <span class="connect-button__label">
-                                                                {if closed { "Reopen" } else { "Close" }}
-                                                            </span>
-                                                        </span>
-                                                    </button>
-                                                    <button
-                                                        aria-label="Delete order"
-                                                        class="connect-button connect-button--negative connect-button--outline connect-button--small"
-                                                        on:click=move |ev| {
-                                                            ev.stop_propagation();
-                                                            on_delete(oid_del2.clone(), due_label.clone());
-                                                        }
-                                                    >
-                                                        <span class="connect-button__content">
-                                                            <span class="connect-button__icon">
-                                                                <Icon kind=IconKind::Trash size=14 />
-                                                            </span>
-                                                        </span>
-                                                    </button>
-                                                }
-                                            })}
-                                        </td>
-                                    </tr>
-                                }
-                            }).collect::<Vec<_>>()}
-                        </tbody>
-                    </table>
+                    <div class="section-title">"Active Orders"</div>
+                    {if open_orders.is_empty() {
+                        view! {
+                            <p class="text-muted">"No active orders."</p>
+                        }.into_any()
+                    } else {
+                        view! {
+                            <OrdersTable
+                                orders=open_orders
+                                team_id=team_id.clone()
+                                selected_order=selected_order
+                                team_members=team_members
+                                on_select=on_select.clone()
+                                on_delete=on_delete.clone()
+                                on_toggle_closed=on_toggle_closed.clone()
+                            />
+                        }.into_any()
+                    }}
                 </div>
+
+                // Previous/closed orders section
+                {if !closed_orders.is_empty() {
+                    view! {
+                        <div class="card" style="margin-top: var(--ds-layout-spacing-300, 16px);">
+                            <div class="section-title">"Previous Orders"</div>
+                            <OrdersTable
+                                orders=closed_orders
+                                team_id=team_id.clone()
+                                selected_order=selected_order
+                                team_members=team_members
+                                on_select=on_select.clone()
+                                on_delete=on_delete.clone()
+                                on_toggle_closed=on_toggle_closed.clone()
+                            />
+                        </div>
+                    }.into_any()
+                } else {
+                    view! { <span /> }.into_any()
+                }}
             }.into_any()
         }}
+    }
+}
+
+#[component]
+fn OrdersTable(
+    orders: Vec<TeamOrderEntry>,
+    team_id: String,
+    selected_order: ReadSignal<Option<TeamOrderEntry>>,
+    team_members: ReadSignal<Vec<UsersInTeam>>,
+    on_select: impl Fn(String, TeamOrderEntry) + 'static + Clone + Send,
+    on_delete: impl Fn(String, String) + 'static + Clone + Send,
+    on_toggle_closed: impl Fn(String, bool) + 'static + Clone + Send,
+) -> impl IntoView {
+    let user = expect_context::<ReadSignal<Option<UserContext>>>();
+    view! {
+        <table class="connect-table connect-table--medium">
+            <thead class="connect-table-header">
+                <tr>
+                    <th class="connect-table-header-cell">"Due Date"</th>
+                    <th class="connect-table-header-cell">"Pickup"</th>
+                    <th class="connect-table-header-cell">"Status"</th>
+                    <th class="connect-table-header-cell connect-table-header-cell--actions">"Actions"</th>
+                </tr>
+            </thead>
+            <tbody class="connect-table-body">
+                {orders.into_iter().map(|order| {
+                    let oid = order.teamorders_id.clone();
+                    let oid_del = order.teamorders_id.clone();
+                    let order_owner_id = order.teamorders_user_id.clone();
+                    let order_team_id = order.teamorders_team_id.clone();
+                    let due = order.duedate.clone().unwrap_or_else(|| "No date".to_string());
+                    let due_label = due.clone();
+                    let closed = order.closed;
+
+                    // Resolve pickup user name
+                    let pickup_name = {
+                        let members = team_members.get();
+                        order.pickup_user_id.as_ref().and_then(|pid| {
+                            members.iter().find(|m| m.user_id == *pid)
+                                .map(|m| format!("{} {}", m.firstname, m.lastname))
+                        }).unwrap_or_else(|| "—".to_string())
+                    };
+
+                    let is_selected = move || {
+                        selected_order.get().as_ref().map(|o| o.teamorders_id.as_str()) == Some(oid.as_str())
+                    };
+                    let can_delete = move || {
+                        let ctx = user.get();
+                        match ctx {
+                            Some(ref u) if u.is_admin => true,
+                            Some(ref u) if u.user_id == order_owner_id => true,
+                            Some(ref u) => u.teams.iter().any(|t| t.team_id == order_team_id && t.title == "Team Admin"),
+                            None => false,
+                        }
+                    };
+                    let team_id_click = team_id.clone();
+                    let order_click = order.clone();
+                    let on_select = on_select.clone();
+                    let on_delete = on_delete.clone();
+                    let on_toggle = on_toggle_closed.clone();
+
+                    view! {
+                        <tr
+                            class=move || if is_selected() { "connect-table-row connect-table-row--selected" } else { "connect-table-row" }
+                            style="cursor: pointer;"
+                            on:click={
+                                let order_click = order_click.clone();
+                                let team_id_click = team_id_click.clone();
+                                let on_select = on_select.clone();
+                                move |_| on_select(team_id_click.clone(), order_click.clone())
+                            }
+                        >
+                            <td class="connect-table-cell">{due.clone()}</td>
+                            <td class="connect-table-cell">{pickup_name.clone()}</td>
+                            <td class="connect-table-cell">
+                                {if closed {
+                                    view! {
+                                        <span class="connect-tag connect-tag--small connect-tag--neutral-default">"Closed"</span>
+                                    }.into_any()
+                                } else {
+                                    view! {
+                                        <span class="connect-tag connect-tag--small connect-tag--positive-default">"Open"</span>
+                                    }.into_any()
+                                }}
+                            </td>
+                            <td class="connect-table-cell connect-table-cell--actions">
+                                {move || can_delete().then(|| {
+                                    let oid_toggle = oid_del.clone();
+                                    let oid_del2 = oid_del.clone();
+                                    let due_label = due_label.clone();
+                                    let on_delete = on_delete.clone();
+                                    let on_toggle = on_toggle.clone();
+                                    view! {
+                                        <button
+                                            aria-label=if closed { "Reopen order" } else { "Close order" }
+                                            class="connect-button connect-button--neutral connect-button--outline connect-button--small"
+                                            on:click=move |ev| {
+                                                ev.stop_propagation();
+                                                on_toggle(oid_toggle.clone(), closed);
+                                            }
+                                        >
+                                            <span class="connect-button__content">
+                                                <span class="connect-button__label">
+                                                    {if closed { "Reopen" } else { "Close" }}
+                                                </span>
+                                            </span>
+                                        </button>
+                                        <button
+                                            aria-label="Delete order"
+                                            class="connect-button connect-button--negative connect-button--outline connect-button--small"
+                                            on:click=move |ev| {
+                                                ev.stop_propagation();
+                                                on_delete(oid_del2.clone(), due_label.clone());
+                                            }
+                                        >
+                                            <span class="connect-button__content">
+                                                <span class="connect-button__icon">
+                                                    <Icon kind=IconKind::Trash size=14 />
+                                                </span>
+                                            </span>
+                                        </button>
+                                    }
+                                })}
+                            </td>
+                        </tr>
+                    }
+                }).collect::<Vec<_>>()}
+            </tbody>
+        </table>
     }
 }

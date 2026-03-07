@@ -195,3 +195,79 @@ pub async fn delete_team_orders(client: &Client, team_id: Uuid) -> Result<u64, E
 
     Ok(result)
 }
+
+/// Reopens a closed team order by duplicating it: creates a new open order
+/// (with no due date and no pickup user) and copies all line items from the
+/// original order into the new one. The original order remains unchanged.
+///
+/// Returns `Error::NotFound` if the source order does not exist, and
+/// `Error::Validation` if the source order is not closed.
+pub async fn reopen_team_order(
+    client: &mut Client,
+    team_id: Uuid,
+    order_id: Uuid,
+    user_id: Uuid,
+) -> Result<TeamOrderEntry, Error> {
+    let tx = client.transaction().await.map_err(Error::Db)?;
+
+    // Verify the source order exists and is closed
+    let check = tx
+        .prepare(
+            "select closed from teamorders where teamorders_id = $1 and teamorders_team_id = $2 for share",
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    let row = tx
+        .query_opt(&check, &[&order_id, &team_id])
+        .await
+        .map_err(Error::Db)?
+        .ok_or_else(|| Error::NotFound("Team order not found".to_string()))?;
+
+    if !row.get::<_, bool>("closed") {
+        return Err(Error::Validation(
+            "Only closed orders can be reopened".to_string(),
+        ));
+    }
+
+    // Create the new order with no due date and no pickup user
+    let insert = tx
+        .prepare(
+            r#"
+               insert into teamorders (teamorders_team_id, teamorders_user_id)
+               values ($1, $2)
+               returning teamorders_id, teamorders_team_id, teamorders_user_id,
+                         pickup_user_id, duedate, closed, created, changed
+            "#,
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    let new_row = tx
+        .query_one(&insert, &[&team_id, &user_id])
+        .await
+        .map_err(Error::Db)?;
+
+    let new_order = TeamOrderEntry::from_row(new_row).map_err(Error::DbMapper)?;
+
+    // Copy all line items from the old order to the new one
+    let copy = tx
+        .prepare(
+            r#"
+               insert into orders (orders_teamorders_id, orders_item_id, orders_team_id, amt)
+               select $1, orders_item_id, orders_team_id, amt
+               from orders
+               where orders_teamorders_id = $2 and orders_team_id = $3
+            "#,
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    tx.execute(&copy, &[&new_order.teamorders_id, &order_id, &team_id])
+        .await
+        .map_err(Error::Db)?;
+
+    tx.commit().await.map_err(Error::Db)?;
+
+    Ok(new_order)
+}

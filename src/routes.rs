@@ -169,6 +169,11 @@ pub fn routes(cfg: &mut ServiceConfig) {
                             .route(put().to(update_team_order)),
                     )
                     .service(
+                        resource("/{team_id}/orders/{order_id}/reopen")
+                            .name("/teams/team_id/order_id/reopen")
+                            .route(post().to(reopen_team_order)),
+                    )
+                    .service(
                         resource("/{team_id}/users")
                             .name("/teams/team_id/users")
                             .route(get().to(team_users))

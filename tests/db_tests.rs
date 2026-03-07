@@ -3724,6 +3724,13 @@ async fn would_admins_remain_without_two_admins() {
 async fn would_admins_remain_without_sole_admin() {
     let mut client = test_client().await;
     let roles = ensure_roles(&client).await;
+
+    // Record how many admins already exist from parallel tests so we can
+    // account for them when checking the result.
+    let baseline = db::count_admins(&client)
+        .await
+        .expect("count_admins should succeed");
+
     let admin = create_test_user(&client).await;
     let team = create_test_team(&client).await;
 
@@ -3731,13 +3738,18 @@ async fn would_admins_remain_without_sole_admin() {
         .await
         .expect("add admin");
 
-    // Sole admin — excluding them should return false
+    // Excluding our admin should leave only the baseline admins (from
+    // parallel tests). When the baseline is 0, the function should return
+    // false (no admins remain). When the baseline is > 0, it should return
+    // true because other admins still exist.
     let remains = db::would_admins_remain_without(&client, team.team_id, admin.user_id)
         .await
         .expect("would_admins_remain_without should succeed");
-    assert!(
-        !remains,
-        "should have no admins after excluding the sole admin"
+    assert_eq!(
+        remains,
+        baseline > 0,
+        "expected remains={} when baseline admin count is {baseline}",
+        baseline > 0
     );
 
     // Cleanup

@@ -8,6 +8,7 @@ use crate::{
 use actix_web::{
     HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path, web::Query,
 };
+use chrono::Utc;
 use deadpool_postgres::Client;
 use tracing::instrument;
 use uuid::Uuid;
@@ -281,6 +282,15 @@ pub async fn create_team_order(
     let user_id = requesting_user_id(&req)
         .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
 
+    // Validate that the due date (if specified) is not in the past
+    if let Some(date) = json.duedate {
+        if date < Utc::now().date_naive() {
+            return Err(Error::Validation(
+                "Due date cannot be in the past".to_string(),
+            ));
+        }
+    }
+
     // Validate that the pickup user (if specified) is a member of this team
     if let Some(pickup_id) = json.pickup_user_id {
         let role = db::get_member_role(&client, tid, pickup_id).await?;
@@ -391,6 +401,15 @@ pub async fn update_team_order(
     let order = db::get_team_order(&client, team_id, order_id).await?;
     require_order_owner_or_team_admin(&client, &req, team_id, order.teamorders_user_id).await?;
 
+    // Validate that the new due date (if provided) is not in the past
+    if let Some(Some(date)) = json.duedate {
+        if date < Utc::now().date_naive() {
+            return Err(Error::Validation(
+                "Due date cannot be in the past".to_string(),
+            ));
+        }
+    }
+
     // If the order already has a pickup user and the request wants to change it,
     // only a global Admin or Team Admin for this team may do so.
     if let Some(ref new_pickup) = json.pickup_user_id {
@@ -411,6 +430,38 @@ pub async fn update_team_order(
 
     let order = db::update_team_order(&client, team_id, order_id, json.into_inner()).await?;
     Ok(HttpResponse::Ok().json(order))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1.0/teams/{team_id}/orders/{order_id}/reopen",
+    responses(
+        (status = 201, description = "Order reopened (duplicated as a new open order)", body = TeamOrderEntry),
+        (status = 401, description = "Unauthorized", body = ErrorResponse),
+        (status = 403, description = "Forbidden - team membership required", body = ErrorResponse),
+        (status = 404, description = "Order not found", body = ErrorResponse),
+        (status = 422, description = "Validation error - order is not closed", body = ErrorResponse),
+    ),
+    params(
+        ("team_id", description = "Unique UUID of the Team"),
+        ("order_id", description = "Unique UUID of the closed Order to reopen")
+    ),
+    security(("bearer_auth" = [])),
+)]
+#[instrument(skip(state, req), level = "debug")]
+pub async fn reopen_team_order(
+    state: Data<State>,
+    path: Path<(Uuid, Uuid)>,
+    req: HttpRequest,
+) -> Result<impl Responder, Error> {
+    let (team_id, order_id) = path.into_inner();
+    let mut client: Client = get_client(&state.pool).await?;
+    require_team_member(&client, &req, team_id).await?;
+    let user_id = requesting_user_id(&req)
+        .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
+
+    let order = db::reopen_team_order(&mut client, team_id, order_id, user_id).await?;
+    Ok(HttpResponse::Created().json(order))
 }
 
 // ── Team member management ──────────────────────────────────────────────────

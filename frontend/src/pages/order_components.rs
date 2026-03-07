@@ -270,10 +270,20 @@ pub fn CreateOrderDialog(
 ) -> impl IntoView {
     let (duedate, set_duedate) = signal(String::new());
     let (pickup_user, set_pickup_user) = signal(String::new());
+    let (date_error, set_date_error) = signal(Option::<String>::None);
+
+    let today = move || {
+        let d = js_sys::Date::new_0();
+        let y = d.get_full_year();
+        let m = d.get_month() + 1;
+        let day = d.get_date();
+        format!("{y:04}-{m:02}-{day:02}")
+    };
 
     let reset = move || {
         set_duedate.set(String::new());
         set_pickup_user.set(String::new());
+        set_date_error.set(None);
     };
 
     view! {
@@ -304,13 +314,23 @@ pub fn CreateOrderDialog(
                                         class="connect-text-field__input"
                                         id="order-due"
                                         type="date"
+                                        min=today()
                                         prop:value=move || duedate.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return; };
-                                            set_duedate.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                                            let val = target.unchecked_into::<web_sys::HtmlInputElement>().value();
+                                            if !val.is_empty() && val < today() {
+                                                set_date_error.set(Some("Due date cannot be in the past".to_string()));
+                                            } else {
+                                                set_date_error.set(None);
+                                            }
+                                            set_duedate.set(val);
                                         }
                                     />
                                 </div>
+                                {move || date_error.get().map(|msg| view! {
+                                    <p class="connect-text-field__error-text">{msg}</p>
+                                })}
                             </div>
                             <div class="connect-text-field" style="margin-top: var(--ds-layout-spacing-300, 16px);">
                                 <div class="connect-label">
@@ -349,9 +369,13 @@ pub fn CreateOrderDialog(
                             </button>
                             <button
                                 class="connect-button connect-button--accent connect-button--medium"
+                                disabled=move || date_error.get().is_some()
                                 on:click={
                                     let create = on_create.clone();
                                     move |_| {
+                                        if date_error.get_untracked().is_some() {
+                                            return;
+                                        }
                                         let d = duedate.get();
                                         let p = pickup_user.get();
                                         create(

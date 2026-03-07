@@ -69,6 +69,7 @@ impl Modify for SecurityAddon {
         teams::delete_team_order,
         teams::delete_team_orders,
         teams::update_team_order,
+        teams::reopen_team_order,
         // Team Members
         teams::add_team_member,
         teams::remove_team_member,
@@ -350,12 +351,12 @@ mod tests {
                     .count()
             })
             .sum();
-        // 46 operations: health(1) + auth(4, including register) + users(8) + teams(5) +
-        // team_orders(6) + team_members(4) + items(5) + order_items(5) + roles(5) +
-        // avatars(4: list, get, set, remove)
+        // 47 operations: health(1) + auth(4, including register) + users(8) + teams(5) +
+        // team_orders(7, including reopen) + team_members(4) + items(5) + order_items(5) +
+        // roles(5) + avatars(4: list, get, set, remove)
         assert_eq!(
-            op_count, 46,
-            "should have exactly 46 handler operations, got {}",
+            op_count, 47,
+            "should have exactly 47 handler operations, got {}",
             op_count
         );
     }

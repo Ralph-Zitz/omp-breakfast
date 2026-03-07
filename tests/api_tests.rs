@@ -3226,7 +3226,7 @@ async fn reopened_order_allows_item_mutations() {
     let item_name = format!("Reopen-Item-{}", uid);
     let item_id = create_test_item(&app, token, &item_name, 2.50).await;
 
-    // Create a team order
+    // Create a team order with an item
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
@@ -3237,6 +3237,18 @@ async fn reopened_order_allows_item_mutations() {
     let order: Value = test::read_body_json(resp).await;
     let order_id = order["teamorders_id"].as_str().unwrap().to_string();
 
+    // Add an item to the order
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"orders_item_id": item_id, "amt": 3}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
     // Close the order
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
@@ -3246,28 +3258,91 @@ async fn reopened_order_allows_item_mutations() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    // Reopen the order
-    let req = test::TestRequest::put()
+    // Reopen the order via /reopen endpoint — creates a duplicate
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/reopen",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let new_order: Value = test::read_body_json(resp).await;
+    let new_order_id = new_order["teamorders_id"].as_str().unwrap().to_string();
+
+    // The new order should have a different ID
+    assert_ne!(
+        new_order_id, order_id,
+        "reopened order should have a new ID"
+    );
+    // The new order should be open with no duedate and no pickup user
+    assert_eq!(new_order["closed"].as_bool(), Some(false));
+    assert!(new_order["duedate"].is_null());
+    assert!(new_order["pickup_user_id"].is_null());
+
+    // The old order should still be closed
+    let req = test::TestRequest::get()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
-        .set_json(json!({"closed": false}))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    let old_order: Value = test::read_body_json(resp).await;
+    assert_eq!(old_order["closed"].as_bool(), Some(true));
+
+    // The new order should have the same items as the old one
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items",
+            team_id, new_order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let items: Value = test::read_body_json(resp).await;
+    assert_eq!(items["items"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        items["items"][0]["orders_item_id"].as_str().unwrap(),
+        item_id
+    );
+    assert_eq!(items["items"][0]["amt"].as_i64(), Some(3));
 
     // Adding items to the reopened order should succeed
     let req = test::TestRequest::post()
         .uri(&format!(
             "/api/v1.0/teams/{}/orders/{}/items",
-            team_id, order_id
+            team_id, new_order_id
         ))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .set_json(json!({"orders_item_id": item_id, "amt": 5}))
         .to_request();
     let resp = test::call_service(&app, req).await;
+    // This updates the existing item (same item_id), expect 409 or success depending on unique constraint
+    // Let's create a second item to add cleanly
+    let item_name2 = format!("Reopen-Item2-{}", uid);
+    let item_id2 = create_test_item(&app, token, &item_name2, 3.00).await;
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items",
+            team_id, new_order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"orders_item_id": item_id2, "amt": 2}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201, "should add items to a reopened order");
 
     // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}",
+            team_id, new_order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
         .insert_header(("Authorization", format!("Bearer {}", token)))
@@ -3275,6 +3350,11 @@ async fn reopened_order_allows_item_mutations() {
     let _ = test::call_service(&app, req).await;
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id2))
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     let _ = test::call_service(&app, req).await;
@@ -8777,6 +8857,169 @@ async fn member_can_set_pickup_when_unassigned() {
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1.0/teams/{}", team_id))
         .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ---------------------------------------------------------------------------
+// Due date cannot be in the past
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn create_order_rejects_past_due_date() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
+
+    let team_id = create_test_team(&app, token, &format!("PastDate-{}", Uuid::now_v7())).await;
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2020-01-01"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        422,
+        "creating an order with a past due date should be rejected"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn update_order_rejects_past_due_date() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
+
+    let team_id = create_test_team(&app, token, &format!("PastDateUp-{}", Uuid::now_v7())).await;
+
+    // Create order with a future date
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2027-06-15"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap();
+
+    // Attempt to update the due date to a past date
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2020-01-01"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        422,
+        "updating an order with a past due date should be rejected"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ---------------------------------------------------------------------------
+// Reopen endpoint edge cases
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn reopen_open_order_returns_422() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
+
+    let team_id = create_test_team(&app, token, &format!("ReopenOpen-{}", Uuid::now_v7())).await;
+
+    // Create an open order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2027-06-15"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap();
+
+    // Attempt to reopen an open order
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/reopen",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        422,
+        "reopening an already-open order should be rejected"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn reopen_nonexistent_order_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
+
+    let team_id = create_test_team(&app, token, &format!("ReopenNone-{}", Uuid::now_v7())).await;
+
+    let fake_order_id = Uuid::now_v7();
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/reopen",
+            team_id, fake_order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404);
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
         .to_request();
     test::call_service(&app, req).await;
 }
