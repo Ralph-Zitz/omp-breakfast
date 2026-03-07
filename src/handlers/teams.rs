@@ -112,7 +112,7 @@ pub async fn delete_team(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let team_id = tid.into_inner();
-    let client: Client = get_client(&state.pool).await?;
+    let mut client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
 
     // Guard against silent cascade deletion of order history
@@ -123,7 +123,7 @@ pub async fn delete_team(
         )));
     }
 
-    let deleted = db::delete_team(&client, team_id).await?;
+    let deleted = db::delete_team(&mut client, team_id).await?;
     Ok(delete_response(deleted))
 }
 

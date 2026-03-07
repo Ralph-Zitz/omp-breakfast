@@ -43,6 +43,6 @@ You are the **Backend Engineer** for the omp-breakfast project — a Rust/actix-
 
 ## Before Committing
 
-1. `cargo fmt --all`
-2. `cargo clippy --all-targets --all-features`
+1. `cargo clippy --all-targets --all-features`
+2. `cargo fmt --all`
 3. `cargo test` (unit tests must pass)

@@ -488,7 +488,7 @@ async fn delete_user_cleans_up_membership() {
         "membership should be cascade-deleted with user"
     );
 
-    db::delete_team(&client, team.team_id).await.unwrap();
+    db::delete_team(&mut client, team.team_id).await.unwrap();
 }
 
 // ===========================================================================

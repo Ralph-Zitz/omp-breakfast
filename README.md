@@ -55,21 +55,21 @@ make frontend-dev   # serves at http://127.0.0.1:8081
 
 The project has three test suites:
 
-**Unit tests** (238 tests) — no external dependencies:
+**Unit tests** (248 tests) — no external dependencies:
 
 ```bash
 make test-unit     # or: cargo test
 ```
 
-**Integration tests** (279 tests: 167 API + 112 DB) — require PostgreSQL:
+**Integration tests** (291 tests: 171 API + 120 DB) — require PostgreSQL:
 
 ```bash
 make test-integration
 ```
 
-This automatically starts an isolated Postgres container on port 5433, runs all thirteen migrations (V1–V13), seeds test data, executes all integration tests, and tears down the container.
+This automatically starts an isolated Postgres container on port 5433, runs all sixteen migrations (V1–V16), seeds test data, executes all integration tests, and tears down the container.
 
-**Frontend WASM tests** (79 tests) — require Chrome:
+**Frontend WASM tests** (93 tests) — require Chrome:
 
 ```bash
 make test-frontend
@@ -95,7 +95,7 @@ make db-down       # stop and remove test DB
 
 ## Database Initialization
 
-The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Thirteen migrations exist:
+The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Sixteen migrations exist:
 
 | Migration | Description |
 | --- | --- |
@@ -112,10 +112,13 @@ The application uses [Refinery](https://github.com/rust-db/refinery) for schema 
 | V11 | CHECK constraints on text column lengths |
 | V12 | Drop unused idx_teamorders_id_due, NOT NULL on orders_team_id |
 | V13 | Adds pickup_user_id column to teamorders table |
+| V14 | CHECK constraints on users.firstname (≤50), users.lastname (≤50), users.email (≤255) |
+| V15 | Change memberof, teamorders, orders FKs from CASCADE to RESTRICT |
+| V16 | Fix email CHECK (≤75), items.price CHECK (>0), memberof.team FK RESTRICT |
 
 **Production:** The application runs pending migrations automatically at startup. No seed data is inserted. The first user to register via the login page becomes the global Admin.
 
-**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies the idempotent migrations (V1–V9) and creates the Refinery tracking table. On first startup, the application's migration runner re-applies V1–V9 (safe — idempotent), records them, then applies V10–V13 for the first time. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
+**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies the idempotent migrations (V1–V9) and creates the Refinery tracking table. On first startup, the application's migration runner re-applies V1–V9 (safe — idempotent), records them, then applies V10–V16 for the first time. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
 
 **Manual database reset (development only):**
 

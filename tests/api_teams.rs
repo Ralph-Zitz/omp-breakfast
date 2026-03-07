@@ -1810,3 +1810,61 @@ async fn get_team_users_for_nonexistent_team_returns_empty() {
         "should return empty list for nonexistent team"
     );
 }
+
+// ---------------------------------------------------------------------------
+// #681 — delete_team with existing orders returns 409
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn delete_team_with_orders_returns_409() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let suffix = Uuid::now_v7();
+    let team_id = create_test_team(&app, admin_token, &format!("DelGuard-{suffix}")).await;
+
+    // Create a team order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({"duedate": "2026-12-01"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201, "order creation should succeed");
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap();
+
+    // Attempt to delete team — should be 409
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        409,
+        "deleting a team with orders should return 409 Conflict"
+    );
+
+    // Delete the order, then delete the team — should succeed
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "order deletion should succeed");
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "deleting a team after removing orders should succeed"
+    );
+}

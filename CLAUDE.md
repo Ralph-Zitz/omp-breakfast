@@ -258,24 +258,24 @@ The frontend is a separate Rust crate (`frontend/`) compiled to WebAssembly via 
 - HTTP requests use `gloo_net::http::Request` (wraps `window.fetch`); authenticated requests use `authed_get()` helper which transparently refreshes expired tokens
 - `js-sys` is used for `Date::now()` to check token expiry on the client side
 
-## Frontend Roadmap
+## Frontend Pages & Layout
 
-The frontend will evolve from login + dashboard into a full-featured SPA. This section captures planned layout, navigation, pages, and UI requirements.
+The frontend is a full-featured SPA with all planned pages implemented. This section documents the layout, navigation, and page inventory.
 
 ### Layout
 
 - **Sidebar + main content area:** A collapsible sidebar on the left provides navigation; the main content panel fills the remaining space
-- The sidebar should show the app branding/logo at the top, navigation links in the middle, and the logged-in user's name + logout button at the bottom
+- The sidebar shows the app branding/logo at the top, navigation links in the middle, and the logged-in user's name + logout button at the bottom
 - On mobile viewports the sidebar collapses into a hamburger menu overlay
 
 ### Navigation
 
-- Continue using the signal-based `Page` enum approach (no router crate)
-- Extend the `Page` enum with variants for each new page (e.g., `Teams`, `Orders`, `Items`, `Profile`, `Admin`, `Roles`)
+- Uses signal-based `Page` enum approach (no router crate)
+- `Page` enum has variants for each page: `Loading`, `Login`, `Dashboard`, `Teams`, `Orders`, `Items`, `Profile`, `Admin`, `Roles`
 - Active page is highlighted in the sidebar
-- Unauthorized pages (e.g., `Admin`) should not appear in the sidebar for non-admin users
+- Unauthorized pages (e.g., `Admin`) do not appear in the sidebar for non-admin users
 
-### Planned Pages
+### Implemented Pages
 
 1. **Team Management** — Create, view, and edit teams; add/remove members; assign team roles
 2. **Order Management** — Create and view team orders; add, edit, and remove order line items; show order totals
@@ -409,14 +409,14 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ## Unfinished Work
 
 - No client-side routing library (manual signal-based page switching, by design)
-- Frontend WASM tests cover all pages with rendering and basic interaction tests (85 tests); deeper workflow and edge-case tests for individual pages are still missing
+- Frontend WASM tests cover all pages with rendering and basic interaction tests (93 tests); deeper workflow and edge-case tests for individual pages are still missing
 
 ## Testing
 
 ### Backend
 
 - 248 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 168 API integration tests in `tests/api_*.rs` (require running Postgres, marked `#[ignore]`)
+- 171 API integration tests in `tests/api_*.rs` (require running Postgres, marked `#[ignore]`)
 - 120 DB function integration tests in `tests/db_*.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
@@ -424,7 +424,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Frontend
 
-- 85 WASM tests in `frontend/tests/ui_*.rs` (run in headless Chrome via `wasm-pack`)
+- 93 WASM tests in `frontend/tests/ui_*.rs` (run in headless Chrome via `wasm-pack`)
 - Test categories:
   - JWT decode (4 tests): valid token, missing segments, bad base64, invalid JSON
   - Login page rendering (3 tests): brand/form elements, email attributes, password attributes
@@ -443,11 +443,13 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
   - Actions column (6 tests): actions modifier classes (3), no narrow inline width (2), multiple buttons present (2)
   - Admin password reset (10 tests): button visibility, dialog open/close, validation (empty, short, mismatch), success toast
   - Shared components (4 tests): toast region, sidebar nav items, sidebar active state, confirm modal structure
-  - Orders page interactions (1 test): create order dialog opens
   - Profile page interactions (3 tests): edit mode toggle, password field reveal, cancel exits edit
   - Admin dialogs (7 tests): CreateUserDialog open/fields/disabled/cancel, EditUserDialog open/fields/cancel
   - First-user registration (3 tests): registration form renders when setup_required, short password validation error, successful registration redirects to dashboard
   - authed_request mutations (3 tests): POST sends body and auth header, PUT sends body and auth header, DELETE sends auth header without body
+  - Teams page interactions (3 tests): create dialog opens, create dialog cancel, add member dialog opens
+  - Items page interactions (3 tests): create dialog opens, create dialog cancel, edit button exists
+  - Orders page interactions (3 tests): create order dialog opens, order detail on click, create order dialog fields
 - Mocking strategy: overrides `window.fetch` via `js_sys::eval` to intercept `gloo-net` HTTP calls; uses `Promise`-based `setTimeout` wrapper for async timing (no `gloo-timers` dependency)
 - Run frontend tests: `make test-frontend` or `cd frontend && wasm-pack test --headless --chrome`
 - Note: ChromeDriver version must match installed Chrome version

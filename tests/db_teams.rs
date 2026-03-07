@@ -16,7 +16,7 @@ use uuid::Uuid;
 #[actix_web::test]
 #[ignore]
 async fn create_team_returns_entry() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let tname = format!("dbtest-team-{}", Uuid::now_v7());
 
     let team = db::create_team(
@@ -34,7 +34,7 @@ async fn create_team_returns_entry() {
     assert!(!team.team_id.is_nil());
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup");
 }
@@ -42,7 +42,7 @@ async fn create_team_returns_entry() {
 #[actix_web::test]
 #[ignore]
 async fn get_team_by_id() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let tname = format!("dbtest-team-{}", Uuid::now_v7());
 
     let created = db::create_team(
@@ -62,7 +62,7 @@ async fn get_team_by_id() {
     assert_eq!(fetched.tname, tname);
 
     // Cleanup
-    db::delete_team(&client, created.team_id)
+    db::delete_team(&mut client, created.team_id)
         .await
         .expect("cleanup");
 }
@@ -70,14 +70,14 @@ async fn get_team_by_id() {
 #[actix_web::test]
 #[ignore]
 async fn get_teams_returns_created_data() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let team = create_test_team(&client).await;
     let (teams, total) = db::get_teams(&client, 100, 0)
         .await
         .expect("get_teams should succeed");
     assert!(total >= 1, "should have at least 1 team, got {}", total);
     assert!(teams.iter().any(|t| t.team_id == team.team_id));
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup");
 }
@@ -85,7 +85,7 @@ async fn get_teams_returns_created_data() {
 #[actix_web::test]
 #[ignore]
 async fn update_team_changes_fields() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let tname = format!("dbtest-team-{}", Uuid::now_v7());
 
     let created = db::create_team(
@@ -114,7 +114,7 @@ async fn update_team_changes_fields() {
     assert_eq!(updated.descr, Some("updated desc".to_string()));
 
     // Cleanup
-    db::delete_team(&client, created.team_id)
+    db::delete_team(&mut client, created.team_id)
         .await
         .expect("cleanup");
 }
@@ -122,17 +122,17 @@ async fn update_team_changes_fields() {
 #[actix_web::test]
 #[ignore]
 async fn delete_team_returns_true_then_false() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let tname = format!("dbtest-team-{}", Uuid::now_v7());
 
     let team = db::create_team(&client, CreateTeamEntry { tname, descr: None })
         .await
         .unwrap();
 
-    let deleted = db::delete_team(&client, team.team_id).await.unwrap();
+    let deleted = db::delete_team(&mut client, team.team_id).await.unwrap();
     assert!(deleted);
 
-    let deleted_again = db::delete_team(&client, team.team_id).await.unwrap();
+    let deleted_again = db::delete_team(&mut client, team.team_id).await.unwrap();
     assert!(!deleted_again);
 }
 
@@ -234,7 +234,7 @@ async fn delete_team_blocked_by_restrict_fks_until_deps_removed() {
     .unwrap();
 
     // Attempt to delete the team — should fail due to RESTRICT FKs
-    let result = db::delete_team(&client, team.team_id).await;
+    let result = db::delete_team(&mut client, team.team_id).await;
     assert!(
         result.is_err(),
         "delete_team should fail when orders/memberships exist"
@@ -247,7 +247,7 @@ async fn delete_team_blocked_by_restrict_fks_until_deps_removed() {
         .unwrap();
 
     // Now deletion should succeed
-    let deleted = db::delete_team(&client, team.team_id).await.unwrap();
+    let deleted = db::delete_team(&mut client, team.team_id).await.unwrap();
     assert!(deleted);
 
     // Cleanup remaining independent resources
@@ -262,7 +262,7 @@ async fn delete_team_blocked_by_restrict_fks_until_deps_removed() {
 #[actix_web::test]
 #[ignore]
 async fn create_team_with_duplicate_name_fails() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let unique_name = format!("DuplicateTeam-{}", Uuid::now_v7());
 
     let entry = CreateTeamEntry {
@@ -287,7 +287,7 @@ async fn create_team_with_duplicate_name_fails() {
     );
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup: delete_team should succeed");
 }

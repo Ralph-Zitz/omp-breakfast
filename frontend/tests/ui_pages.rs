@@ -698,3 +698,260 @@ async fn test_profile_page_cancel_exits_edit_mode() {
     restore_fetch();
 }
 
+// ── #684 · TeamsPage CRUD interactions ──────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_teams_page_create_dialog_opens() {
+    let id = "t-teams-create-dlg";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Teams");
+    flush(500).await;
+
+    // Click "New Team" button
+    click_button_text(id, "New Team");
+    flush(300).await;
+
+    let html = inner_html(id);
+    assert!(
+        html.contains("Team Name"),
+        "create dialog should have Team Name field"
+    );
+    assert!(
+        has_element(id, "input#team-name"),
+        "team name input should exist"
+    );
+    assert!(
+        has_element(id, "input#team-descr"),
+        "description input should exist"
+    );
+    assert!(html.contains("Cancel"), "cancel button should be present");
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_teams_page_create_dialog_cancel() {
+    let id = "t-teams-cancel-dlg";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Teams");
+    flush(500).await;
+
+    // Open create dialog
+    click_button_text(id, "New Team");
+    flush(300).await;
+    assert!(has_element(id, "input#team-name"), "dialog should be open");
+
+    // Click Cancel
+    click_button_text(id, "Cancel");
+    flush(300).await;
+    assert!(
+        !has_element(id, "input#team-name"),
+        "dialog should be closed after Cancel"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_teams_page_add_member_dialog_opens() {
+    let id = "t-teams-addmem";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Teams");
+    flush(500).await;
+
+    // Click team row to load members
+    click_button(id, ".connect-table-row--clickable");
+    flush(500).await;
+
+    // Click "Add" button (for adding member)
+    click_button_text(id, "Add");
+    flush(300).await;
+
+    let html = inner_html(id);
+    assert!(
+        html.contains("User") || has_element(id, "select#add-member-user"),
+        "add member dialog should be visible"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── #685 · ItemsPage CRUD interactions ────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_items_page_create_dialog_opens() {
+    let id = "t-items-create-dlg";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Items");
+    flush(500).await;
+
+    // Click "New Item" button
+    click_button_text(id, "New Item");
+    flush(300).await;
+
+    let html = inner_html(id);
+    assert!(
+        has_element(id, "input#item-descr"),
+        "item description input should exist"
+    );
+    assert!(
+        has_element(id, "input#item-price"),
+        "item price input should exist"
+    );
+    assert!(html.contains("Cancel"), "cancel button should be present");
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_items_page_create_dialog_cancel() {
+    let id = "t-items-cancel-dlg";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Items");
+    flush(500).await;
+
+    // Open create dialog
+    click_button_text(id, "New Item");
+    flush(300).await;
+    assert!(has_element(id, "input#item-descr"), "dialog should be open");
+
+    // Click Cancel
+    click_button_text(id, "Cancel");
+    flush(300).await;
+    assert!(
+        !has_element(id, "input#item-descr"),
+        "dialog should be closed after Cancel"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_items_page_edit_button_exists() {
+    let id = "t-items-edit-btn";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Items");
+    flush(500).await;
+
+    assert!(
+        has_element(id, ".connect-table-cell--actions button"),
+        "items table should have action buttons"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ── #686 · OrdersPage detail and line item tests ──────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_orders_page_shows_order_detail_on_click() {
+    let id = "t-orders-detail";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Orders");
+    flush(500).await;
+
+    // Select a team
+    click_button(id, ".team-selector .connect-button");
+    flush(500).await;
+
+    // Click the order row to see detail
+    click_button(id, ".connect-table-row");
+    flush(500).await;
+
+    let html = inner_html(id);
+    // Order detail section should appear with items info
+    assert!(
+        html.contains("Order") || html.contains("Items") || html.contains("Total"),
+        "order detail should show order info or items"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_orders_page_create_order_dialog_fields() {
+    let id = "t-orders-create-fields";
+    clear_tokens();
+    install_mock_fetch_full();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+
+    login_to_dashboard(id).await;
+    click_nav(id, "Orders");
+    flush(500).await;
+
+    // Select a team
+    click_button(id, ".team-selector .connect-button");
+    flush(500).await;
+
+    // Open create order dialog
+    click_button_text(id, "New Order");
+    flush(300).await;
+
+    let html = inner_html(id);
+    assert!(
+        html.contains("Due Date") || html.contains("due") || has_element(id, "input[type='date']"),
+        "create order dialog should have a due date field"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}

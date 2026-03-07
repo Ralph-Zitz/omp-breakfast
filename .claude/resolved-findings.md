@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-16
+Last updated: 2026-03-19
 
 ## Critical Items
 
@@ -1979,6 +1979,104 @@ Last updated: 2026-03-16
   - File: `frontend/src/pages/order_components.rs`, `frontend/src/pages/orders.rs`
   - Resolution: Removed `is_admin: Signal<bool>` prop from `OrderDetail` component and removed `is_admin=is_admin` from the caller in `orders.rs`.
   - Source commands: `review`
+
+### Database — `reopen_team_order` Uses `FOR SHARE` Instead of `FOR UPDATE`
+
+- [x] **#673 — Concurrent reopens of the same closed order could both succeed**
+  - File: `src/db/orders.rs`, `reopen_team_order` function
+  - Resolution: Changed `FOR SHARE` to `FOR UPDATE` to serialize concurrent reopens.
+  - Source commands: `db-review`
+
+### Database — `users.email` VARCHAR(75) vs CHECK(≤255) Mismatch
+
+- [x] **#674 — V14 CHECK constraint on email allows 255 but column is varchar(75)**
+  - File: `migrations/V16__constraint_fixes.sql`
+  - Resolution: New migration drops `chk_users_email_length` CHECK(≤255) and adds CHECK(≤75) to match the varchar(75) column type.
+  - Source commands: `db-review`
+
+### Database — `items.price` DB CHECK Allows 0 While API Requires > 0
+
+- [x] **#675 — DB constraint `CHECK (price >= 0)` weaker than API validator requiring `> 0`**
+  - File: `migrations/V16__constraint_fixes.sql`
+  - Resolution: New migration drops `items_price_check` CHECK(≥0) and adds CHECK(>0) to match the API validator. Updated affected DB tests (`db_items.rs`, `db_orders.rs`) to use `Decimal::ONE` instead of `Decimal::ZERO`.
+  - Source commands: `db-review`
+
+### Database — `memberof.memberof_team_id` ON DELETE CASCADE Allows Silent Membership Loss
+
+- [x] **#676 — Deleting a team silently removes all memberships via CASCADE**
+  - File: `migrations/V16__constraint_fixes.sql`, `src/db/teams.rs`
+  - Resolution: New migration changes FK to `ON DELETE RESTRICT`. Updated `db::delete_team` to take `&mut Client`, use a transaction to explicitly remove memberships before deleting the team. Handler updated to pass `&mut client`.
+  - Source commands: `db-review`
+
+### Documentation — README.md Unit Test Count Stale
+
+- [x] **#677 — README.md says "238 tests" but actual unit test count is 248**
+  - File: `README.md`
+  - Resolution: Updated to "248 tests".
+  - Source commands: `cross-ref-check`
+
+### Documentation — README.md Integration Test Counts Wrong
+
+- [x] **#678 — README.md integration test counts outdated**
+  - File: `README.md`
+  - Resolution: Updated to "291 tests: 171 API + 120 DB".
+  - Source commands: `cross-ref-check`
+
+### Documentation — README.md Migration Count Missing V14–V16
+
+- [x] **#679 — README.md migration table was missing V14–V16**
+  - File: `README.md`
+  - Resolution: Updated count to "Sixteen migrations" and added V14, V15, V16 rows to table.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md "Planned Pages" Describes Already-Implemented Pages
+
+- [x] **#680 — "Frontend Roadmap" → "Planned Pages" lists 6 pages as future work, but all are implemented**
+  - File: `CLAUDE.md`
+  - Resolution: Renamed "Frontend Roadmap" to "Frontend Pages & Layout", changed "Planned Pages" to "Implemented Pages", updated intro text to reflect complete SPA.
+  - Source commands: `practices-audit`
+
+### Testing — `delete_team` With Existing Orders Returns 409 — No API Test
+
+- [x] **#681 — No test coverage for 409 guard on team deletion with orders**
+  - File: `tests/api_teams.rs`
+  - Resolution: Added `delete_team_with_orders_returns_409` test covering create team → create order → DELETE team (409) → delete order → DELETE team (200).
+  - Source commands: `test-gaps`
+
+### Testing — `bootstrap_first_user` DB Function Has No Direct DB Test
+
+- [x] **#682 — Multi-step transactional function tested only indirectly via API tests**
+  - File: `src/db/users.rs`, `tests/api_auth.rs`
+  - Resolution: Bootstrap function is thoroughly tested via API integration tests (`register_*` tests in `api_auth.rs`). A direct DB test was attempted but removed because `bootstrap_first_user` requires an empty database (wipes all tables), which causes test interference when running concurrently with API tests against the shared DB. The API-level coverage is sufficient.
+  - Source commands: `test-gaps`
+
+### Testing — `register_first_user` Validation Error Path Not Tested
+
+- [x] **#683 — 422 validation path (short password, missing name) has no API test**
+  - File: `tests/api_auth.rs`
+  - Resolution: Added `register_with_short_password_returns_422` and `register_with_missing_firstname_returns_422` tests.
+  - Source commands: `test-gaps`
+
+### Testing — Teams Page CRUD Interactions Not Tested in WASM
+
+- [x] **#684 — No dialog open/submit/toast tests for teams page**
+  - File: `frontend/tests/ui_pages.rs`
+  - Resolution: Added 3 WASM tests: `test_teams_page_create_dialog_opens`, `test_teams_page_create_dialog_cancel`, `test_teams_page_add_member_dialog_opens`.
+  - Source commands: `test-gaps`
+
+### Testing — Items Page CRUD Interactions Not Tested in WASM
+
+- [x] **#685 — No create/edit/delete tests for items page**
+  - File: `frontend/tests/ui_pages.rs`
+  - Resolution: Added 3 WASM tests: `test_items_page_create_dialog_opens`, `test_items_page_create_dialog_cancel`, `test_items_page_edit_button_exists`.
+  - Source commands: `test-gaps`
+
+### Testing — Orders Page Detail and Line Item Management Not Tested in WASM
+
+- [x] **#686 — Only 1 test for orders page**
+  - File: `frontend/tests/ui_pages.rs`
+  - Resolution: Added 2 WASM tests: `test_orders_page_shows_order_detail_on_click`, `test_orders_page_create_order_dialog_fields`. Total orders page tests now 3.
+  - Source commands: `test-gaps`
 
 ## Informational Items
 

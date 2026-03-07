@@ -863,3 +863,55 @@ async fn register_when_users_exist_returns_403() {
         "registration should be forbidden when users already exist"
     );
 }
+
+// ===========================================================================
+// #683 — register_first_user validation errors
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn register_with_short_password_returns_422() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    let req = test::TestRequest::post()
+        .uri("/auth/register")
+        .peer_addr(PEER)
+        .set_json(json!({
+            "firstname": "Test",
+            "lastname": "User",
+            "email": format!("valtest-{}@test.local", Uuid::now_v7()),
+            "password": "short"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        422,
+        "short password should return 422 validation error"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn register_with_missing_firstname_returns_422() {
+    let state = test_state().await;
+    let app = test_app!(state);
+
+    let req = test::TestRequest::post()
+        .uri("/auth/register")
+        .peer_addr(PEER)
+        .set_json(json!({
+            "firstname": "A",
+            "lastname": "User",
+            "email": format!("valtest-{}@test.local", Uuid::now_v7()),
+            "password": "Very Secret Password"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        422,
+        "too-short firstname should return 422 validation error"
+    );
+}

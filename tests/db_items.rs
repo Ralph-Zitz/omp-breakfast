@@ -41,26 +41,23 @@ async fn create_item_returns_entry_with_price() {
 
 #[actix_web::test]
 #[ignore]
-async fn create_item_with_null_price() {
+async fn create_item_with_zero_price_fails() {
     let client = test_client().await;
-    let descr = format!("dbtest-item-nullprice-{}", Uuid::now_v7());
+    let descr = format!("dbtest-item-zeroprice-{}", Uuid::now_v7());
 
-    let item = db::create_item(
+    let result = db::create_item(
         &client,
         CreateItemEntry {
             descr: descr.clone(),
             price: Decimal::ZERO,
         },
     )
-    .await
-    .expect("create_item with zero price should succeed");
+    .await;
 
-    assert_eq!(item.price, Decimal::ZERO);
-
-    // Cleanup
-    db::delete_item(&client, item.item_id)
-        .await
-        .expect("cleanup");
+    assert!(
+        result.is_err(),
+        "create_item with zero price should fail (CHECK price > 0)"
+    );
 }
 
 #[actix_web::test]
@@ -161,7 +158,7 @@ async fn delete_item_returns_true_then_false() {
         &client,
         CreateItemEntry {
             descr,
-            price: Decimal::ZERO,
+            price: Decimal::ONE,
         },
     )
     .await
@@ -192,7 +189,7 @@ async fn create_duplicate_item_returns_error() {
         &client,
         CreateItemEntry {
             descr: descr.clone(),
-            price: Decimal::ZERO,
+            price: Decimal::ONE,
         },
     )
     .await
@@ -202,7 +199,7 @@ async fn create_duplicate_item_returns_error() {
         &client,
         CreateItemEntry {
             descr: descr.clone(),
-            price: Decimal::ZERO,
+            price: Decimal::ONE,
         },
     )
     .await;
@@ -284,7 +281,7 @@ async fn delete_item_with_order_reference_is_restricted() {
         .await
         .unwrap();
     db::delete_item(&client, item.item_id).await.unwrap();
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, user.user_id)

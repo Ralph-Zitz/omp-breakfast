@@ -23,7 +23,7 @@ async fn is_admin_returns_true_for_admin() {
     assert!(result, "user with Admin role should be recognized as admin");
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, admin.user_id)
@@ -43,10 +43,10 @@ async fn is_admin_returns_false_for_member() {
     assert!(!result, "member should not be admin");
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -82,7 +82,7 @@ async fn is_admin_or_team_admin_returns_true_for_admin() {
     assert!(result);
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, admin.user_id)
@@ -102,10 +102,10 @@ async fn is_admin_or_team_admin_returns_true_for_team_admin() {
     assert!(result, "Team Admin should return true");
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -131,10 +131,10 @@ async fn is_admin_or_team_admin_returns_false_for_member() {
     assert!(!result, "Member should return false");
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -160,7 +160,7 @@ async fn get_member_role_returns_correct_role_for_admin() {
     assert_eq!(role, Some("Admin".to_string()));
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, admin.user_id)
@@ -180,10 +180,10 @@ async fn get_member_role_returns_correct_role_for_team_admin() {
     assert_eq!(role, Some("Team Admin".to_string()));
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -209,10 +209,10 @@ async fn get_member_role_returns_member_for_regular_user() {
     assert_eq!(role, Some("Member".to_string()));
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -239,10 +239,10 @@ async fn get_member_role_returns_none_for_non_member() {
     assert_eq!(role, None);
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -272,10 +272,10 @@ async fn is_team_admin_of_user_returns_true_for_shared_team() {
     );
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -307,10 +307,10 @@ async fn is_team_admin_of_user_returns_false_for_non_shared_team() {
     );
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -354,10 +354,10 @@ async fn is_team_admin_of_user_returns_false_for_regular_member() {
     );
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -414,7 +414,7 @@ async fn add_team_member_returns_users_in_team() {
     assert_eq!(result.title, "Member");
 
     // Cleanup (cascade: deleting team removes memberof)
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup team");
     db::delete_user(&mut client, user.user_id)
@@ -462,7 +462,7 @@ async fn remove_team_member_returns_true_then_false() {
     assert!(!removed_again);
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup team");
     db::delete_user(&mut client, user.user_id)
@@ -509,7 +509,7 @@ async fn update_member_role_changes_title() {
     assert_eq!(updated.user_id, user.user_id);
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup team");
     db::delete_user(&mut client, user.user_id)
@@ -546,7 +546,7 @@ async fn update_member_role_returns_not_found_for_non_member() {
     );
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup team");
 }
@@ -586,7 +586,7 @@ async fn add_duplicate_team_member_returns_error() {
     assert!(result.is_err(), "duplicate member should fail");
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup team");
     db::delete_user(&mut client, user.user_id)
@@ -615,7 +615,7 @@ async fn add_team_member_with_nonexistent_user_returns_error() {
     );
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup team");
 }
@@ -652,7 +652,7 @@ async fn add_team_member_with_nonexistent_role_returns_error() {
     );
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup team");
     db::delete_user(&mut client, user.user_id)
@@ -684,7 +684,7 @@ async fn get_user_teams_returns_memberships() {
     assert!(!first.firstname.is_empty());
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, admin.user_id)
@@ -745,10 +745,10 @@ async fn get_team_users_returns_members() {
     assert!(!first.title.is_empty());
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -765,7 +765,7 @@ async fn get_team_users_returns_members() {
 #[actix_web::test]
 #[ignore]
 async fn get_team_users_returns_empty_for_empty_team() {
-    let client = test_client().await;
+    let mut client = test_client().await;
     let tname = format!("dbtest-empty-{}", Uuid::now_v7());
 
     let team = db::create_team(&client, CreateTeamEntry { tname, descr: None })
@@ -778,7 +778,7 @@ async fn get_team_users_returns_empty_for_empty_team() {
     assert!(users.is_empty(), "empty team should return []");
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup");
 }
@@ -811,10 +811,10 @@ async fn get_user_teams_for_multi_team_user() {
     );
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -849,7 +849,7 @@ async fn check_team_access_admin_in_own_team() {
     );
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, admin.user_id)
@@ -874,10 +874,10 @@ async fn check_team_access_regular_member() {
     );
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -905,10 +905,10 @@ async fn check_team_access_non_member() {
     assert!(team_role.is_none(), "member should have no role in team2");
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -940,10 +940,10 @@ async fn check_team_access_admin_in_unrelated_team() {
     );
 
     // Cleanup
-    db::delete_team(&client, other_team.team_id)
+    db::delete_team(&mut client, other_team.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, admin.user_id)
@@ -975,10 +975,10 @@ async fn check_team_access_team_admin() {
     );
 
     // Cleanup
-    db::delete_team(&client, team1.team_id)
+    db::delete_team(&mut client, team1.team_id)
         .await
         .expect("cleanup");
-    db::delete_team(&client, team2.team_id)
+    db::delete_team(&mut client, team2.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, _admin.user_id)
@@ -1022,7 +1022,7 @@ async fn would_admins_remain_without_two_admins() {
     );
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup team");
     db::delete_user(&mut client, admin1.user_id)
@@ -1067,7 +1067,7 @@ async fn would_admins_remain_without_sole_admin() {
     );
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup team");
     db::delete_user(&mut client, admin.user_id)

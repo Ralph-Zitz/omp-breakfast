@@ -91,6 +91,21 @@ pub fn click_button(container_id: &str, selector: &str) {
     .expect("click_button failed");
 }
 
+/// Click the first button whose text includes `label` inside the container.
+pub fn click_button_text(container_id: &str, label: &str) {
+    js_sys::eval(&format!(
+        r#"(() => {{
+            const btns = document.getElementById("{}").querySelectorAll("button");
+            for (const btn of btns) {{
+                if (btn.textContent.includes("{}")) {{ btn.click(); return; }}
+            }}
+            throw new Error("click_button_text: no button with text '{}'");
+        }})()"#,
+        container_id, label, label
+    ))
+    .expect("click_button_text failed");
+}
+
 /// Yield to the browser event loop for `ms` milliseconds so that
 /// `spawn_local` futures and DOM updates can settle.
 pub async fn flush(ms: i32) {

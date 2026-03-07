@@ -167,7 +167,7 @@ async fn count_admins_returns_at_least_one() {
     assert!(count >= 1, "should have at least one admin after setup");
 
     // Cleanup
-    db::delete_team(&client, team.team_id)
+    db::delete_team(&mut client, team.team_id)
         .await
         .expect("cleanup");
     db::delete_user(&mut client, admin.user_id)

@@ -228,7 +228,7 @@ pub async fn reopen_team_order(
     // Verify the source order exists and is closed
     let check = tx
         .prepare(
-            "select closed from teamorders where teamorders_id = $1 and teamorders_team_id = $2 for share",
+            "select closed from teamorders where teamorders_id = $1 and teamorders_team_id = $2 for update",
         )
         .await
         .map_err(Error::Db)?;

@@ -95,19 +95,22 @@ pub async fn create_team(client: &Client, team: CreateTeamEntry) -> Result<TeamE
         .map_err(Error::DbMapper)
 }
 
-/// Deletes a team by ID. Returns `true` if a row was deleted, `false` if
-/// the team did not exist.
-pub async fn delete_team(client: &Client, tid: Uuid) -> Result<bool, Error> {
-    let statement = client
-        .prepare("delete from teams where team_id = $1")
+/// Deletes a team by ID, removing all memberships first within a
+/// transaction. Returns `true` if the team was deleted, `false` if it did
+/// not exist.
+pub async fn delete_team(client: &mut Client, tid: Uuid) -> Result<bool, Error> {
+    let tx = client.transaction().await.map_err(Error::Db)?;
+
+    tx.execute("DELETE FROM memberof WHERE memberof_team_id = $1", &[&tid])
         .await
         .map_err(Error::Db)?;
 
-    let result = client
-        .execute(&statement, &[&tid])
+    let result = tx
+        .execute("DELETE FROM teams WHERE team_id = $1", &[&tid])
         .await
         .map_err(Error::Db)?;
 
+    tx.commit().await.map_err(Error::Db)?;
     Ok(result == 1)
 }
 
