@@ -609,7 +609,12 @@ async fn test_authed_put_sends_body_and_auth_header() {
 
     use breakfast_frontend::api::{HttpMethod, authed_request};
     let body = serde_json::json!({"firstname": "Updated"});
-    let resp = authed_request(HttpMethod::Put, "/api/v1.0/users/12345678-1234-1234-1234-1234567890ab", Some(&body)).await;
+    let resp = authed_request(
+        HttpMethod::Put,
+        "/api/v1.0/users/12345678-1234-1234-1234-1234567890ab",
+        Some(&body),
+    )
+    .await;
     flush(100).await;
 
     assert!(resp.is_some(), "PUT should return a response");
@@ -673,4 +678,3 @@ async fn test_authed_delete_sends_auth_header_no_body() {
     restore_fetch();
     let _ = js_sys::eval("delete window.__last_request");
 }
-

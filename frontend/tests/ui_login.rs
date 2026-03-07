@@ -338,10 +338,7 @@ async fn test_registration_form_renders_when_setup_required() {
         has_element(id, "input#lastname"),
         "should have lastname input"
     );
-    assert!(
-        has_element(id, "input#username"),
-        "should have email input"
-    );
+    assert!(has_element(id, "input#username"), "should have email input");
     assert!(
         has_element(id, "input#password"),
         "should have password input"
@@ -406,4 +403,3 @@ async fn test_registration_success_redirects_to_dashboard() {
     remove_test_container(id);
     restore_fetch();
 }
-
