@@ -56,17 +56,32 @@ pub fn OrderDetail(
                     .unwrap_or_else(|| item_id.to_string())
             };
 
-            // Resolve item price from catalog
-            let resolve_price = move |item_id: &str| -> f64 {
-                cat_for_price.iter()
+            // Resolve item price from catalog as integer cents to avoid f64 rounding
+            let resolve_price_cents = move |item_id: &str| -> i64 {
+                cat_for_price
+                    .iter()
                     .find(|i| i.item_id == item_id)
-                    .and_then(|i| i.price.parse::<f64>().ok())
-                    .unwrap_or(0.0)
+                    .and_then(|i| {
+                        // Parse "12.50" → 1250 cents using fixed-point string parsing
+                        let s = i.price.as_str();
+                        let (whole, frac) = match s.find('.') {
+                            Some(dot) => (&s[..dot], &s[dot + 1..]),
+                            None => (s, ""),
+                        };
+                        let w: i64 = whole.parse().ok()?;
+                        let f: i64 = match frac.len() {
+                            0 => 0,
+                            1 => frac.parse::<i64>().ok()? * 10,
+                            _ => frac[..2].parse().ok()?,
+                        };
+                        Some(w * 100 + f)
+                    })
+                    .unwrap_or(0)
             };
 
-            // Compute grand total
-            let grand_total: f64 = item_list.iter()
-                .map(|oi| resolve_price(&oi.orders_item_id) * oi.amt as f64)
+            // Compute grand total in cents, then format
+            let grand_total_cents: i64 = item_list.iter()
+                .map(|oi| resolve_price_cents(&oi.orders_item_id) * oi.amt as i64)
                 .sum();
 
             view! {
@@ -184,7 +199,7 @@ pub fn OrderDetail(
                                 <tbody class="connect-table-body">
                                     {item_list.into_iter().map(|oi| {
                                         let name = resolve_name(&oi.orders_item_id);
-                                        let line_total = resolve_price(&oi.orders_item_id) * oi.amt as f64;
+                                        let line_total_cents = resolve_price_cents(&oi.orders_item_id) * oi.amt as i64;
                                         let iid = oi.orders_item_id.clone();
                                         let on_remove_item = on_remove_item.clone();
                                         let on_update_item = on_update_item.clone();
@@ -216,7 +231,7 @@ pub fn OrderDetail(
                                                     }}
                                                 </td>
                                                 <td class="connect-table-cell" style="text-align: right;">
-                                                    {format!("{:.2} kr", line_total)}
+                                                    {format!("{}.{:02} kr", line_total_cents / 100, line_total_cents % 100)}
                                                 </td>
                                                 {(!closed).then(|| {
                                                     let iid = iid.clone();
@@ -243,7 +258,7 @@ pub fn OrderDetail(
                                 </tbody>
                             </table>
                             <div style="display: flex; justify-content: flex-end; margin-top: var(--ds-layout-spacing-200, 8px); padding-right: var(--ds-layout-spacing-200, 8px);">
-                                <strong>{format!("Order Total: {:.2} kr", grand_total)}</strong>
+                                <strong>{format!("Order Total: {}.{:02} kr", grand_total_cents / 100, grand_total_cents % 100)}</strong>
                             </div>
                         }.into_any()
                     }}

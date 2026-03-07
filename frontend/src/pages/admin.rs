@@ -29,16 +29,18 @@ pub fn AdminPage() -> impl IntoView {
         set_loading.set(true);
         leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/users?limit={}&offset={}", limit, off);
-            if let Some(resp) = authed_get(&url).await && resp.ok() {
-                    match resp.json::<PaginatedResponse<UserEntry>>().await {
-                        Ok(data) => {
-                            set_total.set(data.total as usize);
-                            set_users.set(data.items);
-                        }
-                        Err(e) => {
-                            web_sys::console::warn_1(&format!("users JSON parse error: {e}").into())
-                        }
+            if let Some(resp) = authed_get(&url).await
+                && resp.ok()
+            {
+                match resp.json::<PaginatedResponse<UserEntry>>().await {
+                    Ok(data) => {
+                        set_total.set(data.total as usize);
+                        set_users.set(data.items);
                     }
+                    Err(e) => {
+                        web_sys::console::warn_1(&format!("users JSON parse error: {e}").into())
+                    }
+                }
             }
             set_loading.set(false);
         });
@@ -101,20 +103,25 @@ pub fn AdminPage() -> impl IntoView {
     };
 
     let do_reset_password = move |user_id: String, new_password: String| {
-        let target_user = users.get().into_iter().find(|u| u.user_id == user_id);
-        let Some(u) = target_user else {
-            toast_error("User not found");
-            set_reset_pw_target.set(None);
-            return;
-        };
-        let body = serde_json::json!({
-            "firstname": u.firstname,
-            "lastname": u.lastname,
-            "email": u.email,
-            "password": new_password,
-        });
         leptos::task::spawn_local_scoped(async move {
+            // Fetch fresh user data to avoid overwriting concurrent edits
             let url = format!("/api/v1.0/users/{}", user_id);
+            let fresh = authed_get(&url).await;
+            let u: Option<UserEntry> = match fresh {
+                Some(r) if r.ok() => r.json().await.ok(),
+                _ => None,
+            };
+            let Some(u) = u else {
+                toast_error("User not found");
+                set_reset_pw_target.set(None);
+                return;
+            };
+            let body = serde_json::json!({
+                "firstname": u.firstname,
+                "lastname": u.lastname,
+                "email": u.email,
+                "password": new_password,
+            });
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
                 Some(r) if r.ok() => toast_success("Password reset successfully"),

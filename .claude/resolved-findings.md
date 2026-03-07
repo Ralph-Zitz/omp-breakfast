@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-14
+Last updated: 2026-03-15
 
 ## Critical Items
 
@@ -3495,8 +3495,65 @@ Last updated: 2026-03-14
   - Resolution: Fixed — made all 4 OTel crates optional behind a `telemetry` Cargo feature (default on). Build with `--no-default-features` to skip. `tracing-actix-web/opentelemetry_0_31` conditionally enabled. Server code wrapped in `#[cfg(feature = "telemetry")]`.
   - Source commands: `dependency-check`
 
+### Frontend Design — Password Reset Race, f64 Totals
+
+- [x] **#657 — `do_reset_password` sends all user fields — could overwrite concurrent admin edits**
+  - File: `frontend/src/pages/admin.rs`
+  - Resolution: Changed `do_reset_password` to fetch fresh user data via `authed_get` before sending the PUT request. The password reset now reads the latest `firstname`, `lastname`, and `email` from the server, preventing stale overwrites.
+  - Source commands: `review`
+
+- [x] **#665 — Frontend order total uses f64 instead of Decimal**
+  - File: `frontend/src/pages/order_components.rs`
+  - Resolution: Replaced f64 arithmetic with integer-cents calculation. `resolve_price` → `resolve_price_cents` (returns i64 cents via fixed-point parsing), `grand_total` → `grand_total_cents`, `line_total` → `line_total_cents`. Display uses `cents / 100` and `cents % 100` formatting. Eliminates floating-point rounding errors for monetary values.
+  - Source commands: `review`
+
+### Dependencies — password-hash, MediaQueryList, refinery native-tls
+
+- [x] **#659 — `password-hash` direct dependency may be redundant**
+  - File: `Cargo.toml`
+  - Resolution: Tested removal — build fails with unresolved `OsRng` import. The `password-hash = { version = "0.5.0", features = ["getrandom"] }` dependency is required because `argon2`'s re-export does not enable the `getrandom` feature on `rand_core`. Dependency confirmed needed; no action required.
+  - Source commands: `dependency-check`
+
+- [x] **#660 — Unused `MediaQueryList` web-sys feature**
+  - File: `frontend/Cargo.toml`
+  - Resolution: Tested removal — build fails because `window.match_media()` in `theme_toggle.rs` requires the `MediaQueryList` web-sys feature to be enabled. The finding was incorrect; the feature IS used indirectly. No change needed.
+  - Source commands: `dependency-check`
+
+- [x] **#661 — `refinery` pulls native-tls despite project using rustls**
+  - Resolution: Accepted — no fix available. `refinery` has no rustls feature flag. This is a known limitation of the crate. Monitoring for future releases.
+  - Source commands: `dependency-check`
+
+### Database — Missing CHECK Constraints
+
+- [x] **#658 — Missing DB CHECK constraints on `users.firstname`/`users.lastname`**
+  - File: `migrations/V14__user_text_check_constraints.sql`
+  - Resolution: Created V14 migration adding CHECK constraints: `users.firstname` ≤ 50 chars, `users.lastname` ≤ 50 chars, `users.email` ≤ 255 chars. Matches existing API validation limits.
+  - Source commands: `db-review`
+
+### Test Coverage — JWT Validators, DB Functions
+
+- [x] **#662 — Auth validators have no unit tests**
+  - File: `src/middleware/auth.rs`
+  - Resolution: Added 8 unit tests covering JWT validation edge cases: wrong issuer rejection, wrong audience rejection, access/refresh token type differentiation, both types accepted by `verify_jwt`, empty string rejection, garbage string rejection, `verify_jwt_for_revocation` empty string, and claims completeness verification.
+  - Source commands: `test-gaps`
+
+- [x] **#663 — Several DB functions untested at DB level**
+  - Files: `tests/db_orders.rs`, `tests/db_roles.rs`, `tests/db_users.rs`
+  - Resolution: Added 8 DB integration tests: `count_team_orders_returns_correct_count`, `reopen_team_order_creates_copy_of_closed_order`, `reopen_team_order_rejects_open_order`, `get_order_total_returns_correct_sum`, `get_order_total_returns_zero_for_empty_order`, `seed_default_roles_creates_four_default_roles`, `seed_default_roles_is_idempotent`, `count_users_returns_positive_count`.
+  - Source commands: `test-gaps`
+
+### API Completeness — By Design
+
+- [x] **#664 — `get_order_total` DB function not exposed as API endpoint**
+  - Resolution: Accepted — by design. The total is computed inline by the `get_team_order` handler and included in the order response. No separate endpoint needed.
+  - Source commands: `api-completeness`
+
+- [x] **#666 — 8 documented API endpoints not consumed by frontend**
+  - Resolution: Accepted — expected. These are admin/programmatic endpoints (bulk delete orders, role CRUD, avatar list) not needed in the frontend UI. No action required.
+  - Source commands: `api-completeness`
+
 ## Notes
 
-- Total resolved items: 476 (6 critical, 49 important, 146 minor, 173 informational, plus items previously counted under different categories)
+- Total resolved items: 517 (6 critical, 49 important, 146 minor, 183 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

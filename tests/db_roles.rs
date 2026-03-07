@@ -209,3 +209,50 @@ async fn create_role_with_duplicate_title_fails() {
         .await
         .expect("cleanup: delete_role should succeed");
 }
+
+// ===========================================================================
+// #663 — seed_default_roles DB function test
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn seed_default_roles_creates_four_default_roles() {
+    let client = test_client().await;
+
+    let roles = db::seed_default_roles(&client)
+        .await
+        .expect("seed_default_roles should succeed");
+
+    let titles: Vec<&str> = roles.iter().map(|r| r.title.as_str()).collect();
+    assert!(titles.contains(&"Admin"), "should contain Admin");
+    assert!(titles.contains(&"Team Admin"), "should contain Team Admin");
+    assert!(titles.contains(&"Member"), "should contain Member");
+    assert!(titles.contains(&"Guest"), "should contain Guest");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn seed_default_roles_is_idempotent() {
+    let client = test_client().await;
+
+    let first = db::seed_default_roles(&client).await.unwrap();
+    let second = db::seed_default_roles(&client).await.unwrap();
+
+    // Compare only the 4 default roles (other tests may create roles concurrently)
+    let defaults = ["Admin", "Team Admin", "Member", "Guest"];
+    let first_ids: Vec<_> = first
+        .iter()
+        .filter(|r| defaults.contains(&r.title.as_str()))
+        .map(|r| r.role_id)
+        .collect();
+    let second_ids: Vec<_> = second
+        .iter()
+        .filter(|r| defaults.contains(&r.title.as_str()))
+        .map(|r| r.role_id)
+        .collect();
+    assert_eq!(
+        first_ids, second_ids,
+        "seed_default_roles should be idempotent for default roles"
+    );
+    assert_eq!(first_ids.len(), 4, "should have exactly 4 default roles");
+}

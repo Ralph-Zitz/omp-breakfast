@@ -161,6 +161,7 @@ migrations/
   V11__text_column_check_constraints.sql – CHECK constraints on text column lengths
   V12__cleanup_index_and_constraints.sql – Drop unused idx_teamorders_id_due, NOT NULL on orders_team_id
   V13__pickup_user.sql – Adds pickup_user_id column to teamorders table (FK to users, partial index)
+  V14__user_text_check_constraints.sql – CHECK constraints on users.firstname (≤50), users.lastname (≤50), users.email (≤255)
 tests/
   common/          – Shared test helpers (setup, state, DB utilities)
   api_auth.rs      – Auth API integration tests (login, register, refresh, revoke)
@@ -413,9 +414,9 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 240 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
+- 248 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
 - 168 API integration tests in `tests/api_*.rs` (require running Postgres, marked `#[ignore]`)
-- 112 DB function integration tests in `tests/db_*.rs` (require running Postgres, marked `#[ignore]`)
+- 120 DB function integration tests in `tests/db_*.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
 - Test DB uses `docker-compose.test.yml` overlay to expose port 5433 (avoids conflicts with dev DB on 5432)

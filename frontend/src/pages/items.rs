@@ -18,9 +18,7 @@ fn is_valid_price(s: &str) -> bool {
     // Match digits with an optional single decimal point and up to 2 fractional digits.
     // Rejects scientific notation, negative signs, and other non-decimal formats.
     trimmed.len() <= 13
-        && trimmed
-            .bytes()
-            .all(|b| b.is_ascii_digit() || b == b'.')
+        && trimmed.bytes().all(|b| b.is_ascii_digit() || b == b'.')
         && trimmed.matches('.').count() <= 1
         && trimmed
             .find('.')
@@ -46,11 +44,18 @@ pub fn ItemsPage() -> impl IntoView {
         set_loading.set(true);
         leptos::task::spawn_local_scoped(async move {
             let url = format!("/api/v1.0/items?limit={}&offset={}", limit, off);
-            if let Some(resp) = authed_get(&url).await && resp.ok() {
-                    match resp.json::<PaginatedResponse<ItemEntry>>().await {
-                        Ok(data) => { set_total.set(data.total as usize); set_items.set(data.items); }
-                        Err(e) => web_sys::console::warn_1(&format!("items JSON parse error: {e}").into()),
+            if let Some(resp) = authed_get(&url).await
+                && resp.ok()
+            {
+                match resp.json::<PaginatedResponse<ItemEntry>>().await {
+                    Ok(data) => {
+                        set_total.set(data.total as usize);
+                        set_items.set(data.items);
                     }
+                    Err(e) => {
+                        web_sys::console::warn_1(&format!("items JSON parse error: {e}").into())
+                    }
+                }
             }
             set_loading.set(false);
         });
@@ -62,12 +67,15 @@ pub fn ItemsPage() -> impl IntoView {
         leptos::task::spawn_local_scoped(async move {
             let resp = authed_request(HttpMethod::Post, "/api/v1.0/items", Some(&body)).await;
             match resp {
-                Some(r) if r.ok() => {
-                    match r.json::<ItemEntry>().await {
-                        Ok(item) => { set_items.update(|list| list.push(item)); toast_success("Item created"); }
-                        Err(e) => web_sys::console::warn_1(&format!("item create JSON parse error: {e}").into()),
+                Some(r) if r.ok() => match r.json::<ItemEntry>().await {
+                    Ok(item) => {
+                        set_items.update(|list| list.push(item));
+                        toast_success("Item created");
                     }
-                }
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("item create JSON parse error: {e}").into(),
+                    ),
+                },
                 _ => toast_error("Failed to create item"),
             }
             set_show_create.set(false);
@@ -80,20 +88,20 @@ pub fn ItemsPage() -> impl IntoView {
             let url = format!("/api/v1.0/items/{}", item_id);
             let resp = authed_request(HttpMethod::Put, &url, Some(&body)).await;
             match resp {
-                Some(r) if r.ok() => {
-                    match r.json::<ItemEntry>().await {
-                        Ok(updated) => {
-                            set_items.update(|list| {
-                                if let Some(i) = list.iter_mut().find(|i| i.item_id == updated.item_id)
-                                {
-                                    *i = updated;
-                                }
-                            });
-                            toast_success("Item updated");
-                        }
-                        Err(e) => web_sys::console::warn_1(&format!("item update JSON parse error: {e}").into()),
+                Some(r) if r.ok() => match r.json::<ItemEntry>().await {
+                    Ok(updated) => {
+                        set_items.update(|list| {
+                            if let Some(i) = list.iter_mut().find(|i| i.item_id == updated.item_id)
+                            {
+                                *i = updated;
+                            }
+                        });
+                        toast_success("Item updated");
                     }
-                }
+                    Err(e) => web_sys::console::warn_1(
+                        &format!("item update JSON parse error: {e}").into(),
+                    ),
+                },
                 _ => toast_error("Failed to update item"),
             }
             set_edit_target.set(None);

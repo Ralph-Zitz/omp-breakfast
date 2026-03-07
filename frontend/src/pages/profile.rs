@@ -1,9 +1,9 @@
 use crate::api::{AvatarListEntry, HttpMethod, UserContext, UserEntry, authed_get, authed_request};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
+use crate::components::input_handler;
 use crate::components::role_tag_class;
 use crate::components::toast::{toast_error, toast_success};
-use crate::components::input_handler;
 use leptos::prelude::*;
 
 /// Build the avatar image URL for a given avatar_id.

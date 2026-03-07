@@ -1104,4 +1104,121 @@ mod tests {
             "valid DUMMY_HASH should parse successfully"
         );
     }
+
+    // -- JWT issuer/audience validation (#662) --
+
+    #[actix_web::test]
+    async fn verify_jwt_rejects_wrong_issuer() {
+        let user_id = Uuid::now_v7();
+        let key = Hs256Key::new(TEST_SECRET.as_bytes());
+        let custom = JwtCustomClaims {
+            sub: user_id,
+            jti: Uuid::now_v7(),
+            token_type: TokenType::Access,
+            iss: "wrong-issuer".to_string(),
+            aud: JWT_AUDIENCE.to_string(),
+        };
+        let claims = JwtClaims::new(custom)
+            .set_duration_and_issuance(&TimeOptions::default(), Duration::try_hours(1).unwrap());
+        let token = Hs256.token(&JwtHeader::empty(), &claims, &key).unwrap();
+
+        let err = match verify_jwt(&token, TEST_SECRET) {
+            Err(e) => e,
+            Ok(_) => panic!("should reject wrong issuer"),
+        };
+        assert!(
+            err.to_string().contains("issuer"),
+            "error should mention issuer, got: {err}"
+        );
+    }
+
+    #[actix_web::test]
+    async fn verify_jwt_rejects_wrong_audience() {
+        let user_id = Uuid::now_v7();
+        let key = Hs256Key::new(TEST_SECRET.as_bytes());
+        let custom = JwtCustomClaims {
+            sub: user_id,
+            jti: Uuid::now_v7(),
+            token_type: TokenType::Access,
+            iss: JWT_ISSUER.to_string(),
+            aud: "wrong-audience".to_string(),
+        };
+        let claims = JwtClaims::new(custom)
+            .set_duration_and_issuance(&TimeOptions::default(), Duration::try_hours(1).unwrap());
+        let token = Hs256.token(&JwtHeader::empty(), &claims, &key).unwrap();
+
+        let err = match verify_jwt(&token, TEST_SECRET) {
+            Err(e) => e,
+            Ok(_) => panic!("should reject wrong audience"),
+        };
+        assert!(
+            err.to_string().contains("audience"),
+            "error should mention audience, got: {err}"
+        );
+    }
+
+    // -- Token type differentiation (#662) --
+
+    #[actix_web::test]
+    async fn access_and_refresh_tokens_have_distinct_types() {
+        let user_id = Uuid::now_v7();
+        let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
+
+        let access = verify_jwt(&auth.access_token, TEST_SECRET).unwrap();
+        let refresh = verify_jwt(&auth.refresh_token, TEST_SECRET).unwrap();
+
+        assert_eq!(access.token_type, TokenType::Access);
+        assert_eq!(refresh.token_type, TokenType::Refresh);
+        assert_ne!(
+            access.token_type, refresh.token_type,
+            "access and refresh must have different token types"
+        );
+    }
+
+    #[actix_web::test]
+    async fn verify_jwt_accepts_both_token_types() {
+        let user_id = Uuid::now_v7();
+        let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
+
+        // verify_jwt itself doesn't filter by token type — that's the validator's job
+        assert!(verify_jwt(&auth.access_token, TEST_SECRET).is_ok());
+        assert!(verify_jwt(&auth.refresh_token, TEST_SECRET).is_ok());
+    }
+
+    // -- Malformed token strings (#662) --
+
+    #[actix_web::test]
+    async fn verify_jwt_rejects_empty_string() {
+        let result = verify_jwt("", TEST_SECRET);
+        assert!(result.is_err(), "empty string should be rejected");
+    }
+
+    #[actix_web::test]
+    async fn verify_jwt_rejects_garbage_string() {
+        let result = verify_jwt("not.a.jwt.at.all", TEST_SECRET);
+        assert!(result.is_err(), "garbage string should be rejected");
+    }
+
+    #[actix_web::test]
+    async fn verify_jwt_for_revocation_rejects_empty_string() {
+        let result = verify_jwt_for_revocation("", TEST_SECRET);
+        assert!(result.is_err(), "empty string should be rejected");
+    }
+
+    // -- Claims extraction completeness (#662) --
+
+    #[actix_web::test]
+    async fn claims_contain_all_required_fields() {
+        let user_id = Uuid::now_v7();
+        let auth = generate_token_pair(user_id, TEST_SECRET).unwrap();
+
+        let claims = verify_jwt(&auth.access_token, TEST_SECRET).unwrap();
+
+        assert_eq!(claims.sub, user_id);
+        assert_eq!(claims.iss, JWT_ISSUER);
+        assert_eq!(claims.aud, JWT_AUDIENCE);
+        assert!(!claims.jti.is_nil(), "jti must not be nil");
+        assert!(claims.iat > 0, "iat must be set");
+        assert!(claims.exp > claims.iat, "exp must be after iat");
+    }
 }

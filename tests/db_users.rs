@@ -543,3 +543,26 @@ async fn get_password_hash_returns_not_found_for_nonexistent_user() {
     let result = db::get_password_hash(&client, fake_id).await;
     assert!(result.is_err(), "should return error for nonexistent user");
 }
+
+// ===========================================================================
+// #663 — count_users DB function test
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn count_users_returns_positive_count() {
+    let client = test_client().await;
+
+    // Ensure at least one user exists
+    let user = create_test_user(&client).await;
+
+    let count = db::count_users(&client)
+        .await
+        .expect("count_users should succeed");
+    assert!(count >= 1, "should have at least one user");
+
+    // Cleanup
+    db::delete_user(&client, user.user_id)
+        .await
+        .expect("cleanup");
+}
