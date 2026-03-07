@@ -181,6 +181,21 @@ pub async fn delete_team_order(
     Ok(result == 1)
 }
 
+/// Counts the number of orders for a team.
+pub async fn count_team_orders(client: &Client, team_id: Uuid) -> Result<i64, Error> {
+    let statement = client
+        .prepare("select count(*) as cnt from teamorders where teamorders_team_id = $1")
+        .await
+        .map_err(Error::Db)?;
+
+    let row = client
+        .query_one(&statement, &[&team_id])
+        .await
+        .map_err(Error::Db)?;
+
+    Ok(row.get("cnt"))
+}
+
 /// Deletes all team orders for a team. Returns the number of rows deleted.
 pub async fn delete_team_orders(client: &Client, team_id: Uuid) -> Result<u64, Error> {
     let statement = client

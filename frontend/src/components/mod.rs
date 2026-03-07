@@ -6,6 +6,16 @@ pub mod theme_toggle;
 pub mod toast;
 
 use leptos::prelude::*;
+use web_sys::wasm_bindgen::JsCast;
+
+/// Returns an `on:input` handler that reads the input element's `.value()`
+/// and writes it into the given signal.
+pub fn input_handler(setter: WriteSignal<String>) -> impl Fn(web_sys::Event) + 'static {
+    move |ev: web_sys::Event| {
+        let Some(target) = ev.target() else { return };
+        setter.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+    }
+}
 
 /// Returns the full CSS class string for a role tag badge.
 /// Used across dashboard, teams, profile, and roles pages.

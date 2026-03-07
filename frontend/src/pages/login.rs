@@ -4,9 +4,9 @@ use crate::api::{
 use crate::app::Page;
 use base64::Engine;
 use gloo_net::http::Request;
+use crate::components::input_handler;
 use leptos::prelude::*;
 use serde::Serialize;
-use web_sys::wasm_bindgen::JsCast;
 
 // ── Registration request body ───────────────────────────────────────────────
 
@@ -418,12 +418,7 @@ fn UsernameField(username: ReadSignal<String>, set_username: WriteSignal<String>
                     placeholder="you@example.com or username"
                     autocomplete="username"
                     prop:value=move || username.get()
-                    on:input=move |ev| {
-                        let Some(target) = ev.target() else { return; };
-                        let target = target
-                            .unchecked_into::<web_sys::HtmlInputElement>();
-                        set_username.set(target.value());
-                    }
+                    on:input=input_handler(set_username)
                     on:focus=move |_| set_focused.set(true)
                     on:blur=move |_| set_focused.set(false)
                 />
@@ -463,12 +458,7 @@ fn PasswordField(password: ReadSignal<String>, set_password: WriteSignal<String>
                     placeholder="Enter your password"
                     autocomplete="current-password"
                     prop:value=move || password.get()
-                    on:input=move |ev| {
-                        let Some(target) = ev.target() else { return; };
-                        let target = target
-                            .unchecked_into::<web_sys::HtmlInputElement>();
-                        set_password.set(target.value());
-                    }
+                    on:input=input_handler(set_password)
                     on:focus=move |_| set_focused.set(true)
                     on:blur=move |_| set_focused.set(false)
                 />
@@ -509,12 +499,7 @@ fn NameField(
                     placeholder=placeholder
                     autocomplete="off"
                     prop:value=move || value.get()
-                    on:input=move |ev| {
-                        let Some(target) = ev.target() else { return; };
-                        let target = target
-                            .unchecked_into::<web_sys::HtmlInputElement>();
-                        set_value.set(target.value());
-                    }
+                    on:input=input_handler(set_value)
                     on:focus=move |_| set_focused.set(true)
                     on:blur=move |_| set_focused.set(false)
                 />

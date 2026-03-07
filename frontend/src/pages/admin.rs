@@ -5,9 +5,8 @@ use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
 use crate::components::toast::{toast_error, toast_success};
-use crate::components::{LoadingSpinner, PaginationBar};
+use crate::components::{LoadingSpinner, PaginationBar, input_handler};
 use leptos::prelude::*;
-use web_sys::wasm_bindgen::JsCast;
 
 #[component]
 pub fn AdminPage() -> impl IntoView {
@@ -386,10 +385,7 @@ fn CreateUserDialog(
                                         type="text"
                                         maxlength=50
                                         prop:value=move || firstname.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_firstname.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_firstname)
                                     />
                                 </div>
                             </div>
@@ -404,10 +400,7 @@ fn CreateUserDialog(
                                         type="text"
                                         maxlength=50
                                         prop:value=move || lastname.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_lastname.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_lastname)
                                     />
                                 </div>
                             </div>
@@ -422,10 +415,7 @@ fn CreateUserDialog(
                                         type="email"
                                         maxlength=255
                                         prop:value=move || email.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_email.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_email)
                                     />
                                 </div>
                             </div>
@@ -441,10 +431,7 @@ fn CreateUserDialog(
                                         maxlength=128
                                         autocomplete="new-password"
                                         prop:value=move || password.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_password.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_password)
                                     />
                                 </div>
                             </div>
@@ -541,10 +528,7 @@ fn EditUserDialog(
                                         type="text"
                                         maxlength=50
                                         prop:value=move || firstname.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_firstname.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_firstname)
                                     />
                                 </div>
                             </div>
@@ -559,10 +543,7 @@ fn EditUserDialog(
                                         type="text"
                                         maxlength=50
                                         prop:value=move || lastname.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_lastname.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_lastname)
                                     />
                                 </div>
                             </div>
@@ -577,10 +558,7 @@ fn EditUserDialog(
                                         type="email"
                                         maxlength=255
                                         prop:value=move || email.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_email.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_email)
                                     />
                                 </div>
                             </div>
@@ -671,10 +649,7 @@ fn ResetPasswordDialog(
                                         maxlength=128
                                         autocomplete="new-password"
                                         prop:value=move || new_password.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_new_password.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_new_password)
                                     />
                                 </div>
                             </div>
@@ -694,10 +669,7 @@ fn ResetPasswordDialog(
                                         maxlength=128
                                         autocomplete="new-password"
                                         prop:value=move || confirm_password.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_confirm_password.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_confirm_password)
                                     />
                                 </div>
                                 {move || passwords_mismatch.get().then(|| view! {

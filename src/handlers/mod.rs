@@ -7,8 +7,9 @@ pub mod users;
 
 use crate::middleware::auth::{ROLE_ADMIN, ROLE_TEAM_ADMIN};
 use crate::{db, errors::Error, models::*};
-use actix_web::{HttpMessage, HttpRequest, HttpResponse, Responder, web::Data};
+use actix_web::{HttpMessage, HttpRequest, HttpResponse, Responder, http::header, web::Data};
 use deadpool_postgres::{Client, Pool};
+use serde::Serialize;
 use tracing::{error, instrument};
 use uuid::Uuid;
 
@@ -18,6 +19,32 @@ pub async fn get_client(pool: &Pool) -> Result<Client, Error> {
         error!(error = %err, "Failed to acquire DB client from pool");
         err.into()
     })
+}
+
+/// Build an `HttpResponse::Created` with a `Location` header pointing to the
+/// newly created resource. Falls back to a bare 201 if the URL cannot be
+/// generated (e.g. missing named route).
+pub fn created_with_location(
+    req: &HttpRequest,
+    resource: &impl Serialize,
+    route: &str,
+    route_params: &[String],
+) -> HttpResponse {
+    let mut response = HttpResponse::Created();
+    if let Ok(url) = req.url_for(route, route_params) {
+        response.append_header((header::LOCATION, url.as_str().to_owned()));
+    }
+    response.json(resource)
+}
+
+/// Map a `bool` (deleted / not-deleted) to either 200 OK or 404 Not Found,
+/// with a `DeletedResponse` JSON body.
+pub fn delete_response(deleted: bool) -> HttpResponse {
+    if deleted {
+        HttpResponse::Ok().json(DeletedResponse { deleted })
+    } else {
+        HttpResponse::NotFound().json(DeletedResponse { deleted })
+    }
 }
 
 /// Extract the requesting user's ID from JWT claims in request extensions.

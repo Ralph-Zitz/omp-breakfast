@@ -6,7 +6,7 @@ use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
 use crate::components::toast::{toast_error, toast_success};
-use crate::components::{LoadingSpinner, PaginationBar, role_tag_class};
+use crate::components::{LoadingSpinner, PaginationBar, input_handler, role_tag_class};
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
@@ -632,10 +632,7 @@ fn CreateTeamDialog(
                                         type="text"
                                         placeholder="Enter team name"
                                         prop:value=move || name.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return; };
-                                            set_name.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_name)
                                     />
                                 </div>
                             </div>
@@ -650,10 +647,7 @@ fn CreateTeamDialog(
                                         type="text"
                                         placeholder="Team description"
                                         prop:value=move || descr.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return; };
-                                            set_descr.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_descr)
                                     />
                                 </div>
                             </div>
@@ -737,10 +731,7 @@ fn EditTeamDialog(
                                         id="edit-team-name"
                                         type="text"
                                         prop:value=move || name.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return; };
-                                            set_name.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_name)
                                     />
                                 </div>
                             </div>
@@ -754,10 +745,7 @@ fn EditTeamDialog(
                                         id="edit-team-descr"
                                         type="text"
                                         prop:value=move || descr.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return; };
-                                            set_descr.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_descr)
                                     />
                                 </div>
                             </div>

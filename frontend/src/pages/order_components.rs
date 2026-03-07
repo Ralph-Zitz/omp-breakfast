@@ -1,6 +1,7 @@
 use crate::api::{ItemEntry, OrderItemEntry, TeamOrderEntry, UsersInTeam};
 use crate::components::LoadingSpinner;
 use crate::components::icons::{Icon, IconKind};
+use crate::components::input_handler;
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
@@ -288,11 +289,7 @@ pub fn OrderDetail(
                                             type="number"
                                             min="1"
                                             prop:value=move || add_qty.get()
-                                            on:input=move |ev| {
-                                                let Some(target) = ev.target() else { return; };
-                                                let Some(input) = target.dyn_ref::<web_sys::HtmlInputElement>() else { return; };
-                                                set_add_qty.set(input.value());
-                                            }
+                                            on:input=input_handler(set_add_qty)
                                         />
                                     </div>
                                 </div>

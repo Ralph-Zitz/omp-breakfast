@@ -3,9 +3,8 @@ use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::{ConfirmModal, FormDialog};
 use crate::components::toast::{toast_error, toast_success};
-use crate::components::{LoadingSpinner, PaginationBar, role_tag_class};
+use crate::components::{LoadingSpinner, PaginationBar, input_handler, role_tag_class};
 use leptos::prelude::*;
-use web_sys::wasm_bindgen::JsCast;
 
 #[component]
 pub fn RolesPage() -> impl IntoView {
@@ -289,10 +288,7 @@ fn CreateRoleDialog(
                         type="text"
                         placeholder="e.g., Coordinator"
                         prop:value=move || title.get()
-                        on:input=move |ev| {
-                            let Some(target) = ev.target() else { return };
-                            set_title.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                        }
+                        on:input=input_handler(set_title)
                     />
                 </div>
             </div>
@@ -336,10 +332,7 @@ fn EditRoleDialog(
                         id="edit-role-title"
                         type="text"
                         prop:value=move || title.get()
-                        on:input=move |ev| {
-                            let Some(target) = ev.target() else { return };
-                            set_title.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                        }
+                        on:input=input_handler(set_title)
                     />
                 </div>
             </div>

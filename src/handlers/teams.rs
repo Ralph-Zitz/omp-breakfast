@@ -6,7 +6,7 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path, web::Query,
+    HttpRequest, HttpResponse, Responder, web::Data, web::Json, web::Path, web::Query,
 };
 use chrono::Utc;
 use deadpool_postgres::Client;
@@ -82,11 +82,12 @@ pub async fn create_team(
     let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
     let team = db::create_team(&client, json.into_inner()).await?;
-    let mut response = HttpResponse::Created();
-    if let Ok(url) = req.url_for("/teams/team_id", [team.team_id.to_string()]) {
-        response.append_header((header::LOCATION, url.as_str().to_owned()));
-    }
-    Ok(response.json(team))
+    Ok(created_with_location(
+        &req,
+        &team,
+        "/teams/team_id",
+        &[team.team_id.to_string()],
+    ))
 }
 
 #[utoipa::path(
@@ -115,14 +116,7 @@ pub async fn delete_team(
     require_admin(&client, &req).await?;
 
     // Guard against silent cascade deletion of order history
-    let order_count: i64 = client
-        .query_one(
-            "select count(*) as cnt from teamorders where teamorders_team_id = $1",
-            &[&team_id],
-        )
-        .await
-        .map_err(Error::Db)?
-        .get("cnt");
+    let order_count = db::count_team_orders(&client, team_id).await?;
     if order_count > 0 {
         return Err(Error::Conflict(format!(
             "Cannot delete team — it has {order_count} order(s). Delete the orders first."
@@ -130,11 +124,7 @@ pub async fn delete_team(
     }
 
     let deleted = db::delete_team(&client, team_id).await?;
-    if deleted {
-        Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
-    } else {
-        Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
-    }
+    Ok(delete_response(deleted))
 }
 
 #[utoipa::path(
@@ -302,14 +292,12 @@ pub async fn create_team_order(
     }
 
     let order = db::create_team_order(&client, tid, user_id, json.into_inner()).await?;
-    let mut response = HttpResponse::Created();
-    if let Ok(url) = req.url_for(
+    Ok(created_with_location(
+        &req,
+        &order,
         "/teams/team_id/order_id",
-        [tid.to_string(), order.teamorders_id.to_string()],
-    ) {
-        response.append_header((header::LOCATION, url.as_str().to_owned()));
-    }
-    Ok(response.json(order))
+        &[tid.to_string(), order.teamorders_id.to_string()],
+    ))
 }
 
 #[utoipa::path(
@@ -339,11 +327,7 @@ pub async fn delete_team_order(
     let order = db::get_team_order(&client, team_id, order_id).await?;
     require_order_owner_or_team_admin(&client, &req, team_id, order.teamorders_user_id).await?;
     let deleted = db::delete_team_order(&client, team_id, order_id).await?;
-    if deleted {
-        Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
-    } else {
-        Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
-    }
+    Ok(delete_response(deleted))
 }
 
 #[utoipa::path(
@@ -496,14 +480,12 @@ pub async fn add_team_member(
     guard_admin_role_assignment(&client, &req, member.role_id).await?;
 
     let result = db::add_team_member(&mut client, tid, member.user_id, member.role_id).await?;
-    let mut response = HttpResponse::Created();
-    if let Ok(url) = req.url_for(
+    Ok(created_with_location(
+        &req,
+        &result,
         "/teams/team_id/users/user_id",
-        [tid.to_string(), member.user_id.to_string()],
-    ) {
-        response.append_header((header::LOCATION, url.as_str().to_owned()));
-    }
-    Ok(response.json(result))
+        &[tid.to_string(), member.user_id.to_string()],
+    ))
 }
 
 #[utoipa::path(
@@ -533,11 +515,7 @@ pub async fn remove_team_member(
     guard_admin_demotion(&client, &req, user_id).await?;
     guard_last_admin_membership(&client, team_id, user_id).await?;
     let deleted = db::remove_team_member(&client, team_id, user_id).await?;
-    if deleted {
-        Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
-    } else {
-        Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
-    }
+    Ok(delete_response(deleted))
 }
 
 #[utoipa::path(

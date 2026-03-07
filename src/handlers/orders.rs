@@ -6,7 +6,7 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path, web::Query,
+    HttpRequest, HttpResponse, Responder, web::Data, web::Json, web::Path, web::Query,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -99,18 +99,16 @@ pub async fn create_order_item(
     let mut client: Client = get_client(&state.pool).await?;
     require_team_member(&client, &req, team_id).await?;
     let order = db::create_order_item(&mut client, order_id, team_id, json.into_inner()).await?;
-    let mut response = HttpResponse::Created();
-    if let Ok(url) = req.url_for(
+    Ok(created_with_location(
+        &req,
+        &order,
         "/teams/team_id/orders/order_id/items/item_id",
-        [
+        &[
             team_id.to_string(),
             order_id.to_string(),
             order.orders_item_id.to_string(),
         ],
-    ) {
-        response.append_header((header::LOCATION, url.as_str().to_owned()));
-    }
-    Ok(response.json(order))
+    ))
 }
 
 #[utoipa::path(
@@ -175,9 +173,5 @@ pub async fn delete_order_item(
     let order = db::get_team_order(&client, team_id, order_id).await?;
     require_order_owner_or_team_admin(&client, &req, team_id, order.teamorders_user_id).await?;
     let deleted = db::delete_order_item(&mut client, order_id, item_id, team_id).await?;
-    if deleted {
-        Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
-    } else {
-        Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
-    }
+    Ok(delete_response(deleted))
 }

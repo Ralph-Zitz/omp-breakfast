@@ -3,8 +3,8 @@ use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::role_tag_class;
 use crate::components::toast::{toast_error, toast_success};
+use crate::components::input_handler;
 use leptos::prelude::*;
-use web_sys::wasm_bindgen::JsCast;
 
 /// Build the avatar image URL for a given avatar_id.
 fn avatar_url(id: &str) -> String {
@@ -206,10 +206,7 @@ pub fn ProfilePage() -> impl IntoView {
                                         id="profile-fn"
                                         type="text"
                                         prop:value=move || firstname.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_firstname.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_firstname)
                                     />
                                 </div>
                             </div>
@@ -225,10 +222,7 @@ pub fn ProfilePage() -> impl IntoView {
                                         type="text"
                                         maxlength=50
                                         prop:value=move || lastname.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_lastname.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_lastname)
                                     />
                                 </div>
                             </div>
@@ -244,10 +238,7 @@ pub fn ProfilePage() -> impl IntoView {
                                         type="email"
                                         maxlength=255
                                         prop:value=move || email.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_email.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_email)
                                     />
                                 </div>
                             </div>
@@ -265,10 +256,7 @@ pub fn ProfilePage() -> impl IntoView {
                                         autocomplete="new-password"
                                         placeholder="••••••••"
                                         prop:value=move || password.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return };
-                                            set_password.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_password)
                                     />
                                 </div>
                             </div>
@@ -290,10 +278,7 @@ pub fn ProfilePage() -> impl IntoView {
                                                 placeholder="••••••••"
                                                 required=true
                                                 prop:value=move || current_password.get()
-                                                on:input=move |ev| {
-                                                    let Some(target) = ev.target() else { return };
-                                                    set_current_password.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                                }
+                                                on:input=input_handler(set_current_password)
                                             />
                                         </div>
                                     </div>

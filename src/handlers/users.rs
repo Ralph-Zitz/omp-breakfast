@@ -10,7 +10,7 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path, web::Query,
+    HttpRequest, HttpResponse, Responder, web::Data, web::Json, web::Path, web::Query,
 };
 use actix_web_httpauth::extractors::basic::BasicAuth;
 use argon2::password_hash::PasswordVerifier;
@@ -256,11 +256,12 @@ pub async fn create_user(
     require_admin_or_team_admin(&client, &req).await?;
 
     let user = db::create_user(&client, json.into_inner()).await?;
-    let mut response = HttpResponse::Created();
-    if let Ok(url) = req.url_for("/users/user_id", [user.user_id.to_string()]) {
-        response.append_header((header::LOCATION, url.as_str().to_owned()));
-    }
-    Ok(response.json(user))
+    Ok(created_with_location(
+        &req,
+        &user,
+        "/users/user_id",
+        &[user.user_id.to_string()],
+    ))
 }
 
 #[utoipa::path(
@@ -309,10 +310,8 @@ pub async fn delete_user(
         if let Some(email) = user_email {
             let _ = invalidate_cache(state.clone(), &email);
         }
-        Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
-    } else {
-        Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
     }
+    Ok(delete_response(deleted))
 }
 
 #[utoipa::path(
@@ -372,10 +371,8 @@ pub async fn delete_user_by_email(
     if deleted {
         // Invalidate the auth cache so the deleted user cannot authenticate
         let _ = invalidate_cache(state.clone(), &email);
-        Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
-    } else {
-        Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
     }
+    Ok(delete_response(deleted))
 }
 
 #[utoipa::path(

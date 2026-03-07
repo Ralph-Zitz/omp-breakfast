@@ -5,9 +5,8 @@ use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::ConfirmModal;
 use crate::components::toast::{toast_error, toast_success};
-use crate::components::{LoadingSpinner, PaginationBar};
+use crate::components::{LoadingSpinner, PaginationBar, input_handler};
 use leptos::prelude::*;
-use web_sys::wasm_bindgen::JsCast;
 
 /// Returns true if the price string is a valid non-negative decimal number.
 fn is_valid_price(s: &str) -> bool {
@@ -309,10 +308,7 @@ fn CreateItemDialog(
                                         type="text"
                                         placeholder="Item name"
                                         prop:value=move || descr.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return; };
-                                            set_descr.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_descr)
                                     />
                                 </div>
                             </div>
@@ -328,10 +324,7 @@ fn CreateItemDialog(
                                         placeholder="0.00"
                                         inputmode="decimal"
                                         prop:value=move || price.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return; };
-                                            set_price.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_price)
                                     />
                                 </div>
                                 {move || {
@@ -420,10 +413,7 @@ fn EditItemDialog(
                                         id="edit-item-descr"
                                         type="text"
                                         prop:value=move || descr.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return; };
-                                            set_descr.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_descr)
                                     />
                                 </div>
                             </div>
@@ -438,10 +428,7 @@ fn EditItemDialog(
                                         type="text"
                                         inputmode="decimal"
                                         prop:value=move || price.get()
-                                        on:input=move |ev| {
-                                            let Some(target) = ev.target() else { return; };
-                                            set_price.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
-                                        }
+                                        on:input=input_handler(set_price)
                                     />
                                 </div>
                                 {move || {

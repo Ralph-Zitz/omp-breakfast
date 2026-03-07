@@ -6,7 +6,7 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path, web::Query,
+    HttpRequest, HttpResponse, Responder, web::Data, web::Json, web::Path, web::Query,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -80,11 +80,12 @@ pub async fn create_item(
     let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
     let item = db::create_item(&client, json.into_inner()).await?;
-    let mut response = HttpResponse::Created();
-    if let Ok(url) = req.url_for("/items/item_id", [item.item_id.to_string()]) {
-        response.append_header((header::LOCATION, url.as_str().to_owned()));
-    }
-    Ok(response.json(item))
+    Ok(created_with_location(
+        &req,
+        &item,
+        "/items/item_id",
+        &[item.item_id.to_string()],
+    ))
 }
 
 #[utoipa::path(
@@ -110,11 +111,7 @@ pub async fn delete_item(
     let client: Client = get_client(&state.pool).await?;
     require_admin(&client, &req).await?;
     let deleted = db::delete_item(&client, path.into_inner()).await?;
-    if deleted {
-        Ok(HttpResponse::Ok().json(DeletedResponse { deleted }))
-    } else {
-        Ok(HttpResponse::NotFound().json(DeletedResponse { deleted }))
-    }
+    Ok(delete_response(deleted))
 }
 
 #[utoipa::path(
