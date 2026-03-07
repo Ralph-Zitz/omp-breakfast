@@ -114,7 +114,7 @@ The application uses [Refinery](https://github.com/rust-db/refinery) for schema 
 
 **Production:** The application runs pending migrations automatically at startup. No seed data is inserted. The first user to register via the login page becomes the global Admin.
 
-**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all twelve migrations and creates the Refinery tracking table. On first startup, the application's migration runner detects the migrations are already applied and continues normally. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
+**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies the idempotent migrations (V1–V9) and creates the Refinery tracking table. On first startup, the application's migration runner re-applies V1–V9 (safe — idempotent), records them, then applies V10–V12 for the first time. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
 
 **Manual database reset (development only):**
 

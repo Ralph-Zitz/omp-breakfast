@@ -12,14 +12,16 @@
 # 7. Run the V7 migration SQL to drop redundant indexes
 # 8. Run the V8 migration SQL for avatars table and users.avatar_id
 # 9. Run the V9 migration SQL for avatar index and revoked_at NOT NULL
-# 10. Run the V10 migration SQL to guard teamorders_team_id with trigger
-# 11. Run the V11 migration SQL for CHECK constraints on text column lengths
-# 12. Run the V12 migration SQL to drop unused index and add NOT NULL
-# 13. Create the refinery_schema_history table (empty — no rows inserted)
+# 10. Create the refinery_schema_history table (empty — no rows inserted)
+#
+# Migrations V10–V12 are NOT run here because they contain non-idempotent
+# DDL (e.g. ADD CONSTRAINT) that fails on re-run. Refinery handles them
+# automatically on first application startup.
 #
 # On first start the application's refinery migration runner will detect
-# that V1–V12 are "unapplied", re-run them (safe — the SQL is fully
+# that V1–V9 are "unapplied", re-run them (safe — the SQL is fully
 # idempotent), and record them with correct checksums and timestamps.
+# It will then apply V10–V12 for the first time.
 # ═══════════════════════════════════════════════════════════════════════════
 
 set -e  # Exit on error
@@ -51,18 +53,9 @@ PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V8__avata
 echo "==> Running V9 migration (avatar index + revoked_at NOT NULL)..."
 PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V9__avatar_index_and_revoked_not_null.sql
 
-echo "==> Running V10 migration (guard teamorders_team_id)..."
-PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V10__guard_teamorders_team_id.sql
-
-echo "==> Running V11 migration (text column CHECK constraints)..."
-PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V11__text_column_check_constraints.sql
-
-echo "==> Running V12 migration (drop unused index, NOT NULL on orders_team_id)..."
-PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix < /migrations/V12__cleanup_index_and_constraints.sql
-
 echo "==> Creating refinery migration tracking table..."
 # The table is created here so the app's migration runner sees it on first
-# start.  We do NOT insert rows — refinery will detect that V1–V12 are
+# start.  We do NOT insert rows — refinery will detect that V1–V9 are
 # "unapplied", re-run them (safe because the SQL is idempotent), and record
 # them with correct checksums and timestamps.
 PGPASSWORD=actix psql -h postgres -p 5432 -U actix actix <<-EOSQL
