@@ -7,21 +7,21 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Stage 1 - generate recipe file
-FROM rust:1.93.1 AS planner
+FROM rust:1.94.0 AS planner
 WORKDIR /app
 RUN cargo install cargo-chef
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 # Stage 2 - build dependencies
-FROM rust:1.93.1 AS cacher
+FROM rust:1.94.0 AS cacher
 WORKDIR /app
 RUN cargo install cargo-chef
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
 # Stage 3 - build app with dependencies
-FROM rust:1.93.1 AS builder
+FROM rust:1.94.0 AS builder
 ENV PKG_CONFIG_ALLOW_CROSS=1
 ENV USER=web
 ENV UID=1001
@@ -48,7 +48,7 @@ RUN cargo build --release \
     && strip -s /app/target/release/healthcheck
 
 # Stage 4 - build frontend (WASM via Trunk)
-FROM rust:1.93.1 AS frontend-builder
+FROM rust:1.94.0 AS frontend-builder
 RUN rustup target add wasm32-unknown-unknown && cargo install trunk
 WORKDIR /frontend
 # Copy only the frontend crate for better layer caching
