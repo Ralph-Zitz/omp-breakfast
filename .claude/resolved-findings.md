@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-10
+Last updated: 2026-03-14
 
 ## Critical Items
 
@@ -677,6 +677,20 @@ Last updated: 2026-03-10
   - Files: `tests/api_tests.rs`, `tests/db_tests.rs`
   - Resolution: Added 7 API integration tests (get_avatars_returns_list, get_avatars_requires_auth, get_avatar_not_found, set_avatar_nonexistent_avatar_returns_404, set_avatar_requires_self_or_admin, remove_avatar_nonexistent_user_returns_404, remove_avatar_succeeds_for_self) and 3 DB integration tests (get_avatar_nonexistent_returns_error, set_user_avatar_nonexistent_user_returns_error, insert_avatar_duplicate_name_is_idempotent). All tests are idempotent and self-contained.
   - Source commands: `test-gaps`
+
+### Concurrency — TOCTOU Race in `remove_team_member`
+
+- [x] **#643 — TOCTOU race in last-admin guard for `remove_team_member`**
+  - File: `src/handlers/teams.rs`, `src/db/membership.rs`
+  - Resolution: Changed `remove_team_member` DB function to accept `&mut Client`, wrapping the guard check + DELETE in a single transaction with `SELECT ... FOR UPDATE` on the memberof row. Updated handler to use `let mut client`. Updated test call sites to pass `&mut client`.
+  - Source commands: `db-review`, `review`
+
+### Security — JSON Body Size Limit on `/auth/refresh`
+
+- [x] **#644 — No JSON body size limit on `/auth/refresh` endpoint**
+  - File: `src/routes.rs`
+  - Resolution: Added `.app_data(JsonConfig::default().limit(65_536).error_handler(json_error_handler))` to the `/auth/refresh` resource, matching `/auth/register` and `/auth/revoke`.
+  - Source commands: `security-audit`
 
 ## Minor Items
 
@@ -1853,6 +1867,76 @@ Last updated: 2026-03-10
   - File: `tests/api_tests.rs`
   - Resolution: Tests already existed: `create_order_with_non_member_pickup_returns_422`, `member_cannot_change_assigned_pickup_user`, `member_can_set_pickup_when_unassigned`.
   - Source commands: `test-gaps`
+
+### Documentation — CLAUDE.md Project Structure
+
+- [x] **#645 — CLAUDE.md project structure lists old monolithic test files**
+  - File: `CLAUDE.md`
+  - Resolution: Updated project structure tree to list all 17 actual split backend test files (`tests/api_auth.rs` through `tests/db_users.rs` plus `tests/common/`) and 8 frontend test files (`frontend/tests/ui_admin_dialogs.rs` through `frontend/tests/ui_theme.rs`).
+  - Source commands: `cross-ref-check`, `practices-audit`
+
+- [x] **#646 — CLAUDE.md test counts drifted (238→240 unit, 167→168 API)**
+  - File: `CLAUDE.md`
+  - Resolution: Updated to "240 unit tests" and "168 API integration tests". Changed file references from monolithic names to glob patterns.
+  - Source commands: `cross-ref-check`, `practices-audit`
+
+- [x] **#647 — CLAUDE.md `db/orders.rs` function list missing `count_team_orders`**
+  - File: `CLAUDE.md`
+  - Resolution: Added `count_team_orders` to the `db/orders.rs` function list.
+  - Source commands: `cross-ref-check`
+
+- [x] **#648 — CLAUDE.md `handlers/mod.rs` description missing `created_with_location`, `delete_response`**
+  - File: `CLAUDE.md`
+  - Resolution: Added both response helper functions to the handlers/mod.rs description.
+  - Source commands: `cross-ref-check`
+
+### Documentation — Command Files
+
+- [x] **#649 — `db-review.md` references deleted `database.sql` and has stale `init_dev_db.sh` description**
+  - File: `.claude/commands/db-review.md`
+  - Resolution: Removed `database.sql` reference; updated `init_dev_db.sh` description to "Test database initialization script used by postgres-setup in docker-compose.test.yml".
+  - Source commands: `cross-ref-check`
+
+- [x] **#650 — `test-gaps.md` references old monolithic test file names**
+  - File: `.claude/commands/test-gaps.md`
+  - Resolution: Updated references from `frontend/tests/ui_tests.rs` → `frontend/tests/ui_*.rs` and `tests/api_tests.rs` → `tests/api_*.rs`.
+  - Source commands: `cross-ref-check`
+
+### Frontend Bugs
+
+- [x] **#651 — `connect-button--danger` on Remove Avatar button (should be `--negative`)**
+  - File: `frontend/src/pages/profile.rs`
+  - Resolution: Changed `connect-button--danger` to `connect-button--negative` to match the CONNECT design system class naming.
+  - Source commands: `review`
+
+- [x] **#652 — Missing `maxlength=50` on first name input in profile edit form**
+  - File: `frontend/src/pages/profile.rs`
+  - Resolution: Added `maxlength=50` to the first name `<input>` element, matching the last name input and backend validation.
+  - Source commands: `review`
+
+- [x] **#653 — `is_valid_price` accepts scientific notation and negative values**
+  - File: `frontend/src/pages/items.rs`
+  - Resolution: Rewrote `is_valid_price` with strict byte-level validation: only ASCII digits + optional single decimal point, max 2 fractional digits, max 13 chars. Rejects scientific notation, negative signs, and empty strings.
+  - Source commands: `review`
+
+### Backend Consistency
+
+- [x] **#654 — `count_avatars` skips prepared statement**
+  - File: `src/db/avatars.rs`
+  - Resolution: Changed to use `client.prepare()` before `query_one()`, matching every other DB function.
+  - Source commands: `db-review`
+
+- [x] **#655 — `validate_non_negative_price` function name is misleading**
+  - File: `src/models.rs`
+  - Resolution: Renamed to `validate_positive_price` — function definition, both `#[validate]` annotations on `CreateItemEntry`/`UpdateItemEntry`, and 3 related unit tests.
+  - Source commands: `review`, `practices-audit`
+
+### Frontend — Unused Component Prop
+
+- [x] **#656 — Unused `is_admin` prop in `OrderDetail` component**
+  - File: `frontend/src/pages/order_components.rs`, `frontend/src/pages/orders.rs`
+  - Resolution: Removed `is_admin: Signal<bool>` prop from `OrderDetail` component and removed `is_admin=is_admin` from the caller in `orders.rs`.
+  - Source commands: `review`
 
 ## Informational Items
 
@@ -3413,6 +3497,6 @@ Last updated: 2026-03-10
 
 ## Notes
 
-- Total resolved items: 462 (6 critical, 47 important, 134 minor, 173 informational, plus items previously counted under different categories)
+- Total resolved items: 476 (6 critical, 49 important, 146 minor, 173 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

@@ -69,6 +69,11 @@ pub fn routes(cfg: &mut ServiceConfig) {
             .name("auth_refresh")
             .wrap(Governor::new(&auth_rate_limit))
             .wrap(Compat::new(refresh_auth))
+            .app_data(
+                JsonConfig::default()
+                    .limit(65_536)
+                    .error_handler(json_error_handler),
+            )
             .route(post().to(refresh_token)),
     )
     .service(

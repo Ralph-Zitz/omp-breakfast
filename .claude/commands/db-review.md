@@ -11,12 +11,11 @@ You are a database engineer reviewing a PostgreSQL-backed Rust application. The 
 The application uses different initialization strategies:
 
 - **Schema:** `migrations/` directory — all Refinery migration files (V1 initial schema, V2 UUID v7 defaults, V3 indexes/constraints, V4 schema hardening, V5 trigger/NOT NULL fixes, V6 order constraint/index, V7 drop redundant indexes, V8 avatars, V9 avatar index/revoked NOT NULL, and any newer migrations)
-- **Manual reset (deprecated):** `database.sql` - Full DROP/CREATE script, kept for manual dev resets only
-- **Initialization:** `init_dev_db.sh` - Docker Compose init script: runs idempotent migrations (V1–V9) via psql, creates refinery tracking table; Refinery applies V10+ on first app startup
+- **Initialization:** `init_dev_db.sh` — Test database initialization script used by `postgres-setup` in `docker-compose.test.yml`; auto-discovers and applies all migration files from `migrations/`
 - **First-user bootstrap:** `POST /auth/register` creates the first user, seeds default roles, creates a "Default" team, and assigns the user as Admin
 
 **Production:** Application runs migrations at startup via `src/db/migrate.rs`
-**Development:** docker-compose runs `init_dev_db.sh` which applies migrations; the first user registers via the login page
+**Development:** docker-compose starts Postgres; the breakfast app runs Refinery migrations on startup; the first user registers via the login page
 
 ### Schema review (`migrations/`)
 
@@ -60,4 +59,4 @@ Read the following files:
 - `src/db/` - All database query modules
 - `src/db/migrate.rs` - Migration runner
 
-Reference `src/models.rs` for struct-to-table alignment. The `database.sql` file is deprecated and should not be used as the source of truth for schema review. Do NOT modify any files — this is analysis only.
+Reference `src/models.rs` for struct-to-table alignment. Do NOT modify any files — this is analysis only.

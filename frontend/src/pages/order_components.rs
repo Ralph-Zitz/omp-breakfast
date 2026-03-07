@@ -11,7 +11,6 @@ pub fn OrderDetail(
     items: ReadSignal<Vec<OrderItemEntry>>,
     catalog: ReadSignal<Vec<ItemEntry>>,
     loading: ReadSignal<bool>,
-    #[allow(unused)] is_admin: Signal<bool>,
     team_members: ReadSignal<Vec<UsersInTeam>>,
     on_add_item: impl Fn(String, i32) + 'static + Clone + Send,
     on_update_item: impl Fn(String, i32) + 'static + Clone + Send,

@@ -510,11 +510,11 @@ pub async fn remove_team_member(
     req: HttpRequest,
 ) -> Result<impl Responder, Error> {
     let (team_id, user_id) = path.into_inner();
-    let client: Client = get_client(&state.pool).await?;
+    let mut client: Client = get_client(&state.pool).await?;
     require_team_admin(&client, &req, team_id).await?;
     guard_admin_demotion(&client, &req, user_id).await?;
     guard_last_admin_membership(&client, team_id, user_id).await?;
-    let deleted = db::remove_team_member(&client, team_id, user_id).await?;
+    let deleted = db::remove_team_member(&mut client, team_id, user_id).await?;
     Ok(delete_response(deleted))
 }
 

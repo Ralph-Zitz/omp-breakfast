@@ -21,7 +21,7 @@ You are a QA engineer specializing in Rust. Examine the entire codebase — back
 
 ### Analysis steps — Frontend (Leptos WASM)
 
-1. **Inventory existing WASM tests** — List all test functions in `frontend/tests/ui_tests.rs` and what they cover
+1. **Inventory existing WASM tests** — List all test functions in `frontend/tests/ui_*.rs` and what they cover
 2. **Map frontend code paths** — For each component and function in `frontend/src/` (`api.rs`, `app.rs`, `components/`, `pages/`), determine whether it has test coverage
 3. **Identify frontend gaps** — Focus on:
    - **Component rendering** — Are all components tested for correct HTML output?
@@ -43,11 +43,11 @@ Provide:
 
 ### Integration tests
 
-Integration tests in `tests/api_tests.rs` can now be run via `make test-integration`. This spins up a test Postgres on port 5433 using `docker-compose.test.yml`. When suggesting new integration tests, follow the existing pattern using `test_state()` (which reads `TEST_DB_PORT` env var) and mark them `#[ignore]`.
+Integration tests in `tests/api_*.rs` can now be run via `make test-integration`. This spins up a test Postgres on port 5433 using `docker-compose.test.yml`. When suggesting new integration tests, follow the existing pattern using `test_state()` (which reads `TEST_DB_PORT` env var) and mark them `#[ignore]`.
 
 ### Frontend tests
 
-Frontend WASM tests in `frontend/tests/ui_tests.rs` run via `make test-frontend` (uses `wasm-pack test --headless --chrome`). When suggesting new WASM tests, follow the existing patterns:
+Frontend WASM tests in `frontend/tests/ui_*.rs` run via `make test-frontend` (uses `wasm-pack test --headless --chrome`). When suggesting new WASM tests, follow the existing patterns:
 
 - Use `wasm_bindgen_test::wasm_bindgen_test` attribute
 - Mount components by appending to `document().body()`

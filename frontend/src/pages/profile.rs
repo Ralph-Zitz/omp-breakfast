@@ -205,6 +205,7 @@ pub fn ProfilePage() -> impl IntoView {
                                         class="connect-text-field__input"
                                         id="profile-fn"
                                         type="text"
+                                        maxlength=50
                                         prop:value=move || firstname.get()
                                         on:input=input_handler(set_firstname)
                                     />
@@ -472,7 +473,7 @@ pub fn ProfilePage() -> impl IntoView {
                                 view! {
                                     <div class="modal-footer">
                                         <button
-                                            class="connect-button connect-button--danger connect-button--outline connect-button--small"
+                                            class="connect-button connect-button--negative connect-button--outline connect-button--small"
                                             on:click=move |_| remove_avatar()
                                         >
                                             <span class="connect-button__content">

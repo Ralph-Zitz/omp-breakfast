@@ -59,10 +59,12 @@ pub async fn insert_avatar(
 
 /// Returns the number of avatars in the database.
 pub async fn count_avatars(client: &Client) -> Result<i64, Error> {
-    let row = client
-        .query_one("select count(*) as cnt from avatars", &[])
+    let statement = client
+        .prepare("select count(*) as cnt from avatars")
         .await
         .map_err(Error::Db)?;
+
+    let row = client.query_one(&statement, &[]).await.map_err(Error::Db)?;
 
     row.try_get::<_, i64>("cnt").map_err(Error::Db)
 }

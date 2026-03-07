@@ -525,7 +525,6 @@ pub fn OrdersPage() -> impl IntoView {
                                 items=order_items
                                 catalog=catalog_items
                                 loading=loading_items
-                                is_admin=is_admin
                                 team_members=team_members
                                 on_add_item=do_add_item
                                 on_update_item=do_update_item

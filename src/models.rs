@@ -351,7 +351,7 @@ pub struct CreateItemEntry {
         message = "descr is required and must be between 1 and 255 characters"
     ))]
     pub descr: String,
-    #[validate(custom(function = "validate_non_negative_price"))]
+    #[validate(custom(function = "validate_positive_price"))]
     pub price: rust_decimal::Decimal,
 }
 
@@ -363,11 +363,11 @@ pub struct UpdateItemEntry {
         message = "descr is required and must be between 1 and 255 characters"
     ))]
     pub descr: String,
-    #[validate(custom(function = "validate_non_negative_price"))]
+    #[validate(custom(function = "validate_positive_price"))]
     pub price: rust_decimal::Decimal,
 }
 
-fn validate_non_negative_price(
+fn validate_positive_price(
     price: &rust_decimal::Decimal,
 ) -> Result<(), validator::ValidationError> {
     if *price <= rust_decimal::Decimal::ZERO {
@@ -595,12 +595,12 @@ mod tests {
         assert!(entry.validate().is_ok());
     }
 
-    // ── validate_non_negative_price (#352) ───────────────────────────────────
+    // ── validate_positive_price (#352) ────────────────────────────────────
 
     #[test]
-    fn validate_non_negative_price_rejects_negative() {
+    fn validate_positive_price_rejects_negative() {
         let price = rust_decimal::Decimal::new(-100, 2); // -1.00
-        let err = validate_non_negative_price(&price).unwrap_err();
+        let err = validate_positive_price(&price).unwrap_err();
         assert_eq!(err.code, "price");
         assert!(
             err.message
@@ -611,9 +611,9 @@ mod tests {
     }
 
     #[test]
-    fn validate_non_negative_price_rejects_zero() {
+    fn validate_positive_price_rejects_zero() {
         let price = rust_decimal::Decimal::ZERO;
-        let err = validate_non_negative_price(&price).unwrap_err();
+        let err = validate_positive_price(&price).unwrap_err();
         assert_eq!(err.code, "price");
         assert!(
             err.message
@@ -624,9 +624,9 @@ mod tests {
     }
 
     #[test]
-    fn validate_non_negative_price_accepts_positive() {
+    fn validate_positive_price_accepts_positive() {
         let price = rust_decimal::Decimal::new(999, 2); // 9.99
-        assert!(validate_non_negative_price(&price).is_ok());
+        assert!(validate_positive_price(&price).is_ok());
     }
 
     // ── CreateUserEntry boundary tests (#353) ────────────────────────────────

@@ -443,12 +443,12 @@ async fn remove_team_member_returns_true_then_false() {
         .await
         .unwrap();
 
-    let removed = db::remove_team_member(&client, team.team_id, user.user_id)
+    let removed = db::remove_team_member(&mut client, team.team_id, user.user_id)
         .await
         .unwrap();
     assert!(removed);
 
-    let removed_again = db::remove_team_member(&client, team.team_id, user.user_id)
+    let removed_again = db::remove_team_member(&mut client, team.team_id, user.user_id)
         .await
         .unwrap();
     assert!(!removed_again);

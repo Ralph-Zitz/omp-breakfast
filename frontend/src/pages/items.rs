@@ -8,14 +8,23 @@ use crate::components::toast::{toast_error, toast_success};
 use crate::components::{LoadingSpinner, PaginationBar, input_handler};
 use leptos::prelude::*;
 
-/// Returns true if the price string is a valid non-negative decimal number.
+/// Returns true if the price string is a valid positive decimal number
+/// (digits with an optional decimal point, up to 2 decimal places).
 fn is_valid_price(s: &str) -> bool {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return false;
     }
-    // Allow digits with an optional single decimal point
-    trimmed.parse::<f64>().is_ok_and(|v| v >= 0.0 && v.is_finite())
+    // Match digits with an optional single decimal point and up to 2 fractional digits.
+    // Rejects scientific notation, negative signs, and other non-decimal formats.
+    trimmed.len() <= 13
+        && trimmed
+            .bytes()
+            .all(|b| b.is_ascii_digit() || b == b'.')
+        && trimmed.matches('.').count() <= 1
+        && trimmed
+            .find('.')
+            .map_or(true, |dot| trimmed.len() - dot - 1 <= 2 && dot > 0)
 }
 
 #[component]

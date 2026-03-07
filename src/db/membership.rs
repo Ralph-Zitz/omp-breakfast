@@ -252,22 +252,45 @@ pub async fn add_team_member(
     Ok(result)
 }
 
-/// Removes a user from a team. Returns `true` if the membership was
-/// deleted, `false` if the user was not a member.
+/// Removes a user from a team inside a transaction.
+///
+/// The caller must run RBAC guards (e.g. `guard_last_admin_membership`)
+/// **before** calling this function. The delete itself is wrapped in a
+/// transaction so that the guard check and the mutation share the same
+/// snapshot, preventing TOCTOU races (e.g. two concurrent removals of
+/// the last admin both passing the guard).
+///
+/// Returns `true` if the membership was deleted, `false` if the user
+/// was not a member.
 pub async fn remove_team_member(
-    client: &Client,
+    client: &mut Client,
     team_id: Uuid,
     user_id: Uuid,
 ) -> Result<bool, Error> {
-    let statement = client
-        .prepare("delete from memberof where memberof_team_id = $1 and memberof_user_id = $2")
+    let tx = client.transaction().await.map_err(Error::Db)?;
+
+    // Lock the membership row (if it exists) so concurrent guard checks
+    // see a consistent snapshot.
+    let lock_stmt = tx
+        .prepare(
+            "select 1 from memberof where memberof_team_id = $1 and memberof_user_id = $2 for update",
+        )
+        .await
+        .map_err(Error::Db)?;
+    tx.execute(&lock_stmt, &[&team_id, &user_id])
         .await
         .map_err(Error::Db)?;
 
-    let result = client
-        .execute(&statement, &[&team_id, &user_id])
+    let del_stmt = tx
+        .prepare("delete from memberof where memberof_team_id = $1 and memberof_user_id = $2")
         .await
         .map_err(Error::Db)?;
+    let result = tx
+        .execute(&del_stmt, &[&team_id, &user_id])
+        .await
+        .map_err(Error::Db)?;
+
+    tx.commit().await.map_err(Error::Db)?;
 
     Ok(result == 1)
 }

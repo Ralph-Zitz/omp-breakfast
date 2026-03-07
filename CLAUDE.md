@@ -62,7 +62,7 @@ src/
     teams.rs       – Team CRUD + user-team queries (get_teams, get_team, create_team, update_team, delete_team, get_user_teams, get_team_users)
     roles.rs       – Role CRUD + bootstrap (get_roles, get_role, create_role, update_role, delete_role, seed_default_roles)
     items.rs       – Item CRUD (get_items, get_item, create_item, update_item, delete_item)
-    orders.rs      – Team order CRUD (get_team_orders, get_team_order, create_team_order, update_team_order, delete_team_order, delete_team_orders, reopen_team_order)
+    orders.rs      – Team order CRUD (get_team_orders, get_team_order, create_team_order, update_team_order, delete_team_order, delete_team_orders, reopen_team_order, count_team_orders)
     order_items.rs – Order item CRUD + closed-order check (is_team_order_closed, get_order_items, get_order_item, create_order_item, update_order_item, delete_order_item, get_order_total)
     membership.rs  – Team membership + RBAC queries (count_admins, is_admin, is_admin_or_team_admin, is_team_admin_of_user, get_member_role, check_team_access, add_team_member, remove_team_member, update_member_role, would_admins_remain_without)
     tokens.rs      – Token blacklist persistence (revoke_token_db, is_token_revoked_db, cleanup_expired_tokens)
@@ -72,7 +72,7 @@ src/
   routes.rs        – All route definitions with auth middleware wiring (includes /auth/register for first-user registration)
   lib.rs           – Module declarations
   handlers/
-    mod.rs         – get_client() utility, health endpoint (with setup_required flag), RBAC helpers (require_admin, require_admin_or_team_admin, require_team_admin, require_team_member, require_order_owner_or_team_admin, require_self_or_admin_or_team_admin, guard_admin_role_assignment, guard_admin_demotion, guard_last_admin_membership, requesting_user_id)
+    mod.rs         – get_client() utility, health endpoint (with setup_required flag), RBAC helpers (require_admin, require_admin_or_team_admin, require_team_admin, require_team_member, require_order_owner_or_team_admin, require_self_or_admin_or_team_admin, guard_admin_role_assignment, guard_admin_demotion, guard_last_admin_membership, requesting_user_id), response helpers (created_with_location, delete_response)
     users.rs       – User CRUD + auth handlers (RBAC: self or admin) + register_first_user (first-user bootstrap)
     teams.rs       – Team CRUD + team order + member management handlers (team RBAC)
     roles.rs       – Role CRUD handlers (admin-gated CUD)
@@ -120,7 +120,14 @@ frontend/
       tokens.css   – Imports CONNECT core tokens + enterprise theme from connect-design-system/
       components.css – Imports all CONNECT component CSS modules from connect-design-system/
   tests/
-    ui_tests.rs    – 79 WASM integration tests (headless Chrome)
+    ui_admin_dialogs.rs – Admin dialog WASM tests (password reset, create/edit user dialogs)
+    ui_helpers.rs      – Shared test utilities (flush, mock fetch, mount helpers)
+    ui_jwt.rs          – JWT decode tests
+    ui_login.rs        – Login page rendering, validation, and flow tests
+    ui_pages.rs        – Page rendering and navigation tests (all pages)
+    ui_session.rs      – Session persistence, restore, and token refresh tests
+    ui_table_styling.rs – Table CSS class and actions column tests
+    ui_theme.rs        – Theme toggle tests
   bundle-css.sh    – Script to bundle CONNECT CSS into style/bundled.css
 connect-design-system/ – Local clone of git@github.com:LEGO/connect-design-system.git (gitignored, read-only asset source)
 config/
@@ -155,15 +162,31 @@ migrations/
   V12__cleanup_index_and_constraints.sql – Drop unused idx_teamorders_id_due, NOT NULL on orders_team_id
   V13__pickup_user.sql – Adds pickup_user_id column to teamorders table (FK to users, partial index)
 tests/
-  api_tests.rs     – API integration tests (ignored without running DB)
-  db_tests.rs      – DB function integration tests (ignored without running DB)
+  common/          – Shared test helpers (setup, state, DB utilities)
+  api_auth.rs      – Auth API integration tests (login, register, refresh, revoke)
+  api_avatars.rs   – Avatar API integration tests
+  api_items.rs     – Item CRUD API integration tests
+  api_misc.rs      – Miscellaneous API tests (health, CORS, errors)
+  api_orders.rs    – Order and order-item API integration tests
+  api_roles.rs     – Role CRUD API integration tests
+  api_teams.rs     – Team and membership API integration tests
+  api_users.rs     – User CRUD API integration tests
+  db_avatars.rs    – Avatar DB function tests
+  db_health.rs     – DB health check tests
+  db_items.rs      – Item DB function tests
+  db_membership.rs – Membership DB function tests
+  db_orders.rs     – Order DB function tests
+  db_roles.rs      – Role DB function tests
+  db_teams.rs      – Team DB function tests
+  db_tokens.rs     – Token blacklist DB function tests
+  db_users.rs      – User DB function tests
 ```
 
 ## Key Conventions
 
 - CORS is enforced via `actix-cors` middleware with an explicit same-origin allowlist (methods: GET/POST/PUT/DELETE/OPTIONS; headers: Authorization, Content-Type, Accept; max-age: 3600s)
 - Every handler returns `Result<impl Responder, Error>` using the custom `errors::Error` enum
-- DB functions take a `&Client` and return `Result<T, Error>`, using `.map_err(Error::Db)?` pattern. Functions that perform multi-step mutations (`add_team_member`, `update_member_role`) take `&mut Client` and wrap operations in a database transaction.
+- DB functions take a `&Client` and return `Result<T, Error>`, using `.map_err(Error::Db)?` pattern. Functions that perform multi-step mutations (`add_team_member`, `update_member_role`, `remove_team_member`) take `&mut Client` and wrap operations in a database transaction.
 - **Update functions must return 404 (not 500) when the target resource does not exist.** Use `query_opt()` + `.ok_or_else(|| Error::NotFound(...))` — never `query_one()`, which maps missing rows to a generic DB error (500). This is a permanent design decision; do not revert to `query_one()` in update functions.
 - All handlers are instrumented with `#[instrument(..., level = "debug")]` — `state` is always skipped; handlers may also skip `req`, `json`, `basic`, `body` as appropriate
 - Validation uses `validate(&json)?` before any DB call
@@ -348,7 +371,7 @@ When asked to **assess the project** (or "project assessment"), perform the foll
 2. **Update the CONNECT Design System** — run `cd connect-design-system && git pull` to fetch the latest upstream changes. If `git pull` reports new commits:
    - Diff the incoming changes (`git log --oneline HEAD@{1}..HEAD` and `git diff HEAD@{1}..HEAD -- packages/`).
    - Identify any CSS token renames/removals, component class changes, new components, `@font-face` URL updates, or icon additions/removals that affect the frontend.
-   - If breaking or noteworthy changes are found, include a **Design System Migration** section in the assessment output listing each change with its impact on the frontend and a concrete migration plan (same approach used for the initial migration: map old → new tokens/classes, update `frontend/style/` imports, update component markup in `frontend/src/app.rs`, update test selectors in `frontend/tests/ui_tests.rs`).
+   - If breaking or noteworthy changes are found, include a **Design System Migration** section in the assessment output listing each change with its impact on the frontend and a concrete migration plan (same approach used for the initial migration: map old → new tokens/classes, update `frontend/style/` imports, update component markup in `frontend/src/app.rs`, update test selectors in `frontend/tests/ui_*.rs`).
    - If `git pull` reports "Already up to date", note this in the assessment and skip the migration section.
    - If the `connect-design-system/` directory does not exist, clone it: `git clone git@github.com:LEGO/connect-design-system.git connect-design-system`.
 3. Collect all findings that indicate actionable changes (bugs, missing implementations, convention violations, security issues, stale dependencies, etc.)
@@ -390,16 +413,16 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Backend
 
-- 238 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 167 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
-- 112 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 240 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
+- 168 API integration tests in `tests/api_*.rs` (require running Postgres, marked `#[ignore]`)
+- 112 DB function integration tests in `tests/db_*.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
 - Test DB uses `docker-compose.test.yml` overlay to expose port 5433 (avoids conflicts with dev DB on 5432)
 
 ### Frontend
 
-- 79 WASM tests in `frontend/tests/ui_tests.rs` (run in headless Chrome via `wasm-pack`)
+- 79 WASM tests in `frontend/tests/ui_*.rs` (run in headless Chrome via `wasm-pack`)
 - Test categories:
   - JWT decode (4 tests): valid token, missing segments, bad base64, invalid JSON
   - Login page rendering (3 tests): brand/form elements, email attributes, password attributes
