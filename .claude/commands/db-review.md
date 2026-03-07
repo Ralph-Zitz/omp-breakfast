@@ -12,7 +12,7 @@ The application uses different initialization strategies:
 
 - **Schema:** `migrations/` directory — all Refinery migration files (V1 initial schema, V2 UUID v7 defaults, V3 indexes/constraints, V4 schema hardening, V5 trigger/NOT NULL fixes, V6 order constraint/index, V7 drop redundant indexes, V8 avatars, V9 avatar index/revoked NOT NULL, and any newer migrations)
 - **Manual reset (deprecated):** `database.sql` - Full DROP/CREATE script, kept for manual dev resets only
-- **Initialization:** `init_dev_db.sh` - Docker Compose init script: runs all migrations (V1–V9), creates refinery tracking table
+- **Initialization:** `init_dev_db.sh` - Docker Compose init script: runs all migrations (V1–V12), creates refinery tracking table
 - **First-user bootstrap:** `POST /auth/register` creates the first user, seeds default roles, creates a "Default" team, and assigns the user as Admin
 
 **Production:** Application runs migrations at startup via `src/db/migrate.rs`

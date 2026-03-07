@@ -153,6 +153,7 @@ migrations/
   V9__avatar_index_and_revoked_not_null.sql – Avatar FK index + token_blacklist.revoked_at NOT NULL
   V10__guard_teamorders_team_id.sql – Guard teamorders_team_id with trigger
   V11__text_column_check_constraints.sql – CHECK constraints on text column lengths
+  V12__cleanup_index_and_constraints.sql – Drop unused idx_teamorders_id_due, NOT NULL on orders_team_id
 tests/
   api_tests.rs     – API integration tests (ignored without running DB)
   db_tests.rs      – DB function integration tests (ignored without running DB)

@@ -67,7 +67,7 @@ make test-unit     # or: cargo test
 make test-integration
 ```
 
-This automatically starts an isolated Postgres container on port 5433, runs all nine migrations (V1–V9), seeds test data, executes all integration tests, and tears down the container.
+This automatically starts an isolated Postgres container on port 5433, runs all twelve migrations (V1–V12), seeds test data, executes all integration tests, and tears down the container.
 
 **Frontend WASM tests** (79 tests) — require Chrome:
 
@@ -95,7 +95,7 @@ make db-down       # stop and remove test DB
 
 ## Database Initialization
 
-The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Eleven migrations exist:
+The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Twelve migrations exist:
 
 | Migration | Description |
 | --- | --- |
@@ -110,10 +110,11 @@ The application uses [Refinery](https://github.com/rust-db/refinery) for schema 
 | V9 | Avatar FK index + token_blacklist.revoked_at NOT NULL |
 | V10 | Guard teamorders_team_id with trigger |
 | V11 | CHECK constraints on text column lengths |
+| V12 | Drop unused idx_teamorders_id_due, NOT NULL on orders_team_id |
 
 **Production:** The application runs pending migrations automatically at startup. No seed data is inserted. The first user to register via the login page becomes the global Admin.
 
-**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all eleven migrations and creates the Refinery tracking table. On first startup, the application's migration runner detects the migrations are already applied and continues normally. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
+**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies all twelve migrations and creates the Refinery tracking table. On first startup, the application's migration runner detects the migrations are already applied and continues normally. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
 
 **Manual database reset (development only):**
 
