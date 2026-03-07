@@ -283,12 +283,12 @@ pub async fn create_team_order(
         .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
 
     // Validate that the due date (if specified) is not in the past
-    if let Some(date) = json.duedate {
-        if date < Utc::now().date_naive() {
-            return Err(Error::Validation(
-                "Due date cannot be in the past".to_string(),
-            ));
-        }
+    if let Some(date) = json.duedate
+        && date < Utc::now().date_naive()
+    {
+        return Err(Error::Validation(
+            "Due date cannot be in the past".to_string(),
+        ));
     }
 
     // Validate that the pickup user (if specified) is a member of this team
@@ -402,12 +402,12 @@ pub async fn update_team_order(
     require_order_owner_or_team_admin(&client, &req, team_id, order.teamorders_user_id).await?;
 
     // Validate that the new due date (if provided) is not in the past
-    if let Some(Some(date)) = json.duedate {
-        if date < Utc::now().date_naive() {
-            return Err(Error::Validation(
-                "Due date cannot be in the past".to_string(),
-            ));
-        }
+    if let Some(Some(date)) = json.duedate
+        && date < Utc::now().date_naive()
+    {
+        return Err(Error::Validation(
+            "Due date cannot be in the past".to_string(),
+        ));
     }
 
     // If the order already has a pickup user and the request wants to change it,

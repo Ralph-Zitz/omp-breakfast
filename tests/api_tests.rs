@@ -3318,7 +3318,7 @@ async fn reopened_order_allows_item_mutations() {
         .insert_header(("Authorization", format!("Bearer {}", token)))
         .set_json(json!({"orders_item_id": item_id, "amt": 5}))
         .to_request();
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
     // This updates the existing item (same item_id), expect 409 or success depending on unique constraint
     // Let's create a second item to add cleanly
     let item_name2 = format!("Reopen-Item2-{}", uid);

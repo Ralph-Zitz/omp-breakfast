@@ -137,15 +137,15 @@ pub fn OrdersPage() -> impl IntoView {
             None => return,
         };
         let mut body = serde_json::Map::new();
-        if let Some(d) = duedate {
-            if !d.is_empty() {
-                body.insert("duedate".into(), serde_json::Value::String(d));
-            }
+        if let Some(d) = duedate
+            && !d.is_empty()
+        {
+            body.insert("duedate".into(), serde_json::Value::String(d));
         }
-        if let Some(pid) = pickup_user_id {
-            if !pid.is_empty() {
-                body.insert("pickup_user_id".into(), serde_json::Value::String(pid));
-            }
+        if let Some(pid) = pickup_user_id
+            && !pid.is_empty()
+        {
+            body.insert("pickup_user_id".into(), serde_json::Value::String(pid));
         }
         let body = serde_json::Value::Object(body);
         leptos::task::spawn_local_scoped(async move {
@@ -175,10 +175,7 @@ pub fn OrdersPage() -> impl IntoView {
         if currently_closed {
             // Reopen: duplicate the old order via the /reopen endpoint
             leptos::task::spawn_local_scoped(async move {
-                let url = format!(
-                    "/api/v1.0/teams/{}/orders/{}/reopen",
-                    team_id, order_id
-                );
+                let url = format!("/api/v1.0/teams/{}/orders/{}/reopen", team_id, order_id);
                 let resp = authed_request(HttpMethod::Post, &url, None).await;
                 match resp {
                     Some(r) if r.ok() => match r.json::<TeamOrderEntry>().await {

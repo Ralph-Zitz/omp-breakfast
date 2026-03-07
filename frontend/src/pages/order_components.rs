@@ -1,6 +1,6 @@
 use crate::api::{ItemEntry, OrderItemEntry, TeamOrderEntry, UsersInTeam};
-use crate::components::icons::{Icon, IconKind};
 use crate::components::LoadingSpinner;
+use crate::components::icons::{Icon, IconKind};
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
