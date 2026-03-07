@@ -922,6 +922,59 @@ mod tests {
         );
     }
 
+    // -- Cache miss and TTL expiry (#389) --
+
+    #[test]
+    fn cache_miss_returns_none_for_unknown_user() {
+        let state = test_state();
+        // A fresh cache has no entries — get returns None
+        let result = state
+            .cache
+            .get("unknown@example.com")
+            .filter(|cached| (Utc::now() - cached.cached_at).num_seconds() < CACHE_TTL_SECONDS)
+            .map(|cached| cached.user.clone());
+        assert!(result.is_none(), "cache miss should return None");
+    }
+
+    #[test]
+    fn cache_miss_after_ttl_expiry() {
+        let state = test_state();
+        // Insert an entry with a timestamp beyond the TTL
+        let entry = AuthCacheEntry {
+            user_id: Uuid::now_v7(),
+            password_hash: "hashed_password".to_string(),
+        };
+        let expired_at =
+            Utc::now() - Duration::try_seconds(CACHE_TTL_SECONDS + 1).expect("valid duration");
+        state.cache.insert(
+            "expired@example.com".to_string(),
+            CachedUser {
+                user: entry,
+                cached_at: expired_at,
+            },
+        );
+
+        // TTL-filtered lookup should return None
+        let result = state
+            .cache
+            .get("expired@example.com")
+            .filter(|cached| (Utc::now() - cached.cached_at).num_seconds() < CACHE_TTL_SECONDS)
+            .map(|cached| cached.user.clone());
+        assert!(
+            result.is_none(),
+            "TTL-expired entry should be treated as cache miss"
+        );
+
+        // Atomic eviction of the expired entry (same pattern as basic_validator)
+        state.cache.remove_if("expired@example.com", |_, cached| {
+            (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS
+        });
+        assert!(
+            !state.cache.contains_key("expired@example.com"),
+            "expired entry should be evicted"
+        );
+    }
+
     // -- Token blacklist cleanup (#293) --
 
     #[test]

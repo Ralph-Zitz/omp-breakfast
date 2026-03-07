@@ -316,6 +316,42 @@ async fn health_returns_up() {
     assert_eq!(body["up"], json!(true));
 }
 
+#[actix_web::test]
+#[ignore]
+async fn health_returns_503_when_db_unreachable() {
+    // Create a state with a pool pointing to an unreachable port
+    let mut pg_cfg = deadpool_postgres::Config::new();
+    pg_cfg.user = Some("actix".to_string());
+    pg_cfg.password = Some("actix".to_string());
+    pg_cfg.dbname = Some("actix".to_string());
+    pg_cfg.host = Some("127.0.0.1".to_string());
+    pg_cfg.port = Some(1); // unreachable port
+    // Short connect timeout to avoid slow test
+    pg_cfg.connect_timeout = Some(std::time::Duration::from_millis(200));
+    let pool = pg_cfg
+        .create_pool(
+            Some(deadpool_postgres::Runtime::Tokio1),
+            tokio_postgres::NoTls,
+        )
+        .expect("pool creation should succeed");
+    let state = Data::new(State {
+        pool,
+        jwtsecret: "test".to_string(),
+        cache: dashmap::DashMap::new(),
+        token_blacklist: dashmap::DashMap::new(),
+        login_attempts: dashmap::DashMap::new(),
+        avatar_cache: dashmap::DashMap::new(),
+    });
+    let app = test_app!(state);
+
+    let req = test::TestRequest::get().uri("/health").to_request();
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), 503);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["up"], json!(false));
+}
+
 // ---------------------------------------------------------------------------
 // Auth flow (basic auth → token pair)
 // ---------------------------------------------------------------------------
@@ -3618,7 +3654,7 @@ async fn non_admin_delete_by_email_nonexistent_returns_403() {
 
 #[actix_web::test]
 #[ignore]
-async fn admin_delete_by_email_nonexistent_returns_404() {
+async fn admin_delete_by_email_nonexistent_returns_200() {
     let state = test_state().await;
     let app = test_app!(state);
     let auth: Auth = register_admin(&app).await;
@@ -3630,9 +3666,11 @@ async fn admin_delete_by_email_nonexistent_returns_404() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(
         resp.status(),
-        404,
-        "admin should get 404 for a nonexistent email"
+        200,
+        "admin should get 200 with deleted:false to suppress email oracle"
     );
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["deleted"], json!(false));
 }
 
 // ---------------------------------------------------------------------------

@@ -319,10 +319,9 @@ pub async fn delete_user(
     delete,
     path = "/api/v1.0/users/email/{email}",
     responses(
-        (status = 200, description = "User deleted successfully", body = DeletedResponse),
+        (status = 200, description = "User deleted successfully or user not found", body = DeletedResponse),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - can only delete own account, requires admin, or team admin of a shared team", body = ErrorResponse),
-        (status = 404, description = "User not deleted", body = DeletedResponse),
         (status = 422, description = "Validation error - invalid email format", body = ErrorResponse),
     ),
     params(
@@ -362,9 +361,10 @@ pub async fn delete_user_by_email(
             }
         }
         Err(_) => {
-            // User not found — still enforce admin check to prevent info leakage
+            // User not found — still enforce admin check to prevent info leakage.
+            // Return 200 (not 404) with deleted:false to avoid email oracle.
             require_admin(&client, &req).await?;
-            return Ok(HttpResponse::NotFound().json(DeletedResponse { deleted: false }));
+            return Ok(HttpResponse::Ok().json(DeletedResponse { deleted: false }));
         }
     }
 

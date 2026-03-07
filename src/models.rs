@@ -370,9 +370,9 @@ pub struct UpdateItemEntry {
 fn validate_non_negative_price(
     price: &rust_decimal::Decimal,
 ) -> Result<(), validator::ValidationError> {
-    if *price < rust_decimal::Decimal::ZERO {
+    if *price <= rust_decimal::Decimal::ZERO {
         let mut err = validator::ValidationError::new("price");
-        err.message = Some("price must be zero or positive".into());
+        err.message = Some("price must be positive".into());
         return Err(err);
     }
     Ok(())
@@ -602,13 +602,25 @@ mod tests {
         let price = rust_decimal::Decimal::new(-100, 2); // -1.00
         let err = validate_non_negative_price(&price).unwrap_err();
         assert_eq!(err.code, "price");
-        assert!(err.message.as_ref().unwrap().contains("zero or positive"));
+        assert!(
+            err.message
+                .as_ref()
+                .unwrap()
+                .contains("price must be positive")
+        );
     }
 
     #[test]
-    fn validate_non_negative_price_accepts_zero() {
+    fn validate_non_negative_price_rejects_zero() {
         let price = rust_decimal::Decimal::ZERO;
-        assert!(validate_non_negative_price(&price).is_ok());
+        let err = validate_non_negative_price(&price).unwrap_err();
+        assert_eq!(err.code, "price");
+        assert!(
+            err.message
+                .as_ref()
+                .unwrap()
+                .contains("price must be positive")
+        );
     }
 
     #[test]

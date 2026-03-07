@@ -3250,8 +3250,169 @@ Last updated: 2026-03-10
   - Resolution: Resolved — no longer surfaced by assessment. Referenced file `database_seed.sql` does not exist; `database.sql` is deprecated and contains no `ON CONFLICT` clauses.
   - Source commands: `db-review`
 
+### Frontend — Uses `String` for UUIDs Everywhere
+
+- [x] **#321 — No type safety for UUID fields in frontend API types**
+  - File: `frontend/src/api.rs`
+  - Resolution: Accepted — a type alias adds no real safety; only a newtype wrapper would, which requires invasive changes throughout the frontend. In WASM context, UUID serde roundtrips through strings regardless.
+  - Source commands: `review`
+
+### Security — Account Lockout State In-Memory Only
+
+- [x] **#339 — Login attempt tracking stored in `DashMap`, not shared across instances**
+  - File: `src/middleware/auth.rs`
+  - Resolution: Accepted — single-instance internal app. Shared lockout state (e.g. Redis) would add infrastructure complexity disproportionate to the threat model.
+  - Source commands: `security-audit`
+
+### API Completeness — Frontend `ItemEntry.price` Typed as `String`
+
+- [x] **#366 — Frontend `ItemEntry` uses `pub price: String` instead of a numeric type**
+  - File: `frontend/src/api.rs`
+  - Resolution: Accepted — backend uses `rust_decimal` with `serde-with-str` feature, which serializes prices as JSON strings. Frontend `String` type is correct.
+  - Source commands: `api-completeness`
+
+### Code Quality — Identical Create/Update Model Pairs in `models.rs`
+
+- [x] **#375 — `CreateTeamEntry`/`UpdateTeamEntry`, `CreateRoleEntry`/`UpdateRoleEntry`, `CreateItemEntry`/`UpdateItemEntry` have identical fields**
+  - File: `src/models.rs`
+  - Resolution: Accepted — separate types are intentional for distinct OpenAPI schema names. The ~10 lines of duplication per pair is a reasonable trade-off for API documentation clarity.
+  - Source commands: `review`
+
+### Security — JWT Validator Performs DB Lookup on Every Request
+
+- [x] **#381 — `jwt_validator` calls `db::get_user_by_email` on every authenticated request after cache miss**
+  - File: `src/middleware/auth.rs`
+  - Resolution: Accepted — by design. The auth cache covers the warm path; cold requests must verify the user still exists in the DB.
+  - Source commands: `security-audit`
+
+### Security — No Rate Limiting on Password Change Endpoint
+
+- [x] **#382 — `PUT /api/v1.0/users/{id}` has no rate limiter for password changes**
+  - File: `src/routes.rs`
+  - Resolution: Accepted — endpoint requires JWT auth, `current_password` is verified via Argon2 (slow), and the PUT route shares a resource with GET/DELETE making selective rate-limiting architecturally complex.
+  - Source commands: `security-audit`
+
+### Security — `delete_user_by_email` Email Existence Oracle
+
+- [x] **#383 — DELETE endpoint returns 404 vs 204, revealing whether an email exists in the system**
+  - File: `src/handlers/users.rs`
+  - Resolution: Fixed — changed the not-found case to return HTTP 200 with `deleted: false` instead of 404. Updated OpenAPI spec and integration test.
+  - Source commands: `security-audit`
+
+### Testing — `auth_user` Cache Miss Path Untested
+
+- [x] **#389 — No test verifies cache miss path (first login or after TTL expiry)**
+  - File: `src/middleware/auth.rs`
+  - Resolution: Fixed — added `cache_miss_returns_none_for_unknown_user` and `cache_miss_after_ttl_expiry` unit tests.
+  - Source commands: `test-gaps`
+
+### Testing — Health Endpoint 503 Response Never Tested
+
+- [x] **#394 — No integration test verifies that `/health` returns HTTP 503 when the database is unreachable**
+  - File: `tests/api_tests.rs`
+  - Resolution: Fixed — added `health_returns_503_when_db_unreachable` integration test with unreachable pool.
+  - Source commands: `test-gaps`
+
+### Database — `SET timezone` in V1 Is Session-Scoped Dead Code
+
+- [x] **#438 — `SET timezone = 'Europe/Copenhagen'` only affects the migration connection session**
+  - File: `migrations/V1__initial_schema.sql`
+  - Resolution: Accepted — cannot modify applied Refinery migration. Harmless dead code; application uses UTC via `chrono::Utc`.
+  - Source commands: `db-review`
+
+### Dependencies — `rustls` `tls12` Feature May Be Unnecessary
+
+- [x] **#442 — Internal app could enforce TLS 1.3 only by removing `tls12` feature**
+  - File: `Cargo.toml`
+  - Resolution: Fixed — removed `tls12` from rustls features. Internal app now enforces TLS 1.3 only.
+  - Source commands: `dependency-check`
+
+### Dependencies — Three Versions of `getrandom` Compiled
+
+- [x] **#443 — `getrandom` v0.2, v0.3, and v0.4 all compiled due to ecosystem version split**
+  - File: `Cargo.toml` (transitive)
+  - Resolution: Accepted — transitive dependency split; will consolidate as ecosystem converges.
+  - Source commands: `dependency-check`
+
+### Dependencies — `refinery` Pulls `toml` 0.8 Alongside `config`'s 0.9
+
+- [x] **#444 — Duplicates the TOML parser; will resolve when `refinery` upgrades upstream**
+  - File: `Cargo.toml` (transitive)
+  - Resolution: Accepted — transitive dependency conflict, cannot fix without upstream release.
+  - Source commands: `dependency-check`
+
+### Security — JWT HS256 With No Key Rotation Mechanism
+
+- [x] **#447 — No `kid` claim or multi-key support; compromised secret requires full restart**
+  - File: `src/middleware/auth.rs`
+  - Resolution: Accepted — single-instance internal app. Key rotation with `kid` headers is enterprise-grade scope.
+  - Source commands: `security-audit`
+
+### Code Quality — Auth Cache Eviction O(n)
+
+- [x] **#453 — `evict_oldest_if_full` iterates all 1000 entries to find oldest; fine at current scale**
+  - File: `src/middleware/auth.rs`
+  - Resolution: Accepted — already uses O(n) `select_nth_unstable_by_key` partial sort. At 1000 entries, sub-microsecond.
+  - Source commands: `review`
+
+### API Completeness — `OrderItemEntry` vs Backend `OrderEntry` Naming Inconsistency
+
+- [x] **#457 — Frontend renames the struct for clarity but creates naming mismatch with backend**
+  - File: `frontend/src/api.rs`
+  - Resolution: Accepted — `OrderItemEntry` is intentionally more descriptive than `OrderEntry` for line items within a team order.
+  - Source commands: `api-completeness`
+
+### API Completeness — Bulk Team Order Delete Endpoint Not Consumed
+
+- [x] **#458 — `DELETE /api/v1.0/teams/{team_id}/orders` exists but has no frontend UI trigger**
+  - File: `src/routes.rs`
+  - Resolution: Accepted — kept for API completeness. Not every endpoint needs a UI counterpart.
+  - Source commands: `api-completeness`
+
+### API Completeness — Delete-User-by-Email Endpoint Not Consumed
+
+- [x] **#459 — AdminPage deletes by user_id only; the by-email endpoint is unreachable from UI**
+  - File: `src/routes.rs`
+  - Resolution: Accepted — serves administrative scripting use cases.
+  - Source commands: `api-completeness`
+
+### API Completeness — Single-Resource GET Endpoints Not Consumed (×5)
+
+- [x] **#460 — Frontend always fetches via list endpoints; single-resource GETs unused**
+  - File: `src/routes.rs`
+  - Resolution: Accepted — standard REST API design for future deep linking and external API consumers.
+  - Source commands: `api-completeness`
+
+### Database — `items.price` CHECK Constraint Allows Zero
+
+- [x] **#519 — `items.price CHECK (price >= 0)` permits items with zero cost**
+  - File: `migrations/V1__initial_schema.sql`, `src/models.rs`
+  - Resolution: Fixed — changed `validate_non_negative_price` to reject zero (strictly positive). DB CHECK constraint unchanged (applied migration) but application-level validator now prevents zero-price items.
+  - Source commands: `db-review`
+
+### Dependencies — `jwt-compact` Stale Maintenance
+
+- [x] **#628 — Last release Oct 2023 (>2 years); no CVEs but maintenance risk grows**
+  - File: `Cargo.toml`
+  - Resolution: Accepted — no CVEs, no functional issues. Monitored via `cargo audit`.
+  - Source commands: `dependency-check`
+
+### Dependencies — `color-eyre` Stale Release
+
+- [x] **#629 — Last release Dec 2022 (>3 years); still functional but gap is growing**
+  - File: `Cargo.toml`
+  - Resolution: Accepted — still functional, no CVEs. Used only for panic reports.
+  - Source commands: `dependency-check`
+
+### Dependencies — OpenTelemetry Stack Always Compiled
+
+- [x] **#630 — 4 OTel crates pull ~30 transitive deps; could be feature-gated**
+  - File: `Cargo.toml`, `src/server.rs`
+  - Resolution: Fixed — made all 4 OTel crates optional behind a `telemetry` Cargo feature (default on). Build with `--no-default-features` to skip. `tracing-actix-web/opentelemetry_0_31` conditionally enabled. Server code wrapped in `#[cfg(feature = "telemetry")]`.
+  - Source commands: `dependency-check`
+
 ## Notes
 
-- Total resolved items: 439 (6 critical, 47 important, 134 minor, 150 informational, plus items previously counted under different categories)
+- Total resolved items: 462 (6 critical, 47 important, 134 minor, 173 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

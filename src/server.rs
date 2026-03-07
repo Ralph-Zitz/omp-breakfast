@@ -7,9 +7,13 @@ use actix_web::{
 use chrono::Utc;
 use dashmap::DashMap;
 use deadpool_postgres::Runtime;
+#[cfg(feature = "telemetry")]
 use opentelemetry::trace::TracerProvider as _;
+#[cfg(feature = "telemetry")]
 use opentelemetry::{InstrumentationScope, global};
+#[cfg(feature = "telemetry")]
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
+#[cfg(feature = "telemetry")]
 use opentelemetry_stdout as stdout;
 use rustls::ServerConfig;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, pem::PemObject};
@@ -346,28 +350,32 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
 
     // Logging
     LogTracer::init().expect("Unable to set up log tracer!");
+    #[cfg(feature = "telemetry")]
     global::set_text_map_propagator(TraceContextPropagator::new());
 
     let is_production = env::var("ENV").unwrap_or_default() == "production";
 
-    let provider = if is_production {
-        // Production: no stdout span exporter (avoids mixing raw OTel spans
-        // with structured JSON logs). A proper OTLP exporter can be added here
-        // if an OTel collector endpoint is available.
-        SdkTracerProvider::builder().build()
-    } else {
-        // Development: export spans to stdout for local debugging.
-        SdkTracerProvider::builder()
-            .with_simple_exporter(stdout::SpanExporter::default())
-            .build()
-    };
-    let scope = InstrumentationScope::builder(env!("CARGO_PKG_NAME"))
-        .with_version(env!("CARGO_PKG_VERSION"))
-        .build();
-    let tracer = provider.tracer_with_scope(scope);
+    #[cfg(feature = "telemetry")]
+    let telemetry = {
+        let provider = if is_production {
+            // Production: no stdout span exporter (avoids mixing raw OTel spans
+            // with structured JSON logs). A proper OTLP exporter can be added here
+            // if an OTel collector endpoint is available.
+            SdkTracerProvider::builder().build()
+        } else {
+            // Development: export spans to stdout for local debugging.
+            SdkTracerProvider::builder()
+                .with_simple_exporter(stdout::SpanExporter::default())
+                .build()
+        };
+        let scope = InstrumentationScope::builder(env!("CARGO_PKG_NAME"))
+            .with_version(env!("CARGO_PKG_VERSION"))
+            .build();
+        let tracer = provider.tracer_with_scope(scope);
 
-    // Create a tracing layer with the configured tracer
-    let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+        // Create a tracing layer with the configured tracer
+        tracing_opentelemetry::layer().with_tracer(tracer)
+    };
 
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("debug,actix_web=debug"));
@@ -380,9 +388,10 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         // Production: structured JSON output for log aggregators (no color)
         let (non_blocking_writer, guard) = tracing_appender::non_blocking(std::io::stdout());
         _non_blocking_guard = Some(guard);
-        let subscriber = Registry::default()
-            .with(env_filter)
-            .with(telemetry)
+        let subscriber = Registry::default().with(env_filter);
+        #[cfg(feature = "telemetry")]
+        let subscriber = subscriber.with(telemetry);
+        let subscriber = subscriber
             .with(
                 fmt::layer()
                     .json()
@@ -397,9 +406,10 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         _non_blocking_guard = None;
         // Development: colorized human-readable output with severity colors
         // ERROR = red, WARN = yellow, INFO = green, DEBUG = blue, TRACE = purple
-        let subscriber = Registry::default()
-            .with(env_filter)
-            .with(telemetry)
+        let subscriber = Registry::default().with(env_filter);
+        #[cfg(feature = "telemetry")]
+        let subscriber = subscriber.with(telemetry);
+        let subscriber = subscriber
             .with(
                 fmt::layer()
                     .with_ansi(true)
