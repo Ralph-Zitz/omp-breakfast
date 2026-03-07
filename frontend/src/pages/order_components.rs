@@ -111,7 +111,8 @@ pub fn OrderDetail(
                                             prop:value=current_date
                                             on:change=move |ev| {
                                                 let Some(target) = ev.target() else { return; };
-                                                let val = target.unchecked_into::<web_sys::HtmlInputElement>().value();
+                                                let Some(input) = target.dyn_ref::<web_sys::HtmlInputElement>() else { return; };
+                                                let val = input.value();
                                                 on_update(if val.is_empty() { None } else { Some(val) });
                                             }
                                         />
@@ -145,7 +146,8 @@ pub fn OrderDetail(
                                         prop:value=current_pickup.clone()
                                         on:change=move |ev| {
                                             let Some(target) = ev.target() else { return; };
-                                            let val = target.unchecked_into::<web_sys::HtmlSelectElement>().value();
+                                            let Some(select) = target.dyn_ref::<web_sys::HtmlSelectElement>() else { return; };
+                                            let val = select.value();
                                             on_assign(if val.is_empty() { None } else { Some(val) });
                                         }
                                     >
@@ -202,7 +204,7 @@ pub fn OrderDetail(
                                                                 style="width: 60px; text-align: center;"
                                                                 on:change=move |ev| {
                                                                     let Some(target) = ev.target() else { return; };
-                                                                    let val: i32 = target.unchecked_into::<web_sys::HtmlInputElement>().value().parse().unwrap_or(current_amt);
+                                                                    let val: i32 = target.dyn_ref::<web_sys::HtmlInputElement>().map(|el| el.value()).unwrap_or_default().parse().unwrap_or(current_amt);
                                                                     if val != current_amt && val >= 1 {
                                                                         on_update_item(iid_upd.clone(), val);
                                                                     }
@@ -262,7 +264,8 @@ pub fn OrderDetail(
                                         prop:value=move || add_item_id.get()
                                         on:change=move |ev| {
                                             let Some(target) = ev.target() else { return; };
-                                            set_add_item_id.set(target.unchecked_into::<web_sys::HtmlSelectElement>().value());
+                                            let Some(select) = target.dyn_ref::<web_sys::HtmlSelectElement>() else { return; };
+                                            set_add_item_id.set(select.value());
                                         }
                                     >
                                         <option value="">"Select an item..."</option>
@@ -287,7 +290,8 @@ pub fn OrderDetail(
                                             prop:value=move || add_qty.get()
                                             on:input=move |ev| {
                                                 let Some(target) = ev.target() else { return; };
-                                                set_add_qty.set(target.unchecked_into::<web_sys::HtmlInputElement>().value());
+                                                let Some(input) = target.dyn_ref::<web_sys::HtmlInputElement>() else { return; };
+                                                set_add_qty.set(input.value());
                                             }
                                         />
                                     </div>
@@ -380,7 +384,8 @@ pub fn CreateOrderDialog(
                                         prop:value=move || duedate.get()
                                         on:input=move |ev| {
                                             let Some(target) = ev.target() else { return; };
-                                            let val = target.unchecked_into::<web_sys::HtmlInputElement>().value();
+                                            let Some(input) = target.dyn_ref::<web_sys::HtmlInputElement>() else { return; };
+                                            let val = input.value();
                                             if !val.is_empty() && val < today() {
                                                 set_date_error.set(Some("Due date cannot be in the past".to_string()));
                                             } else {
@@ -404,7 +409,8 @@ pub fn CreateOrderDialog(
                                     prop:value=move || pickup_user.get()
                                     on:change=move |ev| {
                                         let Some(target) = ev.target() else { return; };
-                                        set_pickup_user.set(target.unchecked_into::<web_sys::HtmlSelectElement>().value());
+                                        let Some(select) = target.dyn_ref::<web_sys::HtmlSelectElement>() else { return; };
+                                        set_pickup_user.set(select.value());
                                     }
                                 >
                                     <option value="">"None"</option>

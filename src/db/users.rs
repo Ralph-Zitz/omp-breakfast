@@ -265,6 +265,12 @@ pub async fn bootstrap_first_user(
 
     let tx = client.transaction().await.map_err(Error::Db)?;
 
+    // Acquire a transaction-scoped advisory lock to prevent concurrent
+    // bootstrap attempts. Released automatically when the transaction ends.
+    tx.execute("SELECT pg_advisory_xact_lock(0)", &[])
+        .await
+        .map_err(Error::Db)?;
+
     // 1. Check that no users exist
     let count_row = tx
         .query_one("select count(*) as cnt from users", &[])

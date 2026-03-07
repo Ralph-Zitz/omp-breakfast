@@ -9016,3 +9016,162 @@ async fn reopen_nonexistent_order_returns_404() {
         .to_request();
     test::call_service(&app, req).await;
 }
+
+// ===========================================================================
+// Avatar endpoints
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn get_avatars_returns_list() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/avatars")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Vec<Value> = test::read_body_json(resp).await;
+    // Avatars may or may not be seeded depending on whether minifigs/ exists
+    // in the test environment, but the endpoint should return a valid JSON array
+    assert!(body.is_empty() || body[0].get("avatar_id").is_some());
+}
+
+#[actix_web::test]
+#[ignore]
+async fn get_avatars_requires_auth() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    // Ensure admin exists
+    let _ = register_admin(&app).await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1.0/avatars")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 401, "listing avatars should require auth");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn get_avatar_not_found() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let _ = register_admin(&app).await;
+
+    let fake_id = Uuid::now_v7();
+    // Avatar image endpoint is public (no JWT required)
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1.0/avatars/{}", fake_id))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "nonexistent avatar should return 404");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn set_avatar_nonexistent_avatar_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
+    let user_id = admin_user_id_from_token(token);
+
+    let fake_avatar_id = Uuid::now_v7();
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}/avatar", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"avatar_id": fake_avatar_id}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        404,
+        "setting a nonexistent avatar should return 404"
+    );
+}
+
+#[actix_web::test]
+#[ignore]
+async fn set_avatar_requires_self_or_admin() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+    let admin_user_id = admin_user_id_from_token(admin_token);
+
+    let suffix = Uuid::now_v7();
+    let email = format!("avatar-rbac-{suffix}@test.local");
+    let (user_auth, _user_id) =
+        create_and_login_user(&app, admin_token, "AV", "User", &email, "Very Secret").await;
+    let user_token = &user_auth.access_token;
+
+    // Regular user tries to set admin's avatar → 403
+    let fake_avatar_id = Uuid::now_v7();
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/users/{}/avatar", admin_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", user_token)))
+        .set_json(json!({"avatar_id": fake_avatar_id}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "non-admin should not set another user's avatar"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/users/{}",
+            admin_user_id_from_token(&user_auth.access_token)
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+#[actix_web::test]
+#[ignore]
+async fn remove_avatar_nonexistent_user_returns_404() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
+
+    let fake_user_id = Uuid::now_v7();
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}/avatar", fake_user_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    // Admin can bypass RBAC but the user doesn't exist → 404 from set_user_avatar
+    assert_eq!(resp.status(), 404);
+}
+
+#[actix_web::test]
+#[ignore]
+async fn remove_avatar_succeeds_for_self() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
+    let user_id = admin_user_id_from_token(token);
+
+    // Remove avatar (even if none is set, it should succeed and return user)
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}/avatar", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let user: Value = test::read_body_json(resp).await;
+    assert!(
+        user["avatar_id"].is_null(),
+        "avatar_id should be null after removal"
+    );
+}

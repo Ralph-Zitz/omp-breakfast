@@ -58,12 +58,12 @@ src/
     mod.rs         – Module declarations + re-exports of all public DB functions
     migrate.rs     – Refinery migration runner (embed_migrations! + run_migrations)
     health.rs      – Database health check (check_db)
-    users.rs       – User CRUD (get_users, get_user, get_user_by_email, get_password_hash, create_user, update_user, delete_user, delete_user_by_email, count_users)
+    users.rs       – User CRUD (get_users, get_user, get_user_by_email, get_password_hash, create_user, update_user, delete_user, delete_user_by_email, count_users, bootstrap_first_user)
     teams.rs       – Team CRUD + user-team queries (get_teams, get_team, create_team, update_team, delete_team, get_user_teams, get_team_users)
     roles.rs       – Role CRUD + bootstrap (get_roles, get_role, create_role, update_role, delete_role, seed_default_roles)
     items.rs       – Item CRUD (get_items, get_item, create_item, update_item, delete_item)
-    orders.rs      – Team order CRUD (get_team_orders, get_team_order, create_team_order, update_team_order, delete_team_order, delete_team_orders)
-    order_items.rs – Order item CRUD + closed-order check (is_team_order_closed, get_order_items, get_order_item, create_order_item, update_order_item, delete_order_item)
+    orders.rs      – Team order CRUD (get_team_orders, get_team_order, create_team_order, update_team_order, delete_team_order, delete_team_orders, reopen_team_order)
+    order_items.rs – Order item CRUD + closed-order check (is_team_order_closed, get_order_items, get_order_item, create_order_item, update_order_item, delete_order_item, get_order_total)
     membership.rs  – Team membership + RBAC queries (count_admins, is_admin, is_admin_or_team_admin, is_team_admin_of_user, get_member_role, check_team_access, add_team_member, remove_team_member, update_member_role, would_admins_remain_without)
     tokens.rs      – Token blacklist persistence (revoke_token_db, is_token_revoked_db, cleanup_expired_tokens)
     avatars.rs     – Avatar CRUD (get_avatars, get_avatar, insert_avatar, count_avatars, set_user_avatar)
@@ -391,8 +391,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### Backend
 
 - 238 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 156 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
-- 109 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 167 API integration tests in `tests/api_tests.rs` (require running Postgres, marked `#[ignore]`)
+- 112 DB function integration tests in `tests/db_tests.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
 - Test DB uses `docker-compose.test.yml` overlay to expose port 5433 (avoids conflicts with dev DB on 5432)

@@ -3760,3 +3760,79 @@ async fn would_admins_remain_without_sole_admin() {
         .await
         .expect("cleanup admin");
 }
+
+// ===========================================================================
+// Additional avatar DB tests (#634)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn get_avatar_nonexistent_returns_error() {
+    let client = test_client().await;
+    let fake_id = Uuid::now_v7();
+
+    let result = db::get_avatar(&client, fake_id).await;
+    assert!(result.is_err(), "nonexistent avatar should return error");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn set_user_avatar_nonexistent_user_returns_error() {
+    let client = test_client().await;
+
+    // Insert a real avatar so the FK isn't the cause of failure
+    let avatar_id = Uuid::now_v7();
+    let name = format!("orphan-avatar-{}", avatar_id);
+    db::insert_avatar(&client, avatar_id, &name, b"fake", "image/png")
+        .await
+        .expect("insert_avatar should succeed");
+
+    let fake_user_id = Uuid::now_v7();
+    let result = db::set_user_avatar(&client, fake_user_id, Some(avatar_id)).await;
+    assert!(
+        result.is_err(),
+        "setting avatar on nonexistent user should fail"
+    );
+
+    // Cleanup
+    client
+        .execute("DELETE FROM avatars WHERE avatar_id = $1", &[&avatar_id])
+        .await
+        .expect("cleanup avatar");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn insert_avatar_duplicate_name_is_idempotent() {
+    let client = test_client().await;
+    let name = format!("dup-avatar-{}", Uuid::now_v7());
+
+    let id1 = Uuid::now_v7();
+    db::insert_avatar(&client, id1, &name, b"data1", "image/png")
+        .await
+        .expect("first insert should succeed");
+
+    // Second insert with same name should be silently ignored (ON CONFLICT DO NOTHING)
+    let id2 = Uuid::now_v7();
+    db::insert_avatar(&client, id2, &name, b"data2", "image/png")
+        .await
+        .expect("duplicate name insert should not error");
+
+    // Only the first should be retrievable
+    let (data, _) = db::get_avatar(&client, id1)
+        .await
+        .expect("first avatar should exist");
+    assert_eq!(data, b"data1");
+
+    let result = db::get_avatar(&client, id2).await;
+    assert!(
+        result.is_err(),
+        "second avatar with duplicate name should not be inserted"
+    );
+
+    // Cleanup
+    client
+        .execute("DELETE FROM avatars WHERE avatar_id = $1", &[&id1])
+        .await
+        .expect("cleanup avatar");
+}

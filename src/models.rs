@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use deadpool_postgres::Pool;
 use serde::{Deserialize, Serialize};
-use std::{fmt, fmt::Display};
+use std::{fmt, fmt::Display, sync::Arc};
 
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -117,7 +117,8 @@ pub struct State {
     pub login_attempts: DashMap<String, Vec<DateTime<Utc>>>,
     /// In-memory avatar image cache: avatar_id → (image bytes, content_type).
     /// Loaded on startup from the database; small and static (~2–3 MB total).
-    pub avatar_cache: DashMap<Uuid, (Vec<u8>, String)>,
+    /// Uses `Arc<Vec<u8>>` for cheap reference-counted cloning on each response.
+    pub avatar_cache: DashMap<Uuid, (Arc<Vec<u8>>, String)>,
 }
 
 #[derive(Serialize, ToSchema)]

@@ -13,7 +13,7 @@ use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerPro
 use opentelemetry_stdout as stdout;
 use rustls::ServerConfig;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, pem::PemObject};
-use std::{env, path::Path, time::Duration};
+use std::{env, path::Path, sync::Arc, time::Duration};
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{error, info, warn};
 use tracing_actix_web::TracingLogger;
@@ -138,7 +138,9 @@ async fn seed_and_cache_avatars(state: &Data<State>) {
                 let content_type = "image/png".to_string();
                 match db::insert_avatar(&client, avatar_id, &name, &raw, &content_type).await {
                     Ok(_) => {
-                        state.avatar_cache.insert(avatar_id, (raw, content_type));
+                        state
+                            .avatar_cache
+                            .insert(avatar_id, (Arc::new(raw), content_type));
                         seeded += 1;
                     }
                     Err(e) => {
@@ -161,7 +163,9 @@ async fn seed_and_cache_avatars(state: &Data<State>) {
         for entry in &avatars {
             match db::get_avatar(&client, entry.avatar_id).await {
                 Ok((data, ct)) => {
-                    state.avatar_cache.insert(entry.avatar_id, (data, ct));
+                    state
+                        .avatar_cache
+                        .insert(entry.avatar_id, (Arc::new(data), ct));
                     cached += 1;
                 }
                 Err(e) => {

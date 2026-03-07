@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-09
+Last updated: 2026-03-10
 
 ## Critical Items
 
@@ -663,6 +663,20 @@ Last updated: 2026-03-09
   - File: `frontend/src/pages/admin.rs`
   - Fix: Updated `do_reset_password` to look up the target user from the `users` signal and include `firstname`, `lastname`, `email` in the PUT request body alongside the new `password`.
   - Source commands: `api-completeness`
+
+### Database — Race Condition in First-User Bootstrap
+
+- [x] **#633 — `bootstrap_first_user` allows concurrent first-user registrations with different emails**
+  - File: `src/db/users.rs` (`bootstrap_first_user` function)
+  - Resolution: Added `SELECT pg_advisory_xact_lock(0)` at the start of the transaction to serialize concurrent bootstrap attempts. The advisory lock is held for the duration of the transaction, ensuring only one caller can proceed past the `count_users() == 0` check.
+  - Source commands: `db-review`
+
+### Testing — Avatars Feature Completely Untested
+
+- [x] **#634 — Zero API integration tests and zero DB integration tests for the avatars feature**
+  - Files: `tests/api_tests.rs`, `tests/db_tests.rs`
+  - Resolution: Added 7 API integration tests (get_avatars_returns_list, get_avatars_requires_auth, get_avatar_not_found, set_avatar_nonexistent_avatar_returns_404, set_avatar_requires_self_or_admin, remove_avatar_nonexistent_user_returns_404, remove_avatar_succeeds_for_self) and 3 DB integration tests (get_avatar_nonexistent_returns_error, set_user_avatar_nonexistent_user_returns_error, insert_avatar_duplicate_name_is_idempotent). All tests are idempotent and self-contained.
+  - Source commands: `test-gaps`
 
 ## Minor Items
 
@@ -1783,6 +1797,62 @@ Last updated: 2026-03-09
   - File: `src/db/membership.rs`
   - Resolution: Refactored both functions to use CTEs: `WITH ins AS (INSERT ... RETURNING ...) SELECT ...` and `WITH upd AS (UPDATE ... RETURNING ...) SELECT ...`. Reduces from 2 queries to 1 per operation.
   - Source commands: `db-review`
+
+### Documentation — CLAUDE.md API Integration Test Count Stale (156 → 160)
+
+- [x] **#635 — CLAUDE.md states 156 API integration tests but actual count is 160**
+  - File: `CLAUDE.md` (Testing section)
+  - Resolution: Updated count from 156 to 160 (now 167 after #634 avatar tests).
+  - Source commands: `cross-ref-check`, `practices-audit`
+
+### Documentation — README.md Test Counts and Migration Count Stale
+
+- [x] **#636 — README.md unit test count (236→238), API integration count (145→160), and migration count (12→13) diverge from reality**
+  - File: `README.md`
+  - Resolution: Updated all counts: unit 236→238, API 145→167, DB 104→112, migrations "twelve"→"thirteen". Added V13 row to migration table.
+  - Source commands: `cross-ref-check`
+
+### Documentation — CLAUDE.md Missing 3 DB Functions in Inventory
+
+- [x] **#637 — `bootstrap_first_user`, `reopen_team_order`, `get_order_total` not listed in CLAUDE.md function inventories**
+  - File: `CLAUDE.md` (Project Structure, db module descriptions)
+  - Resolution: Added `bootstrap_first_user` to users.rs list, `reopen_team_order` to orders.rs list, `get_order_total` to order_items.rs list.
+  - Source commands: `cross-ref-check`
+
+### Performance — Avatar Cache Clones Bytes on Every Request
+
+- [x] **#638 — Avatar image bytes are `Vec<u8>::clone()`d per response from the DashMap cache**
+  - Files: `src/models.rs`, `src/handlers/avatars.rs`, `src/server.rs`
+  - Resolution: Changed `DashMap<Uuid, (Vec<u8>, String)>` to `DashMap<Uuid, (Arc<Vec<u8>>, String)>` for cheap reference-counted cloning. Updated all cache insertion and retrieval sites.
+  - Source commands: `review`
+
+### Safety — Frontend `unchecked_into()` DOM Cast in order_components.rs
+
+- [x] **#639 — `target.unchecked_into::<HtmlInputElement>()` can panic if DOM element type doesn't match**
+  - File: `frontend/src/pages/order_components.rs`
+  - Resolution: Replaced all 7 `unchecked_into` calls with safe `dyn_ref` + guard clauses (early return or `unwrap_or_default()`).
+  - Source commands: `review`
+
+### Testing — Closed Order Update/Delete Enforcement Untested
+
+- [x] **#640 — No API test verifies that update/delete of order items is blocked on closed orders**
+  - File: `tests/api_tests.rs`
+  - Resolution: Tests already existed: `closed_order_rejects_update_item`, `closed_order_rejects_delete_item`.
+  - Source commands: `test-gaps`
+
+### Testing — Reopen Order Endpoint Untested
+
+- [x] **#641 — `POST /api/v1.0/teams/{team_id}/orders/{order_id}/reopen` has no API integration test**
+  - File: `tests/api_tests.rs`
+  - Resolution: Tests already existed: `reopened_order_allows_item_mutations`, `reopen_open_order_returns_422`, `reopen_nonexistent_order_returns_404`.
+  - Source commands: `test-gaps`
+
+### Testing — Pickup User Assignment RBAC Untested
+
+- [x] **#642 — No test verifies pickup user validation (team membership check) or RBAC (admin/team-admin required for changes)**
+  - File: `tests/api_tests.rs`
+  - Resolution: Tests already existed: `create_order_with_non_member_pickup_returns_422`, `member_cannot_change_assigned_pickup_user`, `member_can_set_pickup_when_unassigned`.
+  - Source commands: `test-gaps`
 
 ## Informational Items
 
