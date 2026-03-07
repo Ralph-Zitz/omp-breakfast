@@ -1,9 +1,7 @@
 -- Initial database schema for OMP Breakfast.
 --
 -- This migration captures the complete schema as of v0.6.1.
--- All statements are idempotent (IF NOT EXISTS / OR REPLACE) so the
--- migration is safe to run against a database that was already set up
--- via database.sql (the dev/test reset script).
+-- All statements are idempotent (IF NOT EXISTS / OR REPLACE).
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 

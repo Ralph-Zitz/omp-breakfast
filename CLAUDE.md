@@ -128,7 +128,6 @@ config/
   development.yml  – Dev overrides (local DB)
   docker-base.yml  – Sanitized base config for Docker images (all secret fields empty; supply via env vars)
   production.yml   – Prod overrides
-database.sql       – Full schema (deprecated — kept for manual dev resets only)
 init_dev_db.sh     – Test database initialization script (auto-discovers and applies all migration files; used only by postgres-setup in docker-compose.test.yml)
 Dockerfile.breakfast – Multi-stage Docker build for the application
 Dockerfile.postgres  – Custom Postgres image with init scripts

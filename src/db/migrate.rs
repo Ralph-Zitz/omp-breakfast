@@ -375,11 +375,7 @@ fn normalize_to_rfc3339(s: &str) -> Option<String> {
 /// Run all pending database migrations.
 ///
 /// Uses refinery's migration tracking (`refinery_schema_history` table) to
-/// determine which migrations have already been applied. Migration SQL uses
-/// `IF NOT EXISTS` / `OR REPLACE` for idempotency, so running against a
-/// database that was already set up via `database.sql` (the dev/test reset
-/// script) is safe — the statements succeed as no-ops and refinery records
-/// them as applied.
+/// determine which migrations have already been applied.
 ///
 /// Before invoking refinery, this function sanitizes any previously stored
 /// rows in `refinery_schema_history` that would cause `refinery-core` to
