@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-08
+Last updated: 2026-03-09
 
 ## Critical Items
 
@@ -3117,8 +3117,71 @@ Last updated: 2026-03-08
   - Resolution: Reworded to reflect current state: "79 tests cover all pages with rendering and basic interaction tests; deeper workflow and edge-case tests still missing".
   - Source commands: `practices-audit`
 
+### Database — `orders.orders_team_id` Missing NOT NULL
+
+- [x] **#325 — Advisory: verify that `orders_team_id` FK column has NOT NULL**
+  - Files: `migrations/V1__initial_schema.sql` (line 94), `src/models.rs`
+  - Resolution: Added `ALTER TABLE orders ALTER COLUMN orders_team_id SET NOT NULL` in `migrations/V12__cleanup_index_and_constraints.sql`.
+  - Source commands: `db-review`
+
+### Testing — `basic_validator` Malformed Password Hash Path Untested
+
+- [x] **#350 — When DB stores a corrupted/non-Argon2 hash, `PasswordHash::new()` fails and returns 500 — no test**
+  - File: `src/middleware/auth.rs`
+  - Resolution: Added `password_hash_new_rejects_corrupted_hash` unit test covering plain text strings, truncated hashes with invalid salt/output, and a sanity check that the valid `DUMMY_HASH` parses.
+  - Source commands: `test-gaps`
+
+### Database — `idx_teamorders_id_due` Index Unused
+
+- [x] **#374 — Covering index on `(orders_team_id, due)` is never used; all order queries filter by `team_id` alone or by primary key**
+  - File: `migrations/V6__order_constraint_and_index.sql`
+  - Resolution: Added `DROP INDEX IF EXISTS idx_teamorders_id_due` in `migrations/V12__cleanup_index_and_constraints.sql`.
+  - Source commands: `db-review`
+
+### Testing — `refresh_token` `DateTime::from_timestamp` Fallback Untested
+
+- [x] **#395 — The `DateTime::from_timestamp(exp, 0).unwrap_or_default()` fallback in `refresh_token` handler is never tested**
+  - File: `src/handlers/users.rs`
+  - Resolution: Added `datetime_from_timestamp_fallback_on_extreme_values` unit test verifying that `DateTime::<Utc>::from_timestamp(i64::MAX, 0)` returns `None` and the fallback produces a value ~7 days from now.
+  - Source commands: `test-gaps`
+
+### Database — FK Constraint Violations Return Generic 409 Message
+
+- [x] **#440 — All foreign key violations (23503) map to same opaque message regardless of which relationship is violated**
+  - File: `src/errors.rs`
+  - Resolution: FK constraint error now extracts constraint/table name via `as_db_error()` and pattern-matches on "item", "team", "user", "role", "order" to produce contextual messages like "Referenced item does not exist (orders)".
+  - Source commands: `db-review`
+
+### Database — No DB-Level Aggregate Query for Order Totals
+
+- [x] **#441 — No `get_order_total()` function; frontend must fetch all items and compute totals client-side**
+  - File: `src/db/order_items.rs`
+  - Resolution: Added `pub async fn get_order_total(client, teamorder_id, team_id) -> Result<Decimal, Error>` using `SELECT COALESCE(SUM(i.price * o.amt), 0)` with `rust_decimal::Decimal`.
+  - Source commands: `db-review`
+
+### Dependencies — `opentelemetry-stdout` Used Unconditionally
+
+- [x] **#445 — Trace spans go to stdout in both dev and production; may conflict with Bunyan JSON logging in prod**
+  - File: `src/server.rs`
+  - Resolution: OTel stdout exporter is now conditional — only wired in development mode. Production builds use `SdkTracerProvider::builder().build()` without an exporter.
+  - Source commands: `dependency-check`
+
+### Frontend — No Client-Side Validation for Item Price Format
+
+- [x] **#520 — Frontend items page accepts free-form text for price without validating it's a valid decimal number**
+  - File: `frontend/src/pages/items.rs`
+  - Resolution: Added `is_valid_price()` helper that validates non-negative finite f64. Both Create and Edit dialogs now disable submit on invalid price and show inline `field-error` messages.
+  - Source commands: `api-completeness`
+
+### Database — Seed Data Not Idempotent (Stale)
+
+- [x] **#439 — `ON CONFLICT DO NOTHING` never fires because PK is auto-generated UUID; re-running seed creates duplicates**
+  - File: `database_seed.sql`
+  - Resolution: Resolved — no longer surfaced by assessment. Referenced file `database_seed.sql` does not exist; `database.sql` is deprecated and contains no `ON CONFLICT` clauses.
+  - Source commands: `db-review`
+
 ## Notes
 
-- Total resolved items: 430 (6 critical, 47 important, 134 minor, 141 informational, plus items previously counted under different categories)
+- Total resolved items: 439 (6 critical, 47 important, 134 minor, 150 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

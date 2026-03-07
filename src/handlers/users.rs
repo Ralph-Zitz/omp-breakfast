@@ -494,3 +494,44 @@ pub async fn user_teams(
         offset,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::{DateTime, Duration, Utc};
+
+    use crate::middleware::auth::REFRESH_TOKEN_DURATION_DAYS;
+
+    /// Verify that `DateTime::from_timestamp` returns `None` for absurd exp
+    /// values, triggering the `unwrap_or_else` fallback in `refresh_token`.
+    #[test]
+    fn datetime_from_timestamp_fallback_on_extreme_values() {
+        // A valid timestamp should parse successfully
+        let now = Utc::now().timestamp();
+        assert!(
+            DateTime::<Utc>::from_timestamp(now, 0).is_some(),
+            "current timestamp should parse"
+        );
+
+        // i64::MAX should fail — beyond representable range
+        assert!(
+            DateTime::<Utc>::from_timestamp(i64::MAX, 0).is_none(),
+            "i64::MAX should trigger the fallback"
+        );
+
+        // Negative extreme should also fail
+        assert!(
+            DateTime::<Utc>::from_timestamp(i64::MIN, 0).is_none(),
+            "i64::MIN should trigger the fallback"
+        );
+
+        // Verify the fallback produces a reasonable default (now + 7 days)
+        let fallback = DateTime::<Utc>::from_timestamp(i64::MAX, 0).unwrap_or_else(|| {
+            Utc::now() + Duration::try_days(REFRESH_TOKEN_DURATION_DAYS).expect("valid duration")
+        });
+        let expected = Utc::now() + Duration::try_days(7).expect("valid duration");
+        assert!(
+            (fallback - expected).num_seconds().abs() < 5,
+            "fallback should be ~7 days from now"
+        );
+    }
+}

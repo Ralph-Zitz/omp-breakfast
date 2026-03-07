@@ -9,6 +9,16 @@ use crate::components::{LoadingSpinner, PaginationBar};
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
+/// Returns true if the price string is a valid non-negative decimal number.
+fn is_valid_price(s: &str) -> bool {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    // Allow digits with an optional single decimal point
+    trimmed.parse::<f64>().is_ok_and(|v| v >= 0.0 && v.is_finite())
+}
+
 #[component]
 pub fn ItemsPage() -> impl IntoView {
     let (items, set_items) = signal(Vec::<ItemEntry>::new());
@@ -324,6 +334,14 @@ fn CreateItemDialog(
                                         }
                                     />
                                 </div>
+                                {move || {
+                                    let p = price.get();
+                                    if !p.trim().is_empty() && !is_valid_price(&p) {
+                                        view! { <div class="field-error">"Enter a valid price (e.g. 12.50)"</div> }.into_any()
+                                    } else {
+                                        view! { <span /> }.into_any()
+                                    }
+                                }}
                             </div>
                         </div>
                         <div class="modal-footer">
@@ -341,7 +359,7 @@ fn CreateItemDialog(
                             </button>
                             <button
                                 class="connect-button connect-button--accent connect-button--medium"
-                                disabled=move || descr.get().trim().is_empty() || price.get().trim().is_empty()
+                                disabled=move || descr.get().trim().is_empty() || !is_valid_price(&price.get())
                                 on:click={
                                     let create = on_create.clone();
                                     move |_| {
@@ -426,6 +444,14 @@ fn EditItemDialog(
                                         }
                                     />
                                 </div>
+                                {move || {
+                                    let p = price.get();
+                                    if !p.trim().is_empty() && !is_valid_price(&p) {
+                                        view! { <div class="field-error">"Enter a valid price (e.g. 12.50)"</div> }.into_any()
+                                    } else {
+                                        view! { <span /> }.into_any()
+                                    }
+                                }}
                             </div>
                         </div>
                         <div class="modal-footer">
@@ -442,7 +468,7 @@ fn EditItemDialog(
                             </button>
                             <button
                                 class="connect-button connect-button--accent connect-button--medium"
-                                disabled=move || descr.get().trim().is_empty() || price.get().trim().is_empty()
+                                disabled=move || descr.get().trim().is_empty() || !is_valid_price(&price.get())
                                 on:click={
                                     let save = on_save.clone();
                                     let iid = iid.clone();

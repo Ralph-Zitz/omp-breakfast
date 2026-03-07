@@ -220,3 +220,28 @@ pub async fn delete_order_item(
 
     Ok(result == 1)
 }
+
+/// Computes the total cost for a team order by summing `items.price * orders.amt`
+/// for all line items. Returns `Decimal::ZERO` if the order has no items.
+pub async fn get_order_total(
+    client: &Client,
+    teamorder_id: Uuid,
+    team_id: Uuid,
+) -> Result<rust_decimal::Decimal, Error> {
+    let statement = client
+        .prepare(
+            "select coalesce(sum(i.price * o.amt), 0) as total \
+             from orders o \
+             join items i on i.item_id = o.orders_item_id \
+             where o.orders_teamorders_id = $1 and o.orders_team_id = $2",
+        )
+        .await
+        .map_err(Error::Db)?;
+
+    let row = client
+        .query_one(&statement, &[&teamorder_id, &team_id])
+        .await
+        .map_err(Error::Db)?;
+
+    Ok(row.get::<_, rust_decimal::Decimal>("total"))
+}

@@ -94,7 +94,6 @@ impl ResponseError for Error {
                     error: "Internal server error".to_string(),
                 })
             }
-            // TODO: Fine grained query errors, or revert to general
             Error::Db(e) => {
                 match e.code() {
                     // Unique constraint violation
@@ -106,10 +105,36 @@ impl ResponseError for Error {
                     }
                     // Foreign key constraint violation
                     Some(st) if st.code() == "23503" => {
+                        let detail = e
+                            .as_db_error()
+                            .map(|db| {
+                                let table = db.table().unwrap_or("record");
+                                let constraint = db.constraint();
+                                match constraint {
+                                    Some(c) if c.contains("item") => {
+                                        format!("Referenced item does not exist ({})", table)
+                                    }
+                                    Some(c) if c.contains("team") => {
+                                        format!("Referenced team does not exist ({})", table)
+                                    }
+                                    Some(c) if c.contains("user") => {
+                                        format!("Referenced user does not exist ({})", table)
+                                    }
+                                    Some(c) if c.contains("role") => {
+                                        format!("Referenced role does not exist ({})", table)
+                                    }
+                                    Some(c) if c.contains("teamorders") || c.contains("order") => {
+                                        format!("Referenced order does not exist ({})", table)
+                                    }
+                                    _ => "Operation conflicts with an existing relationship"
+                                        .to_string(),
+                                }
+                            })
+                            .unwrap_or_else(|| {
+                                "Operation conflicts with an existing relationship".to_string()
+                            });
                         warn!(error = %e, code = %st.code(), "DB foreign key constraint violation");
-                        HttpResponse::Conflict().json(ErrorResponse {
-                            error: "Operation conflicts with an existing relationship".to_string(),
-                        })
+                        HttpResponse::Conflict().json(ErrorResponse { error: detail })
                     }
                     Some(st) => {
                         error!(error = %e, code = %st.code(), "DB error");

@@ -343,9 +343,20 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     // Logging
     LogTracer::init().expect("Unable to set up log tracer!");
     global::set_text_map_propagator(TraceContextPropagator::new());
-    let provider = SdkTracerProvider::builder()
-        .with_simple_exporter(stdout::SpanExporter::default())
-        .build();
+
+    let is_production = env::var("ENV").unwrap_or_default() == "production";
+
+    let provider = if is_production {
+        // Production: no stdout span exporter (avoids mixing raw OTel spans
+        // with structured JSON logs). A proper OTLP exporter can be added here
+        // if an OTel collector endpoint is available.
+        SdkTracerProvider::builder().build()
+    } else {
+        // Development: export spans to stdout for local debugging.
+        SdkTracerProvider::builder()
+            .with_simple_exporter(stdout::SpanExporter::default())
+            .build()
+    };
     let scope = InstrumentationScope::builder(env!("CARGO_PKG_NAME"))
         .with_version(env!("CARGO_PKG_VERSION"))
         .build();
@@ -356,8 +367,6 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
 
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("debug,actix_web=debug"));
-
-    let is_production = env::var("ENV").unwrap_or_default() == "production";
 
     // Hold the non-blocking writer guard at function scope so it lives for the
     // entire server lifetime. Dropping it early would lose buffered log writes.

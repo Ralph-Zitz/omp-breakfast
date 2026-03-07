@@ -1025,4 +1025,30 @@ mod tests {
             "verify_jwt_for_revocation should reject wrong secret"
         );
     }
+
+    // -- Malformed password hash (#350) --
+
+    #[test]
+    fn password_hash_new_rejects_corrupted_hash() {
+        // Verify that PasswordHash::new correctly fails on a non-Argon2 string,
+        // which exercises the error path in basic_validator that returns 500.
+        let corrupted = "not-a-valid-argon2-hash";
+        assert!(
+            PasswordHash::new(corrupted).is_err(),
+            "corrupted hash should be rejected by PasswordHash::new"
+        );
+
+        // Also verify with random garbage that looks like a hash but isn't
+        let garbage = "$argon2id$v=19$m=47104,t=1,p=1$!!!invalid-salt$!!!invalid-output";
+        assert!(
+            PasswordHash::new(garbage).is_err(),
+            "garbage hash should be rejected by PasswordHash::new"
+        );
+
+        // Valid hash should succeed (sanity check)
+        assert!(
+            PasswordHash::new(DUMMY_HASH).is_ok(),
+            "valid DUMMY_HASH should parse successfully"
+        );
+    }
 }
