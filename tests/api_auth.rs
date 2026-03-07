@@ -10,7 +10,6 @@ use jwt_compact::{
     AlgorithmExt, Claims as JwtClaims, Header as JwtHeader,
     alg::{Hs256, Hs256Key},
 };
-use serde::Serialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 

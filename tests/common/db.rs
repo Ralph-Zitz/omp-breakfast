@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Shared helpers for DB integration tests.
 
 use breakfast::{db, models::*};

@@ -1,10 +1,10 @@
+#![allow(dead_code)]
 //! Shared helpers for API integration tests.
 //!
 //! This module is imported by each `api_*.rs` test file via `mod common;`.
 
-use actix_web::{App, test, web::Data};
+use actix_web::{test, web::Data};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use breakfast::{models::*, routes::routes};
 use serde::Serialize;
 use serde_json::{Value, json};
 
