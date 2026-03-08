@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-08
+Last updated: 2026-03-15
 
 > **2026-03-08 resume-assessment:** Archived #699 (false positive — JWT unit tests exist) and #707 (false positive — FK constraint messages already implemented).
 
@@ -3827,6 +3827,34 @@ Last updated: 2026-03-08
 
 ## Notes
 
-- Total resolved items: 545 (7 critical, 55 important, 153 minor, 195 informational, plus items previously counted under different categories)
+- Total resolved items: 549 (7 critical, 55 important, 153 minor, 199 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file
+
+### Security — Config SecretString
+
+- [x] **#708 — Config secrets not wrapped in `SecretString`**
+  - File: `src/config.rs`, `src/server.rs`, `Cargo.toml`
+  - Resolution: Wrapped `server.secret` and `server.jwtsecret` in `secrecy::SecretString` in `ServerConfig`. Enabled `serde` feature for `secrecy` crate. Updated all access sites in `server.rs` to use `expose_secret()`. Updated config tests to use `expose_secret()` for assertions. `pg.password` not changed — it belongs to `deadpool_postgres::Config` (external struct).
+  - Source commands: `security-audit`
+
+### Security — Auth Cache Invalidation on Revoke
+
+- [x] **#710 — Auth cache TTL window allows revoked tokens for up to 5 minutes**
+  - File: `src/handlers/users.rs`
+  - Resolution: Added cache invalidation in `revoke_user_token` handler — after revoking the token, the user's email is looked up and their auth cache entry is invalidated via `invalidate_cache()`. This closes the 5-minute TTL window where a revoked token's owner could still authenticate via cached credentials.
+  - Source commands: `security-audit`
+
+### Database — Password CHECK Constraint
+
+- [x] **#711 — `password` column has no CHECK constraint on length**
+  - File: `migrations/V18__password_hash_check.sql`
+  - Resolution: Added migration V18 with `CHECK (length(password) >= 50)` constraint on the `password` column, preventing accidental plaintext storage.
+  - Source commands: `db-review`
+
+### Database — Email VARCHAR(254)
+
+- [x] **#712 — email column uses VARCHAR(75), RFC 5321 allows up to 254**
+  - Files: `migrations/V19__email_varchar_254.sql`, `src/models.rs`
+  - Resolution: Added migration V19 to expand `email` column from `VARCHAR(75)` to `VARCHAR(254)` and update the CHECK constraint to match. Updated both `CreateUserEntry` and `UpdateUserRequest` validators to use `max = 254`.
+  - Source commands: `db-review`

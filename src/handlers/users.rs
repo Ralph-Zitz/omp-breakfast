@@ -231,6 +231,12 @@ pub async fn revoke_user_token(
     });
     revoke_token(&client, &state, &token_data.jti.to_string(), expires_at).await?;
 
+    // Invalidate the auth cache for the token's owner so any cached credentials
+    // are flushed and the next Basic Auth attempt must re-verify against the DB.
+    if let Ok(user) = db::get_user(&client, token_data.sub).await {
+        let _ = invalidate_cache(state.clone(), &user.email);
+    }
+
     Ok(HttpResponse::Ok().json(RevokedResponse { revoked: true }))
 }
 

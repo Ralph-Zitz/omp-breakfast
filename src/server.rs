@@ -17,7 +17,7 @@ use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerPro
 use opentelemetry_stdout as stdout;
 use rustls::ServerConfig;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, pem::PemObject};
-use secrecy::SecretString;
+use secrecy::ExposeSecret;
 use std::{env, path::Path, time::Duration};
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{error, info, warn};
@@ -462,34 +462,35 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     let port = settings.server.port;
 
     // Reject default secrets in production
-    if is_production
-        && (settings.server.secret == "Very Secret" || settings.server.secret.is_empty())
     {
-        panic!(
-            "FATAL: Server secret must be changed from the default value in production. Set BREAKFAST_SERVER_SECRET environment variable."
-        );
-    }
-    if !is_production && settings.server.secret == "Very Secret" {
-        warn!("Using default server secret — acceptable for development only");
-    }
-    if is_production
-        && (settings.server.jwtsecret == "Very Secret" || settings.server.jwtsecret.is_empty())
-    {
-        panic!(
-            "FATAL: JWT secret must be changed from the default value in production. Set BREAKFAST_SERVER_JWTSECRET environment variable."
-        );
-    }
-    if is_production && settings.server.jwtsecret.len() < 32 {
-        panic!(
-            "FATAL: JWT secret must be at least 32 characters in production. Current length: {}",
-            settings.server.jwtsecret.len()
-        );
-    }
-    if is_production && settings.server.secret == settings.server.jwtsecret {
-        panic!("FATAL: Server secret and JWT secret must be different values in production.");
-    }
-    if !is_production && settings.server.jwtsecret == "Very Secret" {
-        warn!("Using default JWT secret — acceptable for development only");
+        let secret = settings.server.secret.expose_secret();
+        let jwtsecret = settings.server.jwtsecret.expose_secret();
+
+        if is_production && (secret == "Very Secret" || secret.is_empty()) {
+            panic!(
+                "FATAL: Server secret must be changed from the default value in production. Set BREAKFAST_SERVER_SECRET environment variable."
+            );
+        }
+        if !is_production && secret == "Very Secret" {
+            warn!("Using default server secret — acceptable for development only");
+        }
+        if is_production && (jwtsecret == "Very Secret" || jwtsecret.is_empty()) {
+            panic!(
+                "FATAL: JWT secret must be changed from the default value in production. Set BREAKFAST_SERVER_JWTSECRET environment variable."
+            );
+        }
+        if is_production && jwtsecret.len() < 32 {
+            panic!(
+                "FATAL: JWT secret must be at least 32 characters in production. Current length: {}",
+                jwtsecret.len()
+            );
+        }
+        if is_production && secret == jwtsecret {
+            panic!("FATAL: Server secret and JWT secret must be different values in production.");
+        }
+        if !is_production && jwtsecret == "Very Secret" {
+            warn!("Using default JWT secret — acceptable for development only");
+        }
     }
 
     // Reject default database credentials in production
@@ -546,7 +547,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     // Application state
     let state = Data::new(State {
         pool,
-        jwtsecret: SecretString::from(settings.server.jwtsecret.clone()),
+        jwtsecret: settings.server.jwtsecret,
         cache: DashMap::new(),
         token_blacklist: DashMap::new(),
         login_attempts: DashMap::new(),
@@ -977,8 +978,8 @@ mod tests {
                 host: "0.0.0.0".to_string(),
                 port: 8080,
                 http_redirect_port: 80,
-                secret: "secret".to_string(),
-                jwtsecret: "jwtsecret".to_string(),
+                secret: "secret".to_string().into(),
+                jwtsecret: "jwtsecret".to_string().into(),
                 git_version: "test".to_string(),
             },
             pg: deadpool_postgres::Config::new(),
@@ -1003,8 +1004,8 @@ mod tests {
                 host: "0.0.0.0".to_string(),
                 port: 8080,
                 http_redirect_port: 80,
-                secret: "secret".to_string(),
-                jwtsecret: "jwtsecret".to_string(),
+                secret: "secret".to_string().into(),
+                jwtsecret: "jwtsecret".to_string().into(),
                 git_version: "test".to_string(),
             },
             pg: deadpool_postgres::Config::new(),
@@ -1022,8 +1023,8 @@ mod tests {
                 host: "0.0.0.0".to_string(),
                 port: 8080,
                 http_redirect_port: 80,
-                secret: "secret".to_string(),
-                jwtsecret: "jwtsecret".to_string(),
+                secret: "secret".to_string().into(),
+                jwtsecret: "jwtsecret".to_string().into(),
                 git_version: "test".to_string(),
             },
             pg: deadpool_postgres::Config::new(),

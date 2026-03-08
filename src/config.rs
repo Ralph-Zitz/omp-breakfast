@@ -1,5 +1,6 @@
 use config::{Config, ConfigError, Environment, File};
 use git_version::git_version;
+use secrecy::SecretString;
 use serde::Deserialize;
 use std::env;
 use tracing::instrument;
@@ -19,8 +20,8 @@ pub struct ServerConfig {
     /// that operators have reviewed and customised the config before deploying.
     /// If this is still the default "Very Secret" in production, the server
     /// panics at startup.
-    pub secret: String,
-    pub jwtsecret: String,
+    pub secret: SecretString,
+    pub jwtsecret: SecretString,
     pub git_version: String,
 }
 
@@ -50,6 +51,7 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::ExposeSecret;
     use std::sync::Mutex;
 
     // Serialize config tests because they modify process-wide env vars.
@@ -79,8 +81,8 @@ mod tests {
         let settings = Settings::new().expect("should load default config");
         assert_eq!(settings.server.host, "0.0.0.0");
         assert_eq!(settings.server.port, 8080);
-        assert_eq!(settings.server.secret, "Very Secret");
-        assert_eq!(settings.server.jwtsecret, "Very Secret");
+        assert_eq!(settings.server.secret.expose_secret(), "Very Secret");
+        assert_eq!(settings.server.jwtsecret.expose_secret(), "Very Secret");
     }
 
     #[test]
@@ -105,7 +107,10 @@ mod tests {
         unsafe { std::env::set_var("BREAKFAST_SERVER_SECRET", "custom-secret-value") };
 
         let settings = Settings::new().expect("should load with secret override");
-        assert_eq!(settings.server.secret, "custom-secret-value");
+        assert_eq!(
+            settings.server.secret.expose_secret(),
+            "custom-secret-value"
+        );
 
         // SAFETY: serialized via ENV_LOCK
         unsafe { std::env::remove_var("BREAKFAST_SERVER_SECRET") };

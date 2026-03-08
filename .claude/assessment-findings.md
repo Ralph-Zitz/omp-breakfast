@@ -28,37 +28,15 @@ _No open minor items._
 
 ### Security (Informational)
 
-- [ ] **#708 — Config secrets not wrapped in `SecretString`**
-  - File: `src/config.rs`
-  - Problem: `server.secret`, `server.jwtsecret`, and `pg.password` are stored as plain `String`. They could appear in debug logs or error reports. Using `secrecy::SecretString` would prevent accidental exposure.
-  - Note: Low risk — config is not logged, and `tracing` skips the state object. Improvement for defense-in-depth.
-  - Source commands: `security-audit`
-
 - [ ] **#709 — `unsafe-inline` in CSP `script-src`**
   - File: `src/server.rs`
   - Problem: The Content-Security-Policy includes `'unsafe-inline'` in `script-src`, which weakens XSS protection. This is required by Trunk's inline WASM loader script — removing it causes a white-screen failure.
   - Note: Cannot be fixed without Trunk changes. Documented in CLAUDE.md. Track for future Trunk releases that support nonce-based loading.
   - Source commands: `security-audit`
 
-- [ ] **#710 — Auth cache TTL window allows revoked tokens for up to 5 minutes**
-  - File: `src/middleware/auth.rs`
-  - Problem: The 5-minute auth cache TTL means a revoked token could be accepted for up to 5 minutes after revocation. This is a deliberate performance trade-off.
-  - Note: Documented trade-off. The cache is cleared on explicit logout. Consider reducing TTL or adding cache invalidation on revoke if stricter guarantees are needed.
-  - Source commands: `security-audit`
-
 ### Database (Informational)
 
-- [ ] **#711 — `password` column has no CHECK constraint on length**
-  - File: `migrations/V1__initial_schema.sql`
-  - Problem: The `password` column stores Argon2id hashes which are always ~97 chars. A `CHECK (length(password) >= 50)` would prevent accidental plaintext storage.
-  - Note: Low priority — passwords are always hashed in application code before storage.
-  - Source commands: `db-review`
-
-- [ ] **#712 — email column uses VARCHAR(75), RFC 5321 allows up to 254**
-  - File: `migrations/V1__initial_schema.sql`
-  - Problem: The `email` column is `VARCHAR(75)` (with CHECK ≤75 in V16). RFC 5321 allows email addresses up to 254 characters. Very long addresses could be rejected.
-  - Note: Low priority — 75 chars covers the vast majority of real-world email addresses, and this is an internal LEGO tool.
-  - Source commands: `db-review`
+_No open database items._
 
 ### Documentation (Informational)
 
@@ -75,7 +53,7 @@ See that file for the full history of resolved findings.
 - **`cargo audit`:** Clean — 0 vulnerabilities in 438 dependencies.
 - **`cargo fmt --all --check`:** Passes clean.
 - **Test counts and migration version references** are no longer tracked in documentation files to prevent drift. See `migrations/` directory for current migrations. Run test suites to get current counts.
-- Open items summary: 0 critical, 0 important, 0 minor, 5 informational.
+- Open items summary: 0 critical, 0 important, 0 minor, 1 informational.
 - 16 new findings in this session: #698–#713.
 - Highest finding number: #713.
 - **0 regressions** — all 534 previously resolved items cross-checked, none regressed.

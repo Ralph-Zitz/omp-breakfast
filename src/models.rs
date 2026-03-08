@@ -210,7 +210,7 @@ pub struct UpdateUserRequest {
     pub lastname: String,
     #[validate(
         email,
-        length(max = 75, message = "email must not exceed 75 characters")
+        length(max = 254, message = "email must not exceed 254 characters")
     )]
     pub email: String,
     #[validate(custom(function = "validate_optional_password"))]
@@ -252,7 +252,7 @@ pub struct CreateUserEntry {
     pub lastname: String,
     #[validate(
         email,
-        length(max = 75, message = "email must not exceed 75 characters")
+        length(max = 254, message = "email must not exceed 254 characters")
     )]
     pub email: String,
     #[validate(length(
