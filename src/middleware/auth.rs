@@ -227,13 +227,13 @@ pub async fn is_token_revoked(
 #[instrument(skip(state), level = "debug")]
 pub fn invalidate_cache(state: Data<State>, key: &str) -> bool {
     let cache = &state.cache;
-    cache.remove(key).is_some()
+    cache.remove(&key.to_lowercase()).is_some()
 }
 
 /// Build the lockout key combining email and client IP to prevent
 /// unauthenticated attackers from locking any account from a single IP.
 fn lockout_key(email: &str, peer_ip: &str) -> String {
-    format!("{}:{}", email, peer_ip)
+    format!("{}:{}", email.to_lowercase(), peer_ip)
 }
 
 /// Check whether the account for `email` from `peer_ip` is locked out due
@@ -467,9 +467,11 @@ pub async fn basic_validator(
             ));
         }
     };
+    // Normalize email for case-insensitive cache lookups
+    let email_key = credentials.user_id().to_lowercase();
     let auth_entry = {
         cache
-            .get(&credentials.user_id().to_string())
+            .get(&email_key)
             .filter(|cached| {
                 // TTL check: reject entries older than CACHE_TTL_SECONDS
                 (Utc::now() - cached.cached_at).num_seconds() < CACHE_TTL_SECONDS
@@ -478,7 +480,7 @@ pub async fn basic_validator(
     };
     // Evict expired entry in a single atomic operation (no TOCTOU gap)
     if auth_entry.is_none() {
-        cache.remove_if(&credentials.user_id().to_string(), |_, cached| {
+        cache.remove_if(&email_key, |_, cached| {
             (Utc::now() - cached.cached_at).num_seconds() >= CACHE_TTL_SECONDS
         });
     }
@@ -508,7 +510,7 @@ pub async fn basic_validator(
                         password_hash: u.password.clone(),
                     };
                     cache.insert(
-                        credentials.user_id().to_string(),
+                        email_key.clone(),
                         CachedUser {
                             user: entry.clone(),
                             cached_at: Utc::now(),
@@ -797,6 +799,26 @@ mod tests {
         assert!(!removed);
     }
 
+    #[actix_web::test]
+    async fn invalidate_cache_is_case_insensitive() {
+        let state = test_state();
+        let auth_entry = AuthCacheEntry {
+            user_id: Uuid::now_v7(),
+            password_hash: "hashed_password".to_string(),
+        };
+        state.cache.insert(
+            "user@example.com".to_string(),
+            CachedUser {
+                user: auth_entry,
+                cached_at: Utc::now(),
+            },
+        );
+        // Invalidating with mixed-case key should still remove the lowercased entry
+        let removed = invalidate_cache(state.clone(), "User@Example.COM");
+        assert!(removed);
+        assert!(!state.cache.contains_key("user@example.com"));
+    }
+
     #[test]
     fn dummy_hash_is_valid_argon2id() {
         // Ensure the DUMMY_HASH constant used for timing-equalization is a
@@ -896,6 +918,22 @@ mod tests {
         assert!(
             !is_account_locked(&state, email_a, "10.0.0.1"),
             "Lockout should be per-IP"
+        );
+    }
+
+    #[test]
+    fn lockout_is_case_insensitive() {
+        let state = test_state();
+        // Record failures with mixed-case email variants
+        record_failed_attempt(&state, "User@Example.COM", TEST_IP);
+        record_failed_attempt(&state, "user@example.com", TEST_IP);
+        record_failed_attempt(&state, "USER@EXAMPLE.COM", TEST_IP);
+        record_failed_attempt(&state, "User@example.com", TEST_IP);
+        record_failed_attempt(&state, "user@Example.com", TEST_IP);
+        // All variants should be treated as the same account
+        assert!(
+            is_account_locked(&state, "USER@example.COM", TEST_IP),
+            "Lockout should be case-insensitive for email"
         );
     }
 

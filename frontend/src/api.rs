@@ -197,7 +197,9 @@ impl UserContext {
 }
 
 /// Derive a reactive `Signal<bool>` that is `true` when the current user is an admin.
-pub fn is_admin_signal(user: leptos::prelude::ReadSignal<Option<UserContext>>) -> leptos::prelude::Signal<bool> {
+pub fn is_admin_signal(
+    user: leptos::prelude::ReadSignal<Option<UserContext>>,
+) -> leptos::prelude::Signal<bool> {
     use leptos::prelude::Get;
     leptos::prelude::Signal::derive(move || user.get().map(|u| u.is_admin).unwrap_or(false))
 }
@@ -374,11 +376,12 @@ pub async fn authed_request(
     };
 
     let body_owned = body.cloned();
-    let resp = send_once(token, method, url.to_string(), body_owned.clone()).await?;
+    let body_retry = body_owned.clone();
+    let resp = send_once(token, method, url.to_string(), body_owned).await?;
 
     if resp.status() == 401 {
         if let Some(new_token) = try_refresh_token().await {
-            return send_once(new_token, method, url.to_string(), body_owned).await;
+            return send_once(new_token, method, url.to_string(), body_retry).await;
         }
         return None;
     }

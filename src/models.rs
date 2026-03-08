@@ -917,4 +917,90 @@ mod tests {
         };
         assert_eq!(params.sanitize(), (10, 0));
     }
+
+    // ── Email length boundary tests (#734) ───────────────────────────────────
+
+    #[test]
+    fn create_user_entry_email_at_254_is_valid() {
+        // Build a 254-char email with valid structure (local <= 64, labels <= 63)
+        // "testuser@" = 9 chars, domain = 245 chars
+        let domain = format!(
+            "{}.{}.{}.{}.com",
+            "a".repeat(62),
+            "a".repeat(62),
+            "a".repeat(62),
+            "a".repeat(52)
+        );
+        let email = format!("testuser@{domain}");
+        assert_eq!(email.len(), 254);
+        let entry = CreateUserEntry {
+            firstname: "Valid".to_string(),
+            lastname: "User".to_string(),
+            email,
+            password: "validpass123".to_string(),
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn create_user_entry_email_at_255_is_rejected() {
+        let domain = format!(
+            "{}.{}.{}.{}.com",
+            "a".repeat(62),
+            "a".repeat(62),
+            "a".repeat(62),
+            "a".repeat(53)
+        );
+        let email = format!("testuser@{domain}");
+        assert_eq!(email.len(), 255);
+        let entry = CreateUserEntry {
+            firstname: "Valid".to_string(),
+            lastname: "User".to_string(),
+            email,
+            password: "validpass123".to_string(),
+        };
+        assert!(entry.validate().is_err());
+    }
+
+    #[test]
+    fn update_user_request_email_at_254_is_valid() {
+        let domain = format!(
+            "{}.{}.{}.{}.com",
+            "a".repeat(62),
+            "a".repeat(62),
+            "a".repeat(62),
+            "a".repeat(52)
+        );
+        let email = format!("testuser@{domain}");
+        assert_eq!(email.len(), 254);
+        let entry = UpdateUserRequest {
+            firstname: "Valid".to_string(),
+            lastname: "User".to_string(),
+            email,
+            password: None,
+            current_password: None,
+        };
+        assert!(entry.validate().is_ok());
+    }
+
+    #[test]
+    fn update_user_request_email_at_255_is_rejected() {
+        let domain = format!(
+            "{}.{}.{}.{}.com",
+            "a".repeat(62),
+            "a".repeat(62),
+            "a".repeat(62),
+            "a".repeat(53)
+        );
+        let email = format!("testuser@{domain}");
+        assert_eq!(email.len(), 255);
+        let entry = UpdateUserRequest {
+            firstname: "Valid".to_string(),
+            lastname: "User".to_string(),
+            email,
+            password: None,
+            current_password: None,
+        };
+        assert!(entry.validate().is_err());
+    }
 }

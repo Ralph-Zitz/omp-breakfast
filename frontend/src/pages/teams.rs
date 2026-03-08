@@ -632,6 +632,7 @@ fn CreateTeamDialog(
                                         id="team-name"
                                         type="text"
                                         placeholder="Enter team name"
+                                        maxlength=255
                                         prop:value=move || name.get()
                                         on:input=input_handler(set_name)
                                     />
@@ -647,6 +648,7 @@ fn CreateTeamDialog(
                                         id="team-descr"
                                         type="text"
                                         placeholder="Team description"
+                                        maxlength=1000
                                         prop:value=move || descr.get()
                                         on:input=input_handler(set_descr)
                                     />
@@ -731,6 +733,7 @@ fn EditTeamDialog(
                                         class="connect-text-field__input"
                                         id="edit-team-name"
                                         type="text"
+                                        maxlength=255
                                         prop:value=move || name.get()
                                         on:input=input_handler(set_name)
                                     />
@@ -745,6 +748,7 @@ fn EditTeamDialog(
                                         class="connect-text-field__input"
                                         id="edit-team-descr"
                                         type="text"
+                                        maxlength=1000
                                         prop:value=move || descr.get()
                                         on:input=input_handler(set_descr)
                                     />

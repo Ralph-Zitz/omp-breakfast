@@ -1349,3 +1349,82 @@ async fn get_order_total_returns_zero_for_empty_order() {
         .await
         .expect("cleanup");
 }
+
+// ===========================================================================
+// Group 8: count_user_team_orders
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn count_user_team_orders_returns_correct_count() {
+    let mut client = test_client().await;
+    let (user, team, _roles) = create_admin_setup(&mut client).await;
+
+    // Initially zero
+    let count = db::count_user_team_orders(&client, user.user_id)
+        .await
+        .expect("count should succeed");
+    assert_eq!(count, 0, "new user should have zero team orders");
+
+    // Create two team orders
+    let order1 = db::create_team_order(
+        &client,
+        team.team_id,
+        user.user_id,
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let order2 = db::create_team_order(
+        &client,
+        team.team_id,
+        user.user_id,
+        CreateTeamOrderEntry {
+            duedate: None,
+            pickup_user_id: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let count = db::count_user_team_orders(&client, user.user_id)
+        .await
+        .expect("count should succeed");
+    assert_eq!(count, 2, "user should have two team orders");
+
+    // Delete one, count should decrease
+    db::delete_team_order(&client, team.team_id, order1.teamorders_id)
+        .await
+        .expect("delete should succeed");
+
+    let count = db::count_user_team_orders(&client, user.user_id)
+        .await
+        .expect("count should succeed");
+    assert_eq!(count, 1, "count should decrease after deletion");
+
+    // Cleanup
+    db::delete_team_order(&client, team.team_id, order2.teamorders_id)
+        .await
+        .expect("cleanup");
+    db::delete_team(&mut client, team.team_id)
+        .await
+        .expect("cleanup");
+    db::delete_user(&mut client, user.user_id)
+        .await
+        .expect("cleanup");
+}
+
+#[actix_web::test]
+#[ignore]
+async fn count_user_team_orders_nonexistent_user_returns_zero() {
+    let client = test_client().await;
+
+    let count = db::count_user_team_orders(&client, Uuid::now_v7())
+        .await
+        .expect("count for nonexistent user should succeed");
+    assert_eq!(count, 0);
+}

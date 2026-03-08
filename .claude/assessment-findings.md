@@ -36,14 +36,14 @@ See that file for the full history of resolved findings.
 ## Notes
 
 - **CONNECT Design System:** `git pull` on 2026-03-08 reported "Already up to date." No migration needed.
-- **`cargo audit`:** Clean (last run 2026-03-15: 0 vulnerabilities in 438 dependencies).
+- **`cargo audit`:** Clean (2026-03-08: 0 vulnerabilities in 438 dependencies).
 - **`cargo fmt --all --check`:** Passes clean.
 - **Test counts and migration version references** are no longer tracked in documentation files to prevent drift. See `migrations/` directory for current migrations. Run test suites to get current counts.
 - Open items summary: 0 critical, 0 important, 0 minor, 0 informational.
-- 13 new findings in this session: #714–#726.
-- Highest finding number: #726.
+- 13 new findings in this session: #727–#739.
+- Highest finding number: #739.
 - **0 regressions** — all 534 previously resolved items cross-checked, none regressed.
-- **False positives discarded:** bootstrap_first_user DB test (#682 — resolved, API-level coverage sufficient), sessionStorage token storage (intentional design), CSP unsafe-inline for styles (CONNECT DS requirement), config secrets not SecretString (#708 — resolved), auth cache TTL (#710 — resolved), password column CHECK (#711 — resolved), email VARCHAR(254) (#712 — resolved), Docker Compose SSL mode (dev-only), CORS hardcoded port (same-origin).
+- **False positives discarded:** `edition = "2024"` (valid in Rust 1.85+, project uses 1.93.1), bootstrap_first_user DB test (#682 — resolved, API-level coverage sufficient), sessionStorage token storage (intentional design), CSP unsafe-inline for styles (CONNECT DS requirement), config secrets not SecretString (#708 — resolved), auth cache TTL (#710 — resolved), password column CHECK (#711 — resolved), email VARCHAR(254) (#712 — resolved), Docker Compose SSL mode (dev-only), CORS hardcoded port (same-origin), Swagger UI ENV-gated (#112 — resolved, no regression), TLS key in Docker image (documented DEV ONLY), account lockout per-IP (design trade-off), DB ports 127.0.0.1 (dev-only), jwt-compact age (accepted, monitored via cargo audit), color-eyre age (accepted, panic formatting only), frontend `Uuid.clone()` in admin.rs (#731 — false positive: frontend `user_id` is `String` not `Uuid`, clones are required for Leptos `FnMut`/`Fn` closures).
 
 ### Re-assessment — 2026-03-08
 

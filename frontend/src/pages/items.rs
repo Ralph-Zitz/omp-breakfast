@@ -325,6 +325,7 @@ fn CreateItemDialog(
                                         id="item-descr"
                                         type="text"
                                         placeholder="Item name"
+                                        maxlength=255
                                         prop:value=move || descr.get()
                                         on:input=input_handler(set_descr)
                                     />
@@ -430,6 +431,7 @@ fn EditItemDialog(
                                         class="connect-text-field__input"
                                         id="edit-item-descr"
                                         type="text"
+                                        maxlength=255
                                         prop:value=move || descr.get()
                                         on:input=input_handler(set_descr)
                                     />

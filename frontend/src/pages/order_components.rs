@@ -215,6 +215,7 @@ pub fn OrderDetail(
                                                                 class="connect-text-field__input order-qty-input"
                                                                 type="number"
                                                                 min="1"
+                                                                max="10000"
                                                                 value=current_amt.to_string()
                                                                 on:change=move |ev| {
                                                                     let Some(target) = ev.target() else { return; };
@@ -301,6 +302,7 @@ pub fn OrderDetail(
                                             id="add-item-qty"
                                             type="number"
                                             min="1"
+                                            max="10000"
                                             prop:value=move || add_qty.get()
                                             on:input=input_handler(set_add_qty)
                                         />

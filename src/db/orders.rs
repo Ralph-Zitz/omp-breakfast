@@ -197,6 +197,10 @@ pub async fn count_team_orders(client: &Client, team_id: Uuid) -> Result<i64, Er
 }
 
 /// Deletes all team orders for a team. Returns the number of rows deleted.
+///
+/// Uses `&Client` (not `&mut Client`) because a single `DELETE` statement is
+/// atomic in PostgreSQL — the CASCADE to the `orders` table happens within
+/// the same implicit transaction. No explicit transaction is needed.
 pub async fn delete_team_orders(client: &Client, team_id: Uuid) -> Result<u64, Error> {
     let statement = client
         .prepare("delete from teamorders where teamorders_team_id = $1")

@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-08
+Last updated: 2026-03-15
 
 > **2026-03-08 fix-informational:** Archived #723–#726 (4 informational) — all fixed and verified with passing tests.
 >
@@ -767,6 +767,13 @@ Last updated: 2026-03-08
   - Files: `README.md`
   - Resolution: Updated "sixteen" to "seventeen" in both occurrences. Added V17 row to migration table. Updated V1–V16 references to V1–V17. Updated frontend test count from 93 to 97.
   - Source commands: `cross-ref-check`
+
+### Database — Case-Sensitive Email Uniqueness
+
+- [x] **#727 — Case-sensitive email uniqueness allows duplicate accounts with different casing**
+  - Files: `migrations/V20__case_insensitive_email.sql`, `src/db/users.rs`, `src/middleware/auth.rs`
+  - Resolution: Added migration V20 to lowercase existing emails, drop the case-sensitive UNIQUE constraint, and create a functional unique index on `LOWER(email)`. Normalized email to lowercase in all DB functions (`create_user`, `update_user`, `get_user_by_email`, `delete_user_by_email`, `bootstrap_first_user`). Normalized auth cache key, `invalidate_cache`, and `lockout_key` to use lowercased email. Added unit tests for case-insensitive cache invalidation and case-insensitive lockout.
+  - Source commands: `db-review`
 
 ## Minor Items
 
@@ -2168,6 +2175,62 @@ Last updated: 2026-03-08
   - Resolution: Added 2 WASM tests: `test_orders_page_shows_order_detail_on_click`, `test_orders_page_create_order_dialog_fields`. Total orders page tests now 3.
   - Source commands: `test-gaps`
 
+### Documentation — CLAUDE.md Function List
+
+- [x] **#728 — CLAUDE.md `orders.rs` function list missing `count_user_team_orders`**
+  - File: `CLAUDE.md`
+  - Resolution: Added `count_user_team_orders` to the parenthetical function list in the orders.rs description.
+  - Source commands: `cross-ref-check`
+
+### Database — amt Upper Bound
+
+- [x] **#729 — `orders.amt` DB CHECK constraint lacks upper bound**
+  - File: `migrations/V21__orders_amt_upper_bound.sql`
+  - Resolution: Created migration V21 that updates any existing rows exceeding 10000, drops the old CHECK, and adds `CHECK (amt >= 1 AND amt <= 10000)` to align DB constraint with API validation.
+  - Source commands: `db-review`
+
+### Testing — count_user_team_orders Coverage
+
+- [x] **#730 — `count_user_team_orders` public DB function has zero test coverage**
+  - File: `tests/db_orders.rs`
+  - Resolution: Added 2 DB integration tests: `count_user_team_orders_returns_correct_count` (creates 2 orders → count 2, deletes one → count 1) and `count_user_team_orders_nonexistent_user_returns_zero`.
+  - Source commands: `test-gaps`
+
+### False Positive — Frontend Uuid Clone
+
+- [x] **#731 — Unnecessary `Uuid.clone()` in frontend admin.rs**
+  - File: `frontend/src/pages/admin.rs`
+  - Resolution: False positive. Frontend `user_id` is `String`, not `Uuid`. The `.clone()` calls are required because Leptos reactive closures must be `FnMut`/`Fn`, and `String` is not `Copy`. Removing them causes compilation errors (E0507, E0382, E0525).
+  - Source commands: `review`
+
+### Backend — Auth Guard must_use
+
+- [x] **#732 — Missing `#[must_use]` on auth guard functions**
+  - File: `src/handlers/mod.rs`
+  - Resolution: Added `#[must_use = "auth guard result must be checked with ?"]` to all 6 RBAC guard functions (`require_admin`, `require_team_member`, `require_team_admin`, `require_admin_or_team_admin`, `require_self_or_admin_or_team_admin`, `require_order_owner_or_team_admin`). `validate()` in `src/validate.rs` already had `#[must_use]`.
+  - Source commands: `review`
+
+### Frontend — Double Clone in authed_request
+
+- [x] **#733 — Double clone of `body` in `authed_request` retry path**
+  - File: `frontend/src/api.rs`
+  - Resolution: Restructured clone logic — clone `body_owned` into `body_retry` before the first send, use `body_owned` for first request and `body_retry` for retry. One clone instead of two.
+  - Source commands: `review`
+
+### Testing — Email Boundary Value Tests
+
+- [x] **#734 — Validation boundary value tests missing for email max-length**
+  - File: `src/models.rs`
+  - Resolution: Added 4 unit tests for email length boundaries: `create_user_entry_email_at_254_is_valid`, `create_user_entry_email_at_255_is_rejected`, `update_user_request_email_at_254_is_valid`, `update_user_request_email_at_255_is_rejected`. Uses RFC-compliant email structure with domain labels ≤ 63 chars. Other boundaries (password, amt, firstname, lastname) were already covered by existing tests.
+  - Source commands: `test-gaps`
+
+### Frontend — maxlength/max Attributes
+
+- [x] **#737 — Frontend validation weaker than backend**
+  - Files: `frontend/src/pages/items.rs`, `frontend/src/pages/teams.rs`, `frontend/src/pages/order_components.rs`
+  - Resolution: Added `maxlength=255` to item description inputs (create + edit), `maxlength=255` to team name inputs, `maxlength=1000` to team description inputs, and `max="10000"` to order quantity inputs. Login, profile, and admin pages already had correct attributes.
+  - Source commands: `api-completeness`
+
 ## Informational Items
 
 ### API — Orphaned DB Function
@@ -2197,6 +2260,13 @@ Last updated: 2026-03-08
   - File: `src/server.rs`
   - Resolution: Added a startup `warn!()` when `ENABLE_SWAGGER=true` and `ENV != "development"`, alerting operators that the full API schema is exposed without authentication at `/explorer`.
   - Source commands: `security-audit`
+
+### Frontend — Role CRUD Design Decision
+
+- [x] **#735 — Role CRUD UI not implemented — backend endpoints exist but frontend only reads roles**
+  - File: `frontend/src/pages/roles.rs`
+  - Resolution: Design decision — the 4 seeded roles (Admin, Team Admin, Member, Guest) are the complete set for the foreseeable future. Role *assignment* (changing a user's role within a team) is fully functional via the inline dropdown on the Teams page. Role *definition* CRUD is intentionally excluded from the UI.
+  - Source commands: `api-completeness`
 
 ### API Design — List Endpoints Now Paginated
 
@@ -3960,3 +4030,24 @@ Last updated: 2026-03-08
   - Files: `src/server.rs`, `frontend/Trunk.toml`, `CLAUDE.md`
   - Resolution: Set `filehash = false` in `Trunk.toml` to make Trunk's inline WASM loader script deterministic across builds. Computed the SHA-256 hash of the loader script (`sha256-hkIUP5VZpQ+CH9Va73b6RJlnUGtVokRUEv+DJuZ14uw=`) and replaced `'unsafe-inline'` with the hash in the CSP `script-src` directive. Updated CLAUDE.md to document the new approach and hash recomputation procedure.
   - Source commands: `security-audit`
+
+### Frontend — Admin Delete Button (Stale Finding)
+
+- [x] **#736 — User delete action not visible in admin UI**
+  - File: `frontend/src/pages/admin.rs`
+  - Resolution: Finding was stale — the admin page already has a fully functional delete button (Trash icon) with a ConfirmModal confirmation dialog. The button is visible to admin users for non-self rows. No changes needed.
+  - Source commands: `api-completeness`
+
+### Documentation — CASCADE FK Convention
+
+- [x] **#738 — Sole CASCADE FK (`orders→teamorders`) is an undocumented exception to the RESTRICT convention**
+  - File: `CLAUDE.md`
+  - Resolution: Added a dedicated "Foreign key convention" bullet to CLAUDE.md Key Conventions documenting the `ON DELETE RESTRICT` default and the sole `ON DELETE CASCADE` exception on `orders.orders_teamorders_id → teamorders`.
+  - Source commands: `db-review`
+
+### Documentation — delete_team_orders &Client Signature
+
+- [x] **#739 — `delete_team_orders` uses `&Client` not `&mut Client` despite multi-table CASCADE side effects**
+  - Files: `src/db/orders.rs`, `CLAUDE.md`
+  - Resolution: Added expanded doc comment to `delete_team_orders` explaining why `&Client` is correct (single DELETE is atomic, CASCADE happens within the same implicit transaction). Updated CLAUDE.md DB function convention to document this as an intentional exception.
+  - Source commands: `db-review`

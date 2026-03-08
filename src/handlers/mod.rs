@@ -55,6 +55,7 @@ pub fn requesting_user_id(req: &HttpRequest) -> Option<Uuid> {
 
 /// Require the requesting user to be a member of the specified team (any role).
 /// Global admins bypass this check.
+#[must_use = "auth guard result must be checked with ?"]
 pub async fn require_team_member(
     client: &Client,
     req: &HttpRequest,
@@ -74,6 +75,7 @@ pub async fn require_team_member(
 }
 
 /// Require the requesting user to hold the "Admin" role in any team (global admin check).
+#[must_use = "auth guard result must be checked with ?"]
 pub async fn require_admin(client: &Client, req: &HttpRequest) -> Result<(), Error> {
     let user_id = requesting_user_id(req)
         .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
@@ -86,6 +88,7 @@ pub async fn require_admin(client: &Client, req: &HttpRequest) -> Result<(), Err
 
 /// Require the requesting user to be a Team Admin of the specified team,
 /// or a global Admin. Global admins bypass the team-scoped check.
+#[must_use = "auth guard result must be checked with ?"]
 pub async fn require_team_admin(
     client: &Client,
     req: &HttpRequest,
@@ -108,6 +111,7 @@ pub async fn require_team_admin(
 /// Require the requesting user to hold the "Admin" role in any team (global admin),
 /// or the "Team Admin" role in any team. Used for operations like user creation
 /// that should be available to both admin tiers but not regular members.
+#[must_use = "auth guard result must be checked with ?"]
 pub async fn require_admin_or_team_admin(client: &Client, req: &HttpRequest) -> Result<(), Error> {
     let user_id = requesting_user_id(req)
         .ok_or_else(|| Error::Unauthorized("Authentication required".to_string()))?;
@@ -122,6 +126,7 @@ pub async fn require_admin_or_team_admin(client: &Client, req: &HttpRequest) -> 
 
 /// Require the requesting user to be the target user themselves, a global Admin,
 /// or a Team Admin of any team where the target user is also a member.
+#[must_use = "auth guard result must be checked with ?"]
 pub async fn require_self_or_admin_or_team_admin(
     client: &Client,
     req: &HttpRequest,
@@ -226,6 +231,7 @@ pub async fn guard_last_admin_membership(
 /// Require the requesting user to be the owner of the specified team order,
 /// a Team Admin for the team, or a global Admin. Regular members / guests
 /// may only mutate their own orders.
+#[must_use = "auth guard result must be checked with ?"]
 pub async fn require_order_owner_or_team_admin(
     client: &Client,
     req: &HttpRequest,

@@ -62,7 +62,7 @@ src/
     teams.rs       – Team CRUD + user-team queries (get_teams, get_team, create_team, update_team, delete_team, get_user_teams, get_team_users)
     roles.rs       – Role CRUD + bootstrap (get_roles, get_role, create_role, update_role, delete_role, seed_default_roles)
     items.rs       – Item CRUD (get_items, get_item, create_item, update_item, delete_item)
-    orders.rs      – Team order CRUD (get_team_orders, get_team_order, create_team_order, update_team_order, delete_team_order, delete_team_orders, reopen_team_order, count_team_orders)
+    orders.rs      – Team order CRUD (get_team_orders, get_team_order, create_team_order, update_team_order, delete_team_order, delete_team_orders, reopen_team_order, count_team_orders, count_user_team_orders)
     order_items.rs – Order item CRUD + closed-order check (is_team_order_closed, get_order_items, get_order_item, create_order_item, update_order_item, delete_order_item, get_order_total)
     membership.rs  – Team membership + RBAC queries (count_admins, is_admin, is_admin_or_team_admin, is_team_admin_of_user, get_member_role, check_team_access, add_team_member, remove_team_member, update_member_role, would_admins_remain_without)
     tokens.rs      – Token blacklist persistence (revoke_token_db, is_token_revoked_db, cleanup_expired_tokens)
@@ -173,7 +173,8 @@ tests/
 
 - CORS is enforced via `actix-cors` middleware with an explicit same-origin allowlist (methods: GET/POST/PUT/DELETE/OPTIONS; headers: Authorization, Content-Type, Accept; max-age: 3600s)
 - Every handler returns `Result<impl Responder, Error>` using the custom `errors::Error` enum
-- DB functions take a `&Client` and return `Result<T, Error>`, using `.map_err(Error::Db)?` pattern. Functions that perform multi-step mutations (`add_team_member`, `update_member_role`, `remove_team_member`, `delete_user`, `delete_user_by_email`) take `&mut Client` and wrap operations in a database transaction.
+- DB functions take a `&Client` and return `Result<T, Error>`, using `.map_err(Error::Db)?` pattern. Functions that perform multi-step mutations (`add_team_member`, `update_member_role`, `remove_team_member`, `delete_user`, `delete_user_by_email`) take `&mut Client` and wrap operations in a database transaction. Exception: `delete_team_orders` uses `&Client` because PostgreSQL executes a single `DELETE` that cascades to the `orders` table atomically — no explicit transaction is needed.
+- **Foreign key convention:** All FKs use `ON DELETE RESTRICT` (enforced in migrations V3/V15/V16) so that the application layer explicitly handles cascading deletions. Sole exception: `orders.orders_teamorders_id → teamorders` uses `ON DELETE CASCADE` — deleting a team order atomically removes its line items without application-level cleanup. This is intentional; breakfast order line items have no independent lifecycle.
 - **Update functions must return 404 (not 500) when the target resource does not exist.** Use `query_opt()` + `.ok_or_else(|| Error::NotFound(...))` — never `query_one()`, which maps missing rows to a generic DB error (500). This is a permanent design decision; do not revert to `query_one()` in update functions.
 - All handlers are instrumented with `#[instrument(..., level = "debug")]` — `state` is always skipped; handlers may also skip `req`, `json`, `basic`, `body` as appropriate
 - Validation uses `validate(&json)?` before any DB call

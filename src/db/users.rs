@@ -50,15 +50,17 @@ pub async fn get_user(client: &Client, user_id: Uuid) -> Result<UserEntry, Error
 /// Looks up a user by email address, returning an [`UpdateUserEntry`] that
 /// includes the password hash (for auth cache verification).
 ///
+/// The lookup is case-insensitive (email is lowercased before querying).
 /// Returns `Error::NotFound` if no user exists with the given email.
 pub async fn get_user_by_email(client: &Client, email: &str) -> Result<UpdateUserEntry, Error> {
+    let email_lower = email.to_lowercase();
     let statement = client
         .prepare("select user_id, firstname, lastname, email, password from users where email = $1 limit 1")
         .await
         .map_err(Error::Db)?;
 
     client
-        .query_opt(&statement, &[&email])
+        .query_opt(&statement, &[&email_lower])
         .await
         .map_err(Error::Db)?
         .ok_or_else(|| Error::NotFound("User not found".to_string()))
@@ -89,6 +91,7 @@ pub async fn get_password_hash(client: &Client, user_id: Uuid) -> Result<String,
 ///
 /// Returns the created user (without password).
 pub async fn create_user(client: &Client, user: CreateUserEntry) -> Result<UserEntry, Error> {
+    let email_lower = user.email.to_lowercase();
     let statement = client
         .prepare(
             r#"
@@ -113,7 +116,7 @@ pub async fn create_user(client: &Client, user: CreateUserEntry) -> Result<UserE
     client
         .query_one(
             &statement,
-            &[&user.firstname, &user.lastname, &user.email, &hash],
+            &[&user.firstname, &user.lastname, &email_lower, &hash],
         )
         .await
         .map(UserEntry::from_row)?
@@ -130,6 +133,7 @@ pub async fn update_user(
     uid: Uuid,
     user: UpdateUserRequest,
 ) -> Result<UserEntry, Error> {
+    let email_lower = user.email.to_lowercase();
     match &user.password {
         Some(password) => {
             // Password provided — hash and update all fields
@@ -158,7 +162,7 @@ pub async fn update_user(
             client
                 .query_opt(
                     &statement,
-                    &[&user.firstname, &user.lastname, &user.email, &hash, &uid],
+                    &[&user.firstname, &user.lastname, &email_lower, &hash, &uid],
                 )
                 .await
                 .map_err(Error::Db)?
@@ -182,7 +186,7 @@ pub async fn update_user(
             client
                 .query_opt(
                     &statement,
-                    &[&user.firstname, &user.lastname, &user.email, &uid],
+                    &[&user.firstname, &user.lastname, &email_lower, &uid],
                 )
                 .await
                 .map_err(Error::Db)?
@@ -236,6 +240,7 @@ pub async fn count_users(client: &Client) -> Result<i64, Error> {
 /// deletes the user row. Returns `true` if a row was deleted, `false`
 /// if no user matched.
 pub async fn delete_user_by_email(client: &mut Client, email: &str) -> Result<bool, Error> {
+    let email_lower = email.to_lowercase();
     let tx = client.transaction().await.map_err(Error::Db)?;
 
     // Look up user_id for membership cleanup
@@ -243,7 +248,10 @@ pub async fn delete_user_by_email(client: &mut Client, email: &str) -> Result<bo
         .prepare("select user_id from users where email = $1")
         .await
         .map_err(Error::Db)?;
-    let user_row = tx.query_opt(&lookup, &[&email]).await.map_err(Error::Db)?;
+    let user_row = tx
+        .query_opt(&lookup, &[&email_lower])
+        .await
+        .map_err(Error::Db)?;
 
     let Some(row) = user_row else {
         tx.commit().await.map_err(Error::Db)?;
@@ -316,7 +324,8 @@ pub async fn bootstrap_first_user(
         ));
     }
 
-    // 2. Create the user with the pre-hashed password
+    // 2. Create the user with the pre-hashed password (email lowercased)
+    let email_lower = user.email.to_lowercase();
     let user_row = tx
         .query_one(
             r#"
@@ -324,7 +333,7 @@ pub async fn bootstrap_first_user(
                values ($1, $2, $3, $4)
                returning user_id, firstname, lastname, email, avatar_id, created, changed
             "#,
-            &[&user.firstname, &user.lastname, &user.email, &hash],
+            &[&user.firstname, &user.lastname, &email_lower, &hash],
         )
         .await
         .map_err(Error::Db)?;
