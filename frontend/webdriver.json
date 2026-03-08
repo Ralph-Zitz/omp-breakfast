@@ -1,0 +1,12 @@
+{
+  "goog:chromeOptions": {
+    "args": [
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--no-sandbox",
+      "--disable-extensions",
+      "--disable-background-networking",
+      "--js-flags=--max-old-space-size=512"
+    ]
+  }
+}
