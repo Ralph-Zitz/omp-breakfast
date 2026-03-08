@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-15
+Last updated: 2026-03-16
 
 > **2026-03-08 resume-assessment:** Archived #699 (false positive — JWT unit tests exist) and #707 (false positive — FK constraint messages already implemented).
 
@@ -3858,3 +3858,10 @@ Last updated: 2026-03-15
   - Files: `migrations/V19__email_varchar_254.sql`, `src/models.rs`
   - Resolution: Added migration V19 to expand `email` column from `VARCHAR(75)` to `VARCHAR(254)` and update the CHECK constraint to match. Updated both `CreateUserEntry` and `UpdateUserRequest` validators to use `max = 254`.
   - Source commands: `db-review`
+
+### Security — CSP `unsafe-inline` Replaced with SHA-256 Hash
+
+- [x] **#709 — `unsafe-inline` in CSP `script-src`**
+  - Files: `src/server.rs`, `frontend/Trunk.toml`, `CLAUDE.md`
+  - Resolution: Set `filehash = false` in `Trunk.toml` to make Trunk's inline WASM loader script deterministic across builds. Computed the SHA-256 hash of the loader script (`sha256-hkIUP5VZpQ+CH9Va73b6RJlnUGtVokRUEv+DJuZ14uw=`) and replaced `'unsafe-inline'` with the hash in the CSP `script-src` directive. Updated CLAUDE.md to document the new approach and hash recomputation procedure.
+  - Source commands: `security-audit`

@@ -28,11 +28,7 @@ _No open minor items._
 
 ### Security (Informational)
 
-- [ ] **#709 — `unsafe-inline` in CSP `script-src`**
-  - File: `src/server.rs`
-  - Problem: The Content-Security-Policy includes `'unsafe-inline'` in `script-src`, which weakens XSS protection. This is required by Trunk's inline WASM loader script — removing it causes a white-screen failure.
-  - Note: Cannot be fixed without Trunk changes. Documented in CLAUDE.md. Track for future Trunk releases that support nonce-based loading.
-  - Source commands: `security-audit`
+_No open security items._
 
 ### Database (Informational)
 
@@ -53,7 +49,7 @@ See that file for the full history of resolved findings.
 - **`cargo audit`:** Clean — 0 vulnerabilities in 438 dependencies.
 - **`cargo fmt --all --check`:** Passes clean.
 - **Test counts and migration version references** are no longer tracked in documentation files to prevent drift. See `migrations/` directory for current migrations. Run test suites to get current counts.
-- Open items summary: 0 critical, 0 important, 0 minor, 1 informational.
+- Open items summary: 0 critical, 0 important, 0 minor, 0 informational.
 - 16 new findings in this session: #698–#713.
 - Highest finding number: #713.
 - **0 regressions** — all 534 previously resolved items cross-checked, none regressed.

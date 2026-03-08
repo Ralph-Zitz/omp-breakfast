@@ -1,6 +1,9 @@
 [build]
 # Output directory for the built frontend assets
 dist = "dist"
+# Disable file hashing so the inline WASM loader script has a stable SHA-256
+# hash, allowing CSP to use 'sha256-...' instead of 'unsafe-inline'.
+filehash = false
 
 [watch]
 # Files to watch for changes during development
