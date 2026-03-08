@@ -720,7 +720,9 @@ async fn test_create_user_submit_shows_toast() {
     // Dialog should close and toast should appear
     let html = inner_html(id);
     assert!(
-        html.contains("User created") || html.contains("toast") || !has_element(id, ".modal-overlay"),
+        html.contains("User created")
+            || html.contains("toast")
+            || !has_element(id, ".modal-overlay"),
         "create user should succeed — dialog closes or toast shows"
     );
 
@@ -761,7 +763,9 @@ async fn test_create_role_submit_shows_toast() {
     // Dialog should close and toast should appear
     let html = inner_html(id);
     assert!(
-        html.contains("Role created") || html.contains("toast") || !has_element(id, ".modal-overlay"),
+        html.contains("Role created")
+            || html.contains("toast")
+            || !has_element(id, ".modal-overlay"),
         "create role should succeed — dialog closes or toast shows"
     );
 
@@ -769,4 +773,3 @@ async fn test_create_role_submit_shows_toast() {
     clear_tokens();
     restore_fetch();
 }
-
