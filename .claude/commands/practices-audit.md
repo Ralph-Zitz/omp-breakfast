@@ -17,7 +17,7 @@ Read `CLAUDE.md` and verify every factual claim against the actual codebase:
 - **Project Structure** — Does the file tree in CLAUDE.md match the actual directory layout? Are there new files or directories not listed?
 - **Key Conventions** — For each convention listed (e.g., "Every handler returns `Result<impl Responder, Error>`"), spot-check at least 3 handlers to verify compliance
 - **Frontend Architecture** — Does the component hierarchy match the actual code? Are signal patterns described accurately?
-- **Testing** — Do the test counts match reality? (Count `#[test]`, `#[actix_web::test]`, and `#[wasm_bindgen_test]` across the codebase)
+- **Testing** — Do tests exist for the documented modules? Are there test files on disk not mentioned? (Do NOT verify specific test counts — counts are intentionally omitted from documentation to prevent drift)
 - **Unfinished Work** — Are items still unfinished, or have some been completed without updating the doc? Are there new unfinished items not listed?
 - **Markdown Style Rules** — Does CLAUDE.md itself follow its own markdown rules?
 

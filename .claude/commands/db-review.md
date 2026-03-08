@@ -10,7 +10,7 @@ You are a database engineer reviewing a PostgreSQL-backed Rust application. The 
 
 The application uses different initialization strategies:
 
-- **Schema:** `migrations/` directory — all Refinery migration files (V1 initial schema through V17, and any newer migrations)
+- **Schema:** `migrations/` directory — all Refinery migration files
 - **Initialization:** `init_dev_db.sh` — Test database initialization script used by `postgres-setup` in `docker-compose.test.yml`; auto-discovers and applies all migration files from `migrations/`
 - **First-user bootstrap:** `POST /auth/register` creates the first user, seeds default roles, creates a "Default" team, and assigns the user as Admin
 
@@ -55,7 +55,7 @@ End with:
 
 Read the following files:
 
-- `migrations/` - All migration files (V1 schema through V17, and any newer)
+- `migrations/` - All migration files
 - `src/db/` - All database query modules
 - `src/db/migrate.rs` - Migration runner
 

@@ -3818,8 +3818,15 @@ Last updated: 2026-03-08
   - Resolution: Added 2 integration tests: `non_member_cannot_reopen_order` (asserts 403 for non-member reopen attempt) and `team_admin_can_delete_order_by_another_member` (asserts team admin can delete another member's order).
   - Source commands: `rbac-rules`, `test-gaps`
 
+### Documentation — Migration Version Drift
+
+- [x] **#713 — `init_dev_db.sh` references V1–V9 for idempotent migrations**
+  - File: `init_dev_db.sh`
+  - Resolution: No longer relevant — version-specific migration references removed from documentation files (CLAUDE.md, README.md, command files) to prevent drift. Files now refer to `migrations/` directory generically.
+  - Source commands: `cross-ref-check`
+
 ## Notes
 
-- Total resolved items: 544 (7 critical, 55 important, 153 minor, 194 informational, plus items previously counted under different categories)
+- Total resolved items: 545 (7 critical, 55 important, 153 minor, 195 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

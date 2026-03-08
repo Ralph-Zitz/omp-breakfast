@@ -62,11 +62,7 @@ _No open minor items._
 
 ### Documentation (Informational)
 
-- [ ] **#713 — `init_dev_db.sh` references V1–V9 for idempotent migrations**
-  - File: `init_dev_db.sh`
-  - Problem: The script applies V1–V9 as idempotent migrations. This is accurate today but the comment/documentation will need updating if newer migrations also become idempotent.
-  - Note: No action needed now — informational only.
-  - Source commands: `cross-ref-check`
+_No open documentation items._
 
 ## Completed Items
 
@@ -78,8 +74,8 @@ See that file for the full history of resolved findings.
 - **CONNECT Design System:** `git pull` on 2026-03-15 reported "Already up to date." No migration needed.
 - **`cargo audit`:** Clean — 0 vulnerabilities in 438 dependencies.
 - **`cargo fmt --all --check`:** Passes clean.
-- **Test counts verified (2026-03-15):** 248 unit (226 lib + 22 healthcheck), 177 API integration (ignored), 120 DB integration (ignored), 97 WASM.
-- Open items summary: 0 critical, 0 important, 0 minor, 6 informational.
+- **Test counts and migration version references** are no longer tracked in documentation files to prevent drift. See `migrations/` directory for current migrations. Run test suites to get current counts.
+- Open items summary: 0 critical, 0 important, 0 minor, 5 informational.
 - 16 new findings in this session: #698–#713.
 - Highest finding number: #713.
 - **0 regressions** — all 534 previously resolved items cross-checked, none regressed.

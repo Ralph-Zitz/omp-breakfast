@@ -147,24 +147,7 @@ Makefile           – Build, test, and dev convenience targets
 minifigs/          – Pre-resized 128×128 LEGO minifigure PNG thumbnails used as user profile avatars (committed to git)
 NEW-UI-COMPONENTS.md – Registry of custom UI components not available in the CONNECT design system
 README.md          – Project readme
-migrations/
-  V1__initial_schema.sql – Refinery migration for the database schema
-  V2__uuid_v7_defaults.sql – UUID v7 default migration (PostgreSQL 18+)
-  V3__indexes_constraints.sql – Indexes, FK RESTRICT, NOT NULL constraints
-  V4__schema_hardening.sql – Schema hardening migration
-  V5__trigger_and_notnull_fixes.sql – Trigger fix on users, NOT NULL on teamorders_user_id and memberof.joined
-  V6__order_constraint_and_index.sql – NOT NULL + unique constraint on orders, covering index
-  V7__drop_redundant_indexes.sql – Drops redundant idx_users_email and idx_teams_name (duplicated by UNIQUE constraints)
-  V8__avatars.sql – Avatars table + users.avatar_id FK column
-  V9__avatar_index_and_revoked_not_null.sql – Avatar FK index + token_blacklist.revoked_at NOT NULL
-  V10__guard_teamorders_team_id.sql – Guard teamorders_team_id with trigger
-  V11__text_column_check_constraints.sql – CHECK constraints on text column lengths
-  V12__cleanup_index_and_constraints.sql – Drop unused idx_teamorders_id_due, NOT NULL on orders_team_id
-  V13__pickup_user.sql – Adds pickup_user_id column to teamorders table (FK to users, partial index)
-  V14__user_text_check_constraints.sql – CHECK constraints on users.firstname (≤50), users.lastname (≤50), users.email (≤255)
-  V15__restrict_cascade_fks.sql – Change memberof.memberof_user_id, teamorders.teamorders_team_id, orders.orders_team_id FKs from CASCADE to RESTRICT
-  V16__constraint_fixes.sql – Constraint fixes
-  V17__avatar_text_constraints.sql – CHECK constraints on avatars.name (≤255) and avatars.content_type (≤100)
+migrations/        – Refinery SQL migration files (versioned V1, V2, … — see files on disk for current list)
 tests/
   common/          – Shared test helpers (setup, state, DB utilities)
   api_auth.rs      – Auth API integration tests (login, register, refresh, revoke)
@@ -411,47 +394,23 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ## Unfinished Work
 
 - No client-side routing library (manual signal-based page switching, by design)
-- Frontend WASM tests cover all pages with rendering and basic interaction tests (97 tests); deeper workflow and edge-case tests for individual pages are still missing
+- Frontend WASM tests cover all pages with rendering and basic interaction tests; deeper workflow and edge-case tests for individual pages are still missing
 
 ## Testing
 
 ### Backend
 
-- 248 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 177 API integration tests in `tests/api_*.rs` (require running Postgres, marked `#[ignore]`)
-- 120 DB function integration tests in `tests/db_*.rs` (require running Postgres, marked `#[ignore]`)
+- Extensive unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
+- API integration tests in `tests/api_*.rs` (require running Postgres, marked `#[ignore]`)
+- DB function integration tests in `tests/db_*.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
 - Test DB uses `docker-compose.test.yml` overlay to expose port 5433 (avoids conflicts with dev DB on 5432)
 
 ### Frontend
 
-- 97 WASM tests in `frontend/tests/ui_*.rs` (run in headless Chrome via `wasm-pack`)
-- Test categories:
-  - JWT decode (4 tests): valid token, missing segments, bad base64, invalid JSON
-  - Login page rendering (3 tests): brand/form elements, email attributes, password attributes
-  - Client-side validation (3 tests): empty form, email-only, password-only
-  - Login flow with mocked HTTP (3 tests): success → dashboard, 401 → error, network error → message
-  - Dashboard & logout (2 tests): user card structure, logout returns to login
-  - Full end-to-end cycle (1 test): login → validation → success → dashboard → logout
-  - Session persistence (2 tests): session persists across refresh, logout clears tokens
-  - Session restore edge cases (3 tests): malformed token fallback, expired token fallback, loading page display
-  - Token refresh retry (1 test): authed_get retry after 401 with token refresh
-  - authed_get double-failure (1 test): double-failure falls back to login
-  - Theme toggle (4 tests): dark/light mode switch, round-trip toggle, ARIA attributes
-  - Page rendering (12 tests): TeamsPage (2), ItemsPage (2), OrdersPage (2), ProfilePage (2), AdminPage (2), RolesPage (2) — navigation, data rendering, admin visibility
-  - Login error differentiation (2 tests): 429 rate limit message, 500 server error message
-  - Table styling (4 tests): connect-table-header-cell class on admin, items, roles, teams tables
-  - Actions column (7 tests): actions modifier classes (3), no narrow inline width (2), multiple buttons present (2)
-  - Admin password reset (12 tests): button visibility, dialog open/close, target user display, validation (empty, short, mismatch, valid), mismatch error feedback, cancel close, success toast
-  - Shared components (4 tests): toast region, sidebar nav items, sidebar active state, confirm modal structure
-  - Profile page interactions (5 tests): edit mode toggle, password field reveal, cancel exits edit, save triggers PUT, password change requires current password
-  - Admin dialogs (9 tests): CreateUserDialog open/fields/disabled/cancel/submit, EditUserDialog open/fields/cancel, CreateRole submit
-  - First-user registration (3 tests): registration form renders when setup_required, short password validation error, successful registration redirects to dashboard
-  - authed_request mutations (3 tests): POST sends body and auth header, PUT sends body and auth header, DELETE sends auth header without body
-  - Teams page interactions (3 tests): create dialog opens, create dialog cancel, add member dialog opens
-  - Items page interactions (3 tests): create dialog opens, create dialog cancel, edit button exists
-  - Orders page interactions (3 tests): create order dialog opens, order detail on click, create order dialog fields
+- WASM tests in `frontend/tests/ui_*.rs` (run in headless Chrome via `wasm-pack`)
+- Test coverage includes: JWT decode, login page rendering, client-side validation, login flow with mocked HTTP, dashboard & logout, end-to-end cycle, session persistence, session restore edge cases, token refresh retry, theme toggle, page rendering for all pages, login error differentiation, table styling, actions columns, admin password reset, shared components, profile page interactions, admin dialogs, first-user registration, authed_request mutations, and page-specific interactions (teams, items, orders)
 - Mocking strategy: overrides `window.fetch` via `js_sys::eval` to intercept `gloo-net` HTTP calls; uses `Promise`-based `setTimeout` wrapper for async timing (no `gloo-timers` dependency)
 - Run frontend tests: `make test-frontend` or `cd frontend && wasm-pack test --headless --chrome`
 - Note: ChromeDriver version must match installed Chrome version

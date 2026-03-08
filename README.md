@@ -55,21 +55,21 @@ make frontend-dev   # serves at http://127.0.0.1:8081
 
 The project has three test suites:
 
-**Unit tests** (248 tests) — no external dependencies:
+**Unit tests** — no external dependencies:
 
 ```bash
 make test-unit     # or: cargo test
 ```
 
-**Integration tests** (297 tests: 177 API + 120 DB) — require PostgreSQL:
+**Integration tests** (API + DB) — require PostgreSQL:
 
 ```bash
 make test-integration
 ```
 
-This automatically starts an isolated Postgres container on port 5433, runs all seventeen migrations (V1–V17), seeds test data, executes all integration tests, and tears down the container.
+This automatically starts an isolated Postgres container on port 5433, runs all migrations, seeds test data, executes all integration tests, and tears down the container.
 
-**Frontend WASM tests** (97 tests) — require Chrome:
+**Frontend WASM tests** — require Chrome:
 
 ```bash
 make test-frontend
@@ -95,31 +95,11 @@ make db-down       # stop and remove test DB
 
 ## Database Initialization
 
-The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Seventeen migrations exist:
-
-| Migration | Description |
-| --- | --- |
-| V1 | Initial schema (tables, triggers) |
-| V2 | UUID v7 defaults |
-| V3 | Indexes, FK constraints, NOT NULL |
-| V4 | Schema hardening |
-| V5 | Trigger fix on users, NOT NULL on teamorders/memberof |
-| V6 | Unique constraint on orders, covering index |
-| V7 | Drop redundant idx_users_email and idx_teams_name indexes |
-| V8 | Avatars table + users.avatar_id FK column |
-| V9 | Avatar FK index + token_blacklist.revoked_at NOT NULL |
-| V10 | Guard teamorders_team_id with trigger |
-| V11 | CHECK constraints on text column lengths |
-| V12 | Drop unused idx_teamorders_id_due, NOT NULL on orders_team_id |
-| V13 | Adds pickup_user_id column to teamorders table |
-| V14 | CHECK constraints on users.firstname (≤50), users.lastname (≤50), users.email (≤255) |
-| V15 | Change memberof, teamorders, orders FKs from CASCADE to RESTRICT |
-| V16 | Fix email CHECK (≤75), items.price CHECK (>0), memberof.team FK RESTRICT |
-| V17 | CHECK constraints on avatars.name (≤255) and avatars.content_type (≤100) |
+The application uses [Refinery](https://github.com/rust-db/refinery) for schema migrations. Migration files are in the `migrations/` directory (versioned V1, V2, …).
 
 **Production:** The application runs pending migrations automatically at startup. No seed data is inserted. The first user to register via the login page becomes the global Admin.
 
-**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies the idempotent migrations (V1–V9) and creates the Refinery tracking table. On first startup, the application's migration runner re-applies V1–V9 (safe — idempotent), records them, then applies V10–V17 for the first time. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
+**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies the idempotent migrations and creates the Refinery tracking table. On first startup, the application's migration runner records those and applies any remaining migrations. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
 
 **Manual database reset (development only):**
 

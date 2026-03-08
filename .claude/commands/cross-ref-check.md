@@ -4,7 +4,9 @@ Validate that `CLAUDE.md`, all files in `.claude/commands/`, and migration refer
 
 ## Instructions
 
-You are a documentation auditor. Cross-reference every file path, function name, test count, and structural reference in the project documentation against the real codebase. Do NOT modify any files — this is analysis only.
+You are a documentation auditor. Cross-reference every file path, function name, and structural reference in the project documentation against the real codebase. Do NOT modify any files — this is analysis only.
+
+**Note:** Test counts and individual migration version numbers are intentionally NOT tracked in documentation files (CLAUDE.md, README.md, commands) to prevent drift. Do NOT flag missing counts or version-specific migration references as findings.
 
 ### Checks to perform
 
@@ -15,31 +17,29 @@ You are a documentation auditor. Cross-reference every file path, function name,
 
 2. **Migration file coverage**
    - List all files in `migrations/` on disk
-   - Verify every migration file is listed in the CLAUDE.md Project Structure tree
-   - Verify every `.claude/commands/` file that references migrations includes **all** migration files (not just V1)
-   - Flag any command that hardcodes a specific migration filename instead of referencing the `migrations/` directory generically
+   - Verify CLAUDE.md references `migrations/` generically (not individual files)
+   - Flag any documentation or command file that hardcodes a specific migration count or enumerates individual migration versions (e.g., "V1–V17", "seventeen migrations")
 
 3. **Function inventories**
    - For each `db/*.rs` module listed in CLAUDE.md with a parenthetical function list, verify every `pub async fn` in that file is included
    - For `handlers/mod.rs`, verify the listed RBAC helper functions match the actual `pub async fn` signatures
 
 4. **Test counts**
-   - Run `cargo test --lib 2>&1 | grep "test result"` and compare the count against the number stated in the Testing section of CLAUDE.md
-   - Flag if the count has drifted
+   - Verify that CLAUDE.md, README.md, and command files do NOT contain specific test counts (these drift and are intentionally omitted)
+   - Flag any file that hardcodes a test count (e.g., "248 unit tests", "97 WASM tests")
 
 5. **Command file references**
-   - For each file in `.claude/commands/`, extract every file path referenced (e.g., `src/db/`, `database.sql`, `migrations/V1__initial_schema.sql`)
+   - For each file in `.claude/commands/`, extract every file path referenced (e.g., `src/db/`, `migrations/`)
    - Verify each referenced path exists on disk
    - Flag references to deprecated files (e.g., `database.sql` used as a source of truth instead of `migrations/`)
-   - Verify role string references match the current approach (constants vs hardcoded strings)
+   - Flag any command that enumerates specific migration versions instead of referencing `migrations/` generically
 
 6. **Assessment command list**
    - Verify that every `.md` file in `.claude/commands/` (excluding `resume-assessment.md`) is listed in the Project Assessment section of CLAUDE.md
    - Flag any command file that exists on disk but is missing from the assessment list, or vice versa
 
 7. **README.md accuracy**
-   - Compare test counts in README.md against actual `cargo test`, `make test-integration`, and `make test-frontend` output — flag any drift
-   - Verify the migration table lists every file in `migrations/` on disk (same check as step 2 but for README.md)
+   - Verify that README.md does NOT contain specific test counts or individual migration version numbers (these are intentionally omitted to prevent drift)
    - Verify the Make Targets table includes every non-internal target defined in `Makefile`
    - Verify the Prerequisites list matches the current build requirements (e.g., Trunk, wasm-pack, Docker, mkcert)
    - Verify the Tech Stack section reflects the current dependencies (framework versions, database version, auth approach)
