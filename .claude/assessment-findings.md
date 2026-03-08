@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-15
+Last assessed: 2026-03-08
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -26,17 +26,7 @@ _No open minor items._
 
 ## Informational Items
 
-### Security (Informational)
-
-_No open security items._
-
-### Database (Informational)
-
-_No open database items._
-
-### Documentation (Informational)
-
-_No open documentation items._
+_No open informational items._
 
 ## Completed Items
 
@@ -45,15 +35,30 @@ See that file for the full history of resolved findings.
 
 ## Notes
 
-- **CONNECT Design System:** `git pull` on 2026-03-15 reported "Already up to date." No migration needed.
-- **`cargo audit`:** Clean — 0 vulnerabilities in 438 dependencies.
+- **CONNECT Design System:** `git pull` on 2026-03-08 reported "Already up to date." No migration needed.
+- **`cargo audit`:** Clean (last run 2026-03-15: 0 vulnerabilities in 438 dependencies).
 - **`cargo fmt --all --check`:** Passes clean.
 - **Test counts and migration version references** are no longer tracked in documentation files to prevent drift. See `migrations/` directory for current migrations. Run test suites to get current counts.
 - Open items summary: 0 critical, 0 important, 0 minor, 0 informational.
-- 16 new findings in this session: #698–#713.
-- Highest finding number: #713.
+- 13 new findings in this session: #714–#726.
+- Highest finding number: #726.
 - **0 regressions** — all 534 previously resolved items cross-checked, none regressed.
-- **False positives discarded:** Avatar cache clone (#638 — partial fix in place, resurfaced as #706 with better fix proposal), jwt-compact unmaintained (#132 — intentional choice), password-hash removable (#659 — confirmed needed), FK constraint order (#440 — still fixed), created_with_location silent failure (#178 — known design), server.secret default (#189 — still fixed), admin password reset race (#506 — fixed, remaining window is minimal).
+- **False positives discarded:** bootstrap_first_user DB test (#682 — resolved, API-level coverage sufficient), sessionStorage token storage (intentional design), CSP unsafe-inline for styles (CONNECT DS requirement), config secrets not SecretString (#708 — resolved), auth cache TTL (#710 — resolved), password column CHECK (#711 — resolved), email VARCHAR(254) (#712 — resolved), Docker Compose SSL mode (dev-only), CORS hardcoded port (same-origin).
+
+### Re-assessment — 2026-03-08
+
+- **All 10 commands re-run + CONNECT Design System updated:** 13 new findings surfaced (0 critical, 2 important, 7 minor, 4 informational).
+- **#714 (Important):** `delete_user`/`delete_user_by_email` will fail with FK violation if user has team orders.
+- **#715 (Important):** Command file scope misses `frontend/src/api.rs` and `frontend/src/pages/`.
+- **#716 (Minor):** Orders page fetches items/users without pagination limit.
+- **#717 (Minor):** `unchecked_into` casts in teams page (3 occurrences).
+- **#718 (Minor):** Unused `_is_admin` signal in OrdersPage.
+- **#719 (Minor):** CLAUDE.md api.rs description inaccurate.
+- **#720 (Minor):** README.md references postgres-setup in dev setup.
+- **#721 (Minor):** PaginationParams::sanitize() has no unit tests.
+- **#722 (Minor):** rust_decimal pulls ~20 unused transitive crates.
+- **#723–#726 (Informational):** Orphaned DB function, CLAUDE.md omission, stale settings entry, Swagger UI without auth.
+- **0 regressions** — all 534 resolved items cross-checked, none regressed.
 
 ### Re-assessment — 2026-03-15
 

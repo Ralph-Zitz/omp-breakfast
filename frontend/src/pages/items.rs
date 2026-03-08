@@ -23,7 +23,7 @@ fn is_valid_price(s: &str) -> bool {
         && trimmed.matches('.').count() <= 1
         && trimmed
             .find('.')
-            .map_or(true, |dot| trimmed.len() - dot - 1 <= 2 && dot > 0)
+            .is_none_or(|dot| trimmed.len() - dot - 1 <= 2 && dot > 0)
 }
 
 #[component]

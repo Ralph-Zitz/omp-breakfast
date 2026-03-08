@@ -223,6 +223,9 @@ pub async fn delete_order_item(
 
 /// Computes the total cost for a team order by summing `items.price * orders.amt`
 /// for all line items. Returns `Decimal::ZERO` if the order has no items.
+///
+/// Not currently exposed via any API endpoint — the frontend computes totals
+/// client-side from the item catalog. Retained for future server-side reporting.
 pub async fn get_order_total(
     client: &Client,
     teamorder_id: Uuid,

@@ -54,7 +54,6 @@
       "Bash(cargo add *)",
       "Bash(cargo remove *)",
       "Bash(cargo tree *)",
-      "Bash(just *)",
       "Bash(sed *)",
       "Bash(test *)",
       "Bash(xargs *)",

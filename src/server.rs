@@ -510,6 +510,19 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
         warn!("Using default database credentials — acceptable for development only");
     }
 
+    // Warn when Swagger UI is enabled outside development
+    let swagger_enabled = env::var("ENABLE_SWAGGER")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let env_name = env::var("ENV").unwrap_or_default();
+    if swagger_enabled && env_name != "development" {
+        warn!(
+            env = %env_name,
+            "Swagger UI is enabled (ENABLE_SWAGGER=true) outside development — \
+             the full API schema is accessible without authentication at /explorer"
+        );
+    }
+
     // Reject placeholder database hostname in production
     let pg_host = settings.pg.host.as_deref().unwrap_or("localhost");
     if is_production && pg_host == "pick.a.proper.hostname" {

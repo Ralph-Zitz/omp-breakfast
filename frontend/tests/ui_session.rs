@@ -573,14 +573,14 @@ async fn test_authed_post_sends_body_and_auth_header() {
 
     let auth = last_request_auth();
     assert!(
-        auth.as_ref().map_or(false, |a| a.starts_with("Bearer ")),
+        auth.as_ref().is_some_and(|a| a.starts_with("Bearer ")),
         "should include Bearer auth header, got: {:?}",
         auth
     );
 
     let body_str = last_request_body();
     assert!(
-        body_str.as_ref().map_or(false, |b| b.contains("test-item")),
+        body_str.as_ref().is_some_and(|b| b.contains("test-item")),
         "POST body should contain the JSON payload, got: {:?}",
         body_str
     );
@@ -627,7 +627,7 @@ async fn test_authed_put_sends_body_and_auth_header() {
 
     let body_str = last_request_body();
     assert!(
-        body_str.as_ref().map_or(false, |b| b.contains("Updated")),
+        body_str.as_ref().is_some_and(|b| b.contains("Updated")),
         "PUT body should contain the JSON payload, got: {:?}",
         body_str
     );
@@ -668,7 +668,7 @@ async fn test_authed_delete_sends_auth_header_no_body() {
 
     let auth = last_request_auth();
     assert!(
-        auth.as_ref().map_or(false, |a| a.starts_with("Bearer ")),
+        auth.as_ref().is_some_and(|a| a.starts_with("Bearer ")),
         "should include Bearer auth header, got: {:?}",
         auth
     );

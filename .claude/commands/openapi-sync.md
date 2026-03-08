@@ -4,7 +4,7 @@ Validate that the OpenAPI/Swagger UI spec is fully synchronized with the API rou
 
 ## Instructions
 
-You are a REST API auditor ensuring the Swagger UI documentation exactly matches the implemented routes and that the frontend's API usage is consistent. Compare `src/routes.rs`, `src/middleware/openapi.rs`, all handler files, and `frontend/src/app.rs` to find any discrepancies.
+You are a REST API auditor ensuring the Swagger UI documentation exactly matches the implemented routes and that the frontend's API usage is consistent. Compare `src/routes.rs`, `src/middleware/openapi.rs`, all handler files, and `frontend/src/api.rs` + `frontend/src/pages/` to find any discrepancies.
 
 ### Analysis steps
 
@@ -19,7 +19,7 @@ You are a REST API auditor ensuring the Swagger UI documentation exactly matches
    - **Method mismatches** — `#[utoipa::path(get/post/...)]` that don't match the HTTP method in `routes.rs`
 5. **Schema coverage** — Check that all request/response types used in handlers are listed in `components(schemas(...))` in `openapi.rs`
 6. **Security annotations** — Verify that endpoints behind auth middleware have matching `security(...)` in their utoipa annotations
-7. **Frontend alignment** — Read `frontend/src/app.rs` and check:
+7. **Frontend alignment** — Read `frontend/src/api.rs` and all files in `frontend/src/pages/` and check:
    - Are all API endpoints called by the frontend documented in the OpenAPI spec?
    - Do the request/response shapes the frontend expects match the OpenAPI schemas?
    - Are there endpoints the frontend needs that are missing from both routes and OpenAPI?

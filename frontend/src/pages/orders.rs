@@ -43,8 +43,6 @@ pub fn OrdersPage() -> impl IntoView {
     // Delete confirmation
     let (delete_target, set_delete_target) = signal(Option::<(String, String)>::None); // (order_id, label)
 
-    let _is_admin = crate::api::is_admin_signal(user);
-
     // Fetch user's teams on mount
     leptos::task::spawn_local_scoped(async move {
         let user_id = user
@@ -61,7 +59,7 @@ pub fn OrdersPage() -> impl IntoView {
             }
         }
         // Also fetch catalog items for the "add item" dropdown
-        if let Some(resp) = authed_get("/api/v1.0/items").await
+        if let Some(resp) = authed_get("/api/v1.0/items?limit=100").await
             && resp.ok()
         {
             match resp.json::<PaginatedResponse<ItemEntry>>().await {
@@ -94,7 +92,7 @@ pub fn OrdersPage() -> impl IntoView {
                 }
             }
             // Fetch team members for pickup user dropdown
-            let members_url = format!("/api/v1.0/teams/{}/users", team_id);
+            let members_url = format!("/api/v1.0/teams/{}/users?limit=100", team_id);
             if let Some(resp) = authed_get(&members_url).await
                 && resp.ok()
             {

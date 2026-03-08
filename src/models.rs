@@ -870,4 +870,51 @@ mod tests {
         let entry = UpdateOrderEntry { amt: 1 };
         assert!(entry.validate().is_ok());
     }
+
+    // ── PaginationParams::sanitize (#721) ────────────────────────────────────
+
+    #[test]
+    fn sanitize_defaults_when_none() {
+        let params = PaginationParams {
+            limit: None,
+            offset: None,
+        };
+        assert_eq!(params.sanitize(), (DEFAULT_PAGE_LIMIT, 0));
+    }
+
+    #[test]
+    fn sanitize_clamps_zero_limit_to_one() {
+        let params = PaginationParams {
+            limit: Some(0),
+            offset: None,
+        };
+        assert_eq!(params.sanitize(), (1, 0));
+    }
+
+    #[test]
+    fn sanitize_clamps_negative_limit_to_one() {
+        let params = PaginationParams {
+            limit: Some(-5),
+            offset: None,
+        };
+        assert_eq!(params.sanitize(), (1, 0));
+    }
+
+    #[test]
+    fn sanitize_clamps_limit_above_max() {
+        let params = PaginationParams {
+            limit: Some(200),
+            offset: None,
+        };
+        assert_eq!(params.sanitize(), (MAX_PAGE_LIMIT, 0));
+    }
+
+    #[test]
+    fn sanitize_clamps_negative_offset_to_zero() {
+        let params = PaginationParams {
+            limit: Some(10),
+            offset: Some(-3),
+        };
+        assert_eq!(params.sanitize(), (10, 0));
+    }
 }

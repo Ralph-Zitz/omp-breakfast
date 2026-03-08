@@ -2,8 +2,12 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-16
+Last updated: 2026-03-08
 
+> **2026-03-08 fix-informational:** Archived #723–#726 (4 informational) — all fixed and verified with passing tests.
+>
+> **2026-03-08 fix-findings:** Archived #714–#722 (2 important, 7 minor) — all fixed and verified with passing tests.
+>
 > **2026-03-08 resume-assessment:** Archived #699 (false positive — JWT unit tests exist) and #707 (false positive — FK constraint messages already implemented).
 
 ## Critical Items
@@ -88,6 +92,20 @@ Last updated: 2026-03-16
   - Source commands: `rbac-rules`
 
 ## Important Items
+
+### Database — FK Guard on User Delete
+
+- [x] **#714 — `delete_user` / `delete_user_by_email` will fail with FK violation if user has created team orders**
+  - File: `src/db/orders.rs`, `src/handlers/users.rs`
+  - Resolution: Added `count_user_team_orders()` DB function in `src/db/orders.rs`. Added pre-delete guard in both `delete_user` and `delete_user_by_email` handlers that returns 409 Conflict with a clear message when the user still owns team orders. Updated utoipa annotations to include 409 response.
+  - Source commands: `db-review`
+
+### Documentation — Command File Scope
+
+- [x] **#715 — `openapi-sync.md` and `api-completeness.md` scope sections only reference `frontend/src/app.rs`**
+  - File: `.claude/commands/openapi-sync.md`, `.claude/commands/api-completeness.md`
+  - Resolution: Updated both command files to reference `frontend/src/api.rs` and `frontend/src/pages/` instead of the outdated `frontend/src/app.rs`.
+  - Source commands: `practices-audit`
 
 ### Test Coverage — JWT Unit Tests Already Exist
 
@@ -751,6 +769,55 @@ Last updated: 2026-03-16
   - Source commands: `cross-ref-check`
 
 ## Minor Items
+
+### Frontend — Orders Page Pagination
+
+- [x] **#716 — Orders page fetches items and team users without pagination limit**
+  - File: `frontend/src/pages/orders.rs`
+  - Resolution: Added `?limit=100` to both `/api/v1.0/items` and `/api/v1.0/teams/{id}/users` fetch URLs in the orders page.
+  - Source commands: `api-completeness`
+
+### Frontend — Safe DOM Casting in Teams Page
+
+- [x] **#717 — `unchecked_into` casts in teams page (3 occurrences)**
+  - File: `frontend/src/pages/teams.rs`
+  - Resolution: Replaced all 3 `target.unchecked_into::<web_sys::HtmlSelectElement>().value()` with safe `target.dyn_ref::<web_sys::HtmlSelectElement>()` + early return guard.
+  - Source commands: `review`
+
+### Frontend — Unused Signal in Orders Page
+
+- [x] **#718 — Unused `_is_admin` signal in `OrdersPage`**
+  - File: `frontend/src/pages/orders.rs`
+  - Resolution: Removed the unused `let _is_admin = crate::api::is_admin_signal(user);` binding.
+  - Source commands: `review`
+
+### Documentation — CLAUDE.md api.rs Description
+
+- [x] **#719 — CLAUDE.md `api.rs` description says `authed_get/post/put/delete` but code has `authed_get` + `authed_request`**
+  - File: `CLAUDE.md`
+  - Resolution: Updated description to: "HTTP helpers (authed_get, authed_request with HttpMethod enum), JWT decode, UserContext, session storage".
+  - Source commands: `practices-audit`
+
+### Documentation — README.md postgres-setup References
+
+- [x] **#720 — README.md references `postgres-setup` service in dev setup instructions**
+  - File: `README.md`
+  - Resolution: Removed `docker compose run --rm postgres-setup` from Setup section. Rewrote Database Initialization Development paragraph to explain that the app runs Refinery migrations automatically at startup.
+  - Source commands: `cross-ref-check`
+
+### Testing — PaginationParams Unit Tests
+
+- [x] **#721 — `PaginationParams::sanitize()` has no unit tests**
+  - File: `src/models.rs`
+  - Resolution: Added 5 unit tests covering: None defaults, zero limit clamped to 1, negative limit clamped to 1, limit > MAX clamped to 100, negative offset clamped to 0.
+  - Source commands: `test-gaps`
+
+### Dependencies — rust_decimal Default Features
+
+- [x] **#722 — `rust_decimal` pulls ~20 unused transitive crates via default features**
+  - File: `Cargo.toml`
+  - Resolution: Changed to `default-features = false` with explicit `["std", "serde", "db-tokio-postgres", "serde-with-str"]`. Verified build and all tests pass.
+  - Source commands: `dependency-check`
 
 ### Backend — FK RESTRICT Error Messages Already Specific
 
@@ -2102,6 +2169,34 @@ Last updated: 2026-03-16
   - Source commands: `test-gaps`
 
 ## Informational Items
+
+### API — Orphaned DB Function
+
+- [x] **#723 — `get_order_total` DB function is orphaned — no API endpoint exposes it**
+  - File: `src/db/order_items.rs`
+  - Resolution: Added doc comment clarifying the function is retained for future server-side reporting. The frontend computes totals client-side from the item catalog. No endpoint needed at this time.
+  - Source commands: `api-completeness`
+
+### Documentation — CLAUDE.md Omission
+
+- [x] **#724 — CLAUDE.md `components/mod.rs` description omits `input_handler()`**
+  - File: `CLAUDE.md`
+  - Resolution: Added `input_handler()` utility to the parenthetical list in the `components/mod.rs` description.
+  - Source commands: `practices-audit`
+
+### Settings — Stale Allowlist Entry
+
+- [x] **#725 — `settings.json` allows `just *` but project uses `make`, not `just`**
+  - File: `.claude/settings.json`
+  - Resolution: Removed `Bash(just *)` from the allow list.
+  - Source commands: `practices-audit`
+
+### Security — Swagger UI Startup Warning
+
+- [x] **#726 — Swagger UI accessible without authentication when `ENABLE_SWAGGER=true`**
+  - File: `src/server.rs`
+  - Resolution: Added a startup `warn!()` when `ENABLE_SWAGGER=true` and `ENV != "development"`, alerting operators that the full API schema is exposed without authentication at `/explorer`.
+  - Source commands: `security-audit`
 
 ### API Design — List Endpoints Now Paginated
 

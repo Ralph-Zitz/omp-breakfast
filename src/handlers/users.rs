@@ -282,6 +282,7 @@ pub async fn create_user(
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - can only delete own account, requires admin, or team admin of a shared team", body = ErrorResponse),
         (status = 404, description = "User not deleted", body = DeletedResponse),
+        (status = 409, description = "Conflict - user still owns team orders", body = ErrorResponse),
     ),
     params(
         ("user_id", description = "Unique UUID of the User")
@@ -317,6 +318,14 @@ pub async fn delete_user(
     // Fetch user email before deletion so we can invalidate the auth cache after
     let user_email = db::get_user(&client, uid).await.ok().map(|u| u.email);
 
+    // Prevent deletion when the user still owns team orders (FK constraint)
+    let order_count = db::count_user_team_orders(&client, uid).await?;
+    if order_count > 0 {
+        return Err(Error::Conflict(format!(
+            "Cannot delete user — they own {order_count} team order(s). Reassign or delete the orders first."
+        )));
+    }
+
     let deleted = db::delete_user(&mut client, uid).await?;
     if deleted {
         // Invalidate auth cache after successful deletion
@@ -334,6 +343,7 @@ pub async fn delete_user(
         (status = 200, description = "User deleted successfully or user not found", body = DeletedResponse),
         (status = 401, description = "Unauthorized - invalid or missing JWT token", body = ErrorResponse),
         (status = 403, description = "Forbidden - can only delete own account, requires admin, or team admin of a shared team", body = ErrorResponse),
+        (status = 409, description = "Conflict - user still owns team orders", body = ErrorResponse),
         (status = 422, description = "Validation error - invalid email format", body = ErrorResponse),
     ),
     params(
@@ -380,6 +390,16 @@ pub async fn delete_user_by_email(
             // Return 200 (not 404) with deleted:false to avoid email oracle.
             require_admin(&client, &req).await?;
             return Ok(HttpResponse::Ok().json(DeletedResponse { deleted: false }));
+        }
+    }
+
+    // Prevent deletion when the user still owns team orders (FK constraint)
+    if let Ok(user) = db::get_user_by_email(&client, &email).await {
+        let order_count = db::count_user_team_orders(&client, user.user_id).await?;
+        if order_count > 0 {
+            return Err(Error::Conflict(format!(
+                "Cannot delete user — they own {order_count} team order(s). Reassign or delete the orders first."
+            )));
         }
     }
 

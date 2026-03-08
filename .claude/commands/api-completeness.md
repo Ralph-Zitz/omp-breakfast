@@ -19,7 +19,7 @@ You are an API architect reviewing a REST API for completeness. Compare all migr
 4. **Stub audit** — Identify all handlers returning `NotImplemented` and map them to the DB tables they should operate on
 5. **Relationship coverage** — Are join queries (memberof, team orders) fully exposed via the API?
 6. **Missing endpoints** — Suggest endpoints that should exist based on the schema but don't
-7. **Frontend consumption** — Read `frontend/src/app.rs` and list every API call the frontend makes:
+7. **Frontend consumption** — Read `frontend/src/api.rs` and all files in `frontend/src/pages/` and list every API call the frontend makes:
    - Which endpoints does the frontend call? (e.g., `POST /auth`, `GET /api/v1.0/users/{id}`)
    - Which endpoints exist in the backend but are NOT consumed by the frontend yet?
    - Are there frontend features waiting on unimplemented backend endpoints?
@@ -46,4 +46,4 @@ Provide:
 
 ### Scope
 
-Read all files in `migrations/`, `src/models.rs`, `src/db/`, `src/handlers/`, `src/routes.rs`, `src/middleware/openapi.rs`, and `frontend/src/app.rs`. Do NOT modify any files — this is analysis only.
+Read all files in `migrations/`, `src/models.rs`, `src/db/`, `src/handlers/`, `src/routes.rs`, `src/middleware/openapi.rs`, `frontend/src/api.rs`, and `frontend/src/pages/`. Do NOT modify any files — this is analysis only.

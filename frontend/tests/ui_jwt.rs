@@ -5,7 +5,6 @@ mod ui_helpers;
 
 use ui_helpers::*;
 use wasm_bindgen_test::*;
-use base64::Engine;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -40,4 +39,3 @@ fn test_decode_jwt_invalid_json() {
     let token = format!("header.{}.sig", not_json);
     assert!(app::decode_jwt_payload(&token).is_none());
 }
-

@@ -1,4 +1,5 @@
 //! Shared helpers for frontend WASM integration tests.
+#![allow(dead_code)]
 
 pub use wasm_bindgen::JsCast;
 

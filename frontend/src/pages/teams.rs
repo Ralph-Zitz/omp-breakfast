@@ -452,7 +452,8 @@ pub fn TeamsPage() -> impl IntoView {
                                                                                     prop:value=current_role_title.clone()
                                                                                     on:change=move |ev| {
                                                                                         let Some(target) = ev.target() else { return; };
-                                                                                        let new_role_id = target.unchecked_into::<web_sys::HtmlSelectElement>().value();
+                                                                                        let Some(el) = target.dyn_ref::<web_sys::HtmlSelectElement>() else { return; };
+                                                                                        let new_role_id = el.value();
                                                                                         dam(uid2.clone(), new_role_id);
                                                                                     }
                                                                                 >
@@ -832,7 +833,8 @@ fn AddMemberDialog(
                                     prop:value=move || sel_user.get()
                                     on:change=move |ev| {
                                         let Some(target) = ev.target() else { return; };
-                                        set_sel_user.set(target.unchecked_into::<web_sys::HtmlSelectElement>().value());
+                                        let Some(el) = target.dyn_ref::<web_sys::HtmlSelectElement>() else { return; };
+                                        set_sel_user.set(el.value());
                                     }
                                 >
                                     <option value="">"Select user..."</option>
@@ -853,7 +855,8 @@ fn AddMemberDialog(
                                     prop:value=move || sel_role.get()
                                     on:change=move |ev| {
                                         let Some(target) = ev.target() else { return; };
-                                        set_sel_role.set(target.unchecked_into::<web_sys::HtmlSelectElement>().value());
+                                        let Some(el) = target.dyn_ref::<web_sys::HtmlSelectElement>() else { return; };
+                                        set_sel_role.set(el.value());
                                     }
                                 >
                                     {role_list.into_iter().map(|r| {

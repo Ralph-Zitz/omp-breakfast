@@ -35,7 +35,6 @@ To run only the database and start the backend manually:
 
 ```bash
 docker compose up -d postgres            # start PostgreSQL
-docker compose run --rm postgres-setup   # initialize schema + seed data
 cargo watch -x check -x fmt -x run      # build and run with auto-reload
 ```
 
@@ -99,7 +98,7 @@ The application uses [Refinery](https://github.com/rust-db/refinery) for schema 
 
 **Production:** The application runs pending migrations automatically at startup. No seed data is inserted. The first user to register via the login page becomes the global Admin.
 
-**Development (docker-compose):** The `postgres-setup` service runs `init_dev_db.sh`, which applies the idempotent migrations and creates the Refinery tracking table. On first startup, the application's migration runner records those and applies any remaining migrations. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
+**Development (docker-compose):** The application runs all pending Refinery migrations automatically at startup — no separate setup service is needed. Simply start Postgres with `docker compose up -d postgres` and run the application. The first user registers via `POST /auth/register` (or through the login page registration form) and becomes the Admin.
 
 **Manual database reset (development only):**
 

@@ -286,3 +286,18 @@ pub async fn reopen_team_order(
 
     Ok(new_order)
 }
+
+/// Returns the number of team orders owned by a user (across all teams).
+pub async fn count_user_team_orders(client: &Client, user_id: Uuid) -> Result<i64, Error> {
+    let statement = client
+        .prepare("select count(*) as cnt from teamorders where teamorders_user_id = $1")
+        .await
+        .map_err(Error::Db)?;
+
+    let row = client
+        .query_one(&statement, &[&user_id])
+        .await
+        .map_err(Error::Db)?;
+
+    Ok(row.get("cnt"))
+}

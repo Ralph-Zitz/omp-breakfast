@@ -92,9 +92,9 @@ frontend/
     lib.rs         – Library entry point (pub mod api, app, components, pages)
     main.rs        – Binary entry point: mounts App to <body>
     app.rs         – Root App component, Page enum, AppShell layout, session restore
-    api.rs         – HTTP helpers (authed_get/post/put/delete), JWT decode, UserContext, session storage
+    api.rs         – HTTP helpers (authed_get, authed_request with HttpMethod enum), JWT decode, UserContext, session storage
     components/
-      mod.rs       – Module declarations + `LoadingSpinner` component, `PaginationBar` component, `role_tag_class()` CSS helper
+      mod.rs       – Module declarations + `LoadingSpinner` component, `PaginationBar` component, `role_tag_class()` CSS helper, `input_handler()` utility
       card.rs      – UserCard component
       icons.rs     – SVG icon components (ChevronDown, Plus, Edit, Trash, etc.)
       modal.rs     – ConfirmModal component (destructive-action confirmation dialog)
