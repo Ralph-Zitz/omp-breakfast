@@ -29,7 +29,7 @@ pub fn TeamsPage() -> impl IntoView {
     let limit = 50usize;
 
     let user = expect_context::<ReadSignal<Option<UserContext>>>();
-    let is_admin = Signal::derive(move || user.get().map(|u| u.is_admin).unwrap_or(false));
+    let is_admin = crate::api::is_admin_signal(user);
 
     // Fetch teams on mount
     let fetch_teams = move |off: usize| {

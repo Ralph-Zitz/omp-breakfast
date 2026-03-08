@@ -43,7 +43,7 @@ pub fn OrdersPage() -> impl IntoView {
     // Delete confirmation
     let (delete_target, set_delete_target) = signal(Option::<(String, String)>::None); // (order_id, label)
 
-    let is_admin = Signal::derive(move || user.get().map(|u| u.is_admin).unwrap_or(false));
+    let _is_admin = crate::api::is_admin_signal(user);
 
     // Fetch user's teams on mount
     leptos::task::spawn_local_scoped(async move {

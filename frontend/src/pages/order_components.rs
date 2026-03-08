@@ -90,7 +90,7 @@ pub fn OrderDetail(
                         "Order Items"
                         {if closed {
                             view! {
-                                <span class="connect-tag connect-tag--small connect-tag--neutral-default" style="margin-left: 8px;">"Closed"</span>
+                                <span class="connect-tag connect-tag--small connect-tag--neutral-default order-closed-tag">"Closed"</span>
                             }.into_any()
                         } else {
                             view! { <span /> }.into_any()
@@ -98,7 +98,7 @@ pub fn OrderDetail(
                     </div>
 
                     // Due date
-                    <div style="margin-bottom: var(--ds-layout-spacing-300, 16px);">
+                    <div class="order-field-group">
                         <div class="connect-text-field">
                             <div class="connect-label">
                                 <label class="connect-label__text" for="detail-duedate">"Due Date"</label>
@@ -138,7 +138,7 @@ pub fn OrderDetail(
                     </div>
 
                     // Pickup user assignment
-                    <div style="margin-bottom: var(--ds-layout-spacing-300, 16px);">
+                    <div class="order-field-group">
                         <div class="connect-text-field">
                             <div class="connect-label">
                                 <label class="connect-label__text" for="detail-pickup">"Pickup Person"</label>
@@ -190,7 +190,7 @@ pub fn OrderDetail(
                                     <tr>
                                         <th class="connect-table-header-cell">"Item"</th>
                                         <th class="connect-table-header-cell">"Qty"</th>
-                                        <th class="connect-table-header-cell" style="text-align: right;">"Total"</th>
+                                        <th class="connect-table-header-cell cell-align-right">"Total"</th>
                                         {(!closed).then(|| view! {
                                             <th class="connect-table-header-cell connect-table-header-cell--actions">"Remove"</th>
                                         })}
@@ -212,11 +212,10 @@ pub fn OrderDetail(
                                                         let iid_upd = iid.clone();
                                                         view! {
                                                             <input
-                                                                class="connect-text-field__input"
+                                                                class="connect-text-field__input order-qty-input"
                                                                 type="number"
                                                                 min="1"
                                                                 value=current_amt.to_string()
-                                                                style="width: 60px; text-align: center;"
                                                                 on:change=move |ev| {
                                                                     let Some(target) = ev.target() else { return; };
                                                                     let val: i32 = target.dyn_ref::<web_sys::HtmlInputElement>().map(|el| el.value()).unwrap_or_default().parse().unwrap_or(current_amt);
@@ -230,7 +229,7 @@ pub fn OrderDetail(
                                                         view! { <span>{current_amt}</span> }.into_any()
                                                     }}
                                                 </td>
-                                                <td class="connect-table-cell" style="text-align: right;">
+                                                <td class="connect-table-cell cell-align-right">
                                                     {format!("{}.{:02} kr", line_total_cents / 100, line_total_cents % 100)}
                                                 </td>
                                                 {(!closed).then(|| {
@@ -257,7 +256,7 @@ pub fn OrderDetail(
                                     }).collect::<Vec<_>>()}
                                 </tbody>
                             </table>
-                            <div style="display: flex; justify-content: flex-end; margin-top: var(--ds-layout-spacing-200, 8px); padding-right: var(--ds-layout-spacing-200, 8px);">
+                            <div class="order-total-row">
                                 <strong>{format!("Order Total: {}.{:02} kr", grand_total_cents / 100, grand_total_cents % 100)}</strong>
                             </div>
                         }.into_any()
@@ -268,8 +267,8 @@ pub fn OrderDetail(
                         let cat_for_select = catalog.get();
                         let on_add_item = on_add_item.clone();
                         view! {
-                            <div class="add-item-form" style="margin-top: var(--ds-layout-spacing-300, 16px); display: flex; gap: var(--ds-layout-spacing-200, 8px); align-items: flex-end;">
-                                <div class="connect-text-field" style="flex: 1;">
+                            <div class="add-item-form">
+                                <div class="connect-text-field field-flex-grow">
                                     <div class="connect-label">
                                         <label class="connect-label__text" for="add-item-select">"Item"</label>
                                     </div>
@@ -292,7 +291,7 @@ pub fn OrderDetail(
                                         }).collect::<Vec<_>>()}
                                     </select>
                                 </div>
-                                <div class="connect-text-field" style="width: 80px;">
+                                <div class="connect-text-field field-narrow">
                                     <div class="connect-label">
                                         <label class="connect-label__text" for="add-item-qty">"Qty"</label>
                                     </div>
@@ -410,7 +409,7 @@ pub fn CreateOrderDialog(
                                     <p class="connect-text-field__error-text">{msg}</p>
                                 })}
                             </div>
-                            <div class="connect-text-field" style="margin-top: var(--ds-layout-spacing-300, 16px);">
+                            <div class="connect-text-field order-field-group-top">
                                 <div class="connect-label">
                                     <label class="connect-label__text" for="order-pickup">"Pickup Person (optional)"</label>
                                 </div>

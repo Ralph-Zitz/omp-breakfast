@@ -1,5 +1,6 @@
 use crate::api::{
     HttpMethod, ItemEntry, PaginatedResponse, UserContext, authed_get, authed_request,
+    is_admin_signal,
 };
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
@@ -37,7 +38,7 @@ pub fn ItemsPage() -> impl IntoView {
     let limit = 50usize;
 
     let user = expect_context::<ReadSignal<Option<UserContext>>>();
-    let is_admin = Signal::derive(move || user.get().map(|u| u.is_admin).unwrap_or(false));
+    let is_admin = is_admin_signal(user);
 
     // Fetch items on mount
     let fetch_items = move |off: usize| {

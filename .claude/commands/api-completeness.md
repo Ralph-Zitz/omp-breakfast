@@ -46,4 +46,4 @@ Provide:
 
 ### Scope
 
-Read all files in `migrations/` (V1 initial schema through V9, and any newer migrations), `src/models.rs`, `src/db/`, `src/handlers/`, `src/routes.rs`, `src/middleware/openapi.rs`, and `frontend/src/app.rs`. Do NOT modify any files — this is analysis only.
+Read all files in `migrations/` (V1 initial schema through V17, and any newer migrations), `src/models.rs`, `src/db/`, `src/handlers/`, `src/routes.rs`, `src/middleware/openapi.rs`, and `frontend/src/app.rs`. Do NOT modify any files — this is analysis only.

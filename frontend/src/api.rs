@@ -196,6 +196,12 @@ impl UserContext {
     }
 }
 
+/// Derive a reactive `Signal<bool>` that is `true` when the current user is an admin.
+pub fn is_admin_signal(user: leptos::prelude::ReadSignal<Option<UserContext>>) -> leptos::prelude::Signal<bool> {
+    use leptos::prelude::Get;
+    leptos::prelude::Signal::derive(move || user.get().map(|u| u.is_admin).unwrap_or(false))
+}
+
 // ── JWT decode ──────────────────────────────────────────────────────────────
 
 pub fn decode_jwt_payload(token: &str) -> Option<JwtPayload> {

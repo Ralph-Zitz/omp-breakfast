@@ -39,7 +39,7 @@ test-unit:
 
 test-integration: db-up db-wait
 	@echo "Running integration tests on port $(TEST_DB_PORT)..."
-	TEST_DB_PORT=$(TEST_DB_PORT) cargo test -- --ignored 2>&1 | tee /tmp/integration-test-output.txt; \
+	TEST_DB_PORT=$(TEST_DB_PORT) cargo test -- --ignored --test-threads=1 2>&1 | tee /tmp/integration-test-output.txt; \
 	EXIT_CODE=$${PIPESTATUS[0]}; \
 	echo ""; \
 	echo "=== Test Summary ==="; \

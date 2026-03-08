@@ -1020,6 +1020,51 @@ form {
     }
 }
 
+/* ── Order components ─────────────────────────────────────────────────────── */
+
+.order-closed-tag {
+    margin-left: var(--ds-layout-spacing-100, 8px);
+}
+
+.order-field-group {
+    margin-bottom: var(--ds-layout-spacing-300, 16px);
+}
+
+.order-field-group-top {
+    margin-top: var(--ds-layout-spacing-300, 16px);
+}
+
+.cell-align-right {
+    text-align: right;
+}
+
+.order-qty-input {
+    width: 60px;
+    text-align: center;
+}
+
+.order-total-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: var(--ds-layout-spacing-200, 8px);
+    padding-right: var(--ds-layout-spacing-200, 8px);
+}
+
+.add-item-form {
+    margin-top: var(--ds-layout-spacing-300, 16px);
+    display: flex;
+    gap: var(--ds-layout-spacing-200, 8px);
+    align-items: flex-end;
+}
+
+.field-flex-grow {
+    flex: 1;
+}
+
+.field-narrow {
+    width: 80px;
+}
+
 /* ── Reduced motion ───────────────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {

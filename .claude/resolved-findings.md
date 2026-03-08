@@ -4,6 +4,8 @@ This file contains all assessment findings that have been resolved, organized by
 
 Last updated: 2026-03-08
 
+> **2026-03-08 resume-assessment:** Archived #699 (false positive — JWT unit tests exist) and #707 (false positive — FK constraint messages already implemented).
+
 ## Critical Items
 
 ### Database — `register_first_user` Not Transactional
@@ -86,6 +88,13 @@ Last updated: 2026-03-08
   - Source commands: `rbac-rules`
 
 ## Important Items
+
+### Test Coverage — JWT Unit Tests Already Exist
+
+- [x] **#699 — No unit tests for JWT core functions**
+  - File: `src/middleware/auth.rs`
+  - Resolution: False positive — unit tests already exist in `#[cfg(test)] mod tests` block covering `generate_token_pair`, `verify_jwt`, expired/invalid token rejection, blacklist cache, account lockout, and cache TTL. Finding used incorrect function names.
+  - Source commands: `test-gaps`
 
 ### RBAC — Team Admin Can Delete a Global Admin's Account
 
@@ -734,7 +743,21 @@ Last updated: 2026-03-08
   - Resolution: Added `.app_data(JsonConfig::default().limit(65_536).error_handler(json_error_handler))` to the `/auth/refresh` resource, matching `/auth/register` and `/auth/revoke`.
   - Source commands: `security-audit`
 
+### Documentation — README.md Missing V17 Migration
+
+- [x] **#698 — README.md still says "sixteen migrations" and lists V1–V16, missing V17**
+  - Files: `README.md`
+  - Resolution: Updated "sixteen" to "seventeen" in both occurrences. Added V17 row to migration table. Updated V1–V16 references to V1–V17. Updated frontend test count from 93 to 97.
+  - Source commands: `cross-ref-check`
+
 ## Minor Items
+
+### Backend — FK RESTRICT Error Messages Already Specific
+
+- [x] **#707 — FK DELETE RESTRICT error messages are ambiguous**
+  - File: `src/errors.rs`
+  - Resolution: False positive — constraint-specific human-readable messages are already implemented. The error handler parses constraint names and maps `item` → "Referenced item does not exist", `team` → "Referenced team does not exist", etc.
+  - Source commands: `db-review`
 
 ### OpenAPI — `get_avatar` Annotation Falsely Claims JWT Auth Required
 
@@ -3752,8 +3775,51 @@ Last updated: 2026-03-08
   - Resolution: Added `test_create_user_submit_shows_toast` and `test_create_role_submit_shows_toast` WASM tests with write-capable mock fetch helpers.
   - Source commands: `test-gaps`
 
+### Documentation — CLAUDE.md Test Count and Category Fixes
+
+- [x] **#700 — CLAUDE.md "Unfinished Work" says "93 tests" instead of 97**
+  - File: `CLAUDE.md`
+  - Resolution: Updated "93 tests" to "97 tests" in the Unfinished Work section.
+  - Source commands: `cross-ref-check`, `practices-audit`
+
+- [x] **#701 — CLAUDE.md test sub-category breakdown sums to 95, not 97**
+  - File: `CLAUDE.md`
+  - Resolution: Corrected 5 test category counts: Page rendering 14→12, Token refresh retry 2→1, authed_get double-failure 2→1, Actions column 6→7, Admin password reset 10→12. Categories now sum to 97.
+  - Source commands: `cross-ref-check`, `practices-audit`
+
+- [x] **#705 — Command files enumerate V1–V9 specifically**
+  - Files: `.claude/commands/api-completeness.md`, `.claude/commands/db-review.md`
+  - Resolution: Updated migration references from "V1 through V9" to "V1 through V17" in all three occurrences.
+  - Source commands: `cross-ref-check`
+
+### Frontend — DRY and Style Fixes
+
+- [x] **#702 — Duplicated `is_admin` signal derivation across 5 pages**
+  - Files: `frontend/src/api.rs`, `frontend/src/pages/admin.rs`, `items.rs`, `roles.rs`, `teams.rs`, `orders.rs`
+  - Resolution: Extracted `pub fn is_admin_signal(user: ReadSignal<Option<UserContext>>) -> Signal<bool>` in `frontend/src/api.rs`. Updated all 5 pages to use the shared helper.
+  - Source commands: `review`
+
+- [x] **#703 — 11 inline `style=` attributes in order_components.rs**
+  - Files: `frontend/src/pages/order_components.rs`, `frontend/style/main.css`
+  - Resolution: Moved all 11 inline styles to named CSS classes in `main.css` (order-closed-tag, order-field-group, order-field-group-top, cell-align-right, order-qty-input, order-total-row, add-item-form, field-flex-grow, field-narrow). Zero inline `style=` attributes remain.
+  - Source commands: `review`, `practices-audit`
+
+### Backend — Avatar Cache Optimization
+
+- [x] **#706 — Avatar handler clones `Vec<u8>` from `Arc` on every cache hit**
+  - Files: `src/models.rs`, `src/handlers/avatars.rs`, `src/server.rs`
+  - Resolution: Changed avatar cache type from `DashMap<Uuid, (Arc<Vec<u8>>, String)>` to `DashMap<Uuid, (Bytes, String)>`. `Bytes::clone()` is O(1) reference-count increment instead of full byte copy. Updated all 3 insert sites and the response body construction.
+  - Source commands: `review`
+
+### Test Coverage — RBAC Integration Tests
+
+- [x] **#704 — Missing negative-path RBAC integration tests**
+  - File: `tests/api_orders.rs`
+  - Resolution: Added 2 integration tests: `non_member_cannot_reopen_order` (asserts 403 for non-member reopen attempt) and `team_admin_can_delete_order_by_another_member` (asserts team admin can delete another member's order).
+  - Source commands: `rbac-rules`, `test-gaps`
+
 ## Notes
 
-- Total resolved items: 534 (7 critical, 54 important, 146 minor, 194 informational, plus items previously counted under different categories)
+- Total resolved items: 544 (7 critical, 55 important, 153 minor, 194 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

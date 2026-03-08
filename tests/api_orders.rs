@@ -2985,3 +2985,163 @@ async fn reopen_nonexistent_order_returns_404() {
         .to_request();
     test::call_service(&app, req).await;
 }
+
+/// Non-member attempting to reopen an order should get 403.
+#[actix_web::test]
+#[ignore]
+async fn non_member_cannot_reopen_order() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let uid = Uuid::now_v7();
+    let team_id = create_test_team(&app, admin_token, &format!("NonMemReopen-{}", uid)).await;
+
+    // Create and close an order as admin
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({"duedate": "2027-06-15"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap();
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({"closed": true}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Create a non-member user
+    let outsider_email = format!("outsider-reopen-{}@test.local", uid);
+    let (outsider_auth, outsider_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Out",
+        "Sider",
+        &outsider_email,
+        "securepassword",
+    )
+    .await;
+
+    // Non-member tries to reopen → 403
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/reopen",
+            team_id, order_id
+        ))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", outsider_auth.access_token),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "non-member should not be able to reopen an order"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", outsider_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+}
+
+/// Team Admin can delete a single order created by another member.
+#[actix_web::test]
+#[ignore]
+async fn team_admin_can_delete_order_by_another_member() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let uid = Uuid::now_v7();
+    let team_id = create_test_team(&app, admin_token, &format!("TADelOther-{}", uid)).await;
+    let member_role = find_role_id(&app, admin_token, "Member").await;
+    let ta_role = find_role_id(&app, admin_token, "Team Admin").await;
+
+    // Create a member and a team admin
+    let (member_auth, member_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Mem",
+        "Ber",
+        &format!("mem-tadel-{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+    add_member(&app, admin_token, &team_id, &member_id, &member_role).await;
+
+    let (ta_auth, ta_id) = create_and_login_user(
+        &app,
+        admin_token,
+        "Team",
+        "Admin",
+        &format!("ta-tadel-{}@test.local", uid),
+        "securepassword",
+    )
+    .await;
+    add_member(&app, admin_token, &team_id, &ta_id, &ta_role).await;
+
+    // Member creates an order
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", member_auth.access_token),
+        ))
+        .set_json(json!({"duedate": "2027-01-01"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // Team admin deletes the member's order → should succeed
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", ta_auth.access_token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "team admin should be able to delete another member's order"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", member_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", ta_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+}

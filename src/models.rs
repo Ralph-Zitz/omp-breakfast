@@ -1,9 +1,10 @@
+use actix_web::web::Bytes;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use deadpool_postgres::Pool;
 use secrecy::SecretString;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::{fmt, fmt::Display, sync::Arc};
+use std::{fmt, fmt::Display};
 
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -131,8 +132,8 @@ pub struct State {
     pub login_attempts: DashMap<String, Vec<DateTime<Utc>>>,
     /// In-memory avatar image cache: avatar_id → (image bytes, content_type).
     /// Loaded on startup from the database; small and static (~2–3 MB total).
-    /// Uses `Arc<Vec<u8>>` for cheap reference-counted cloning on each response.
-    pub avatar_cache: DashMap<Uuid, (Arc<Vec<u8>>, String)>,
+    /// Uses `Bytes` for zero-copy cloning on each response.
+    pub avatar_cache: DashMap<Uuid, (Bytes, String)>,
 }
 
 #[derive(Serialize, ToSchema)]

@@ -411,14 +411,14 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ## Unfinished Work
 
 - No client-side routing library (manual signal-based page switching, by design)
-- Frontend WASM tests cover all pages with rendering and basic interaction tests (93 tests); deeper workflow and edge-case tests for individual pages are still missing
+- Frontend WASM tests cover all pages with rendering and basic interaction tests (97 tests); deeper workflow and edge-case tests for individual pages are still missing
 
 ## Testing
 
 ### Backend
 
 - 248 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 175 API integration tests in `tests/api_*.rs` (require running Postgres, marked `#[ignore]`)
+- 177 API integration tests in `tests/api_*.rs` (require running Postgres, marked `#[ignore]`)
 - 120 DB function integration tests in `tests/db_*.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
@@ -436,14 +436,14 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
   - Full end-to-end cycle (1 test): login → validation → success → dashboard → logout
   - Session persistence (2 tests): session persists across refresh, logout clears tokens
   - Session restore edge cases (3 tests): malformed token fallback, expired token fallback, loading page display
-  - Token refresh retry (2 tests): authed_get retry after 401, token stored after refresh
-  - authed_get double-failure (2 tests): retry after 401 fails, double-failure falls back to login
+  - Token refresh retry (1 test): authed_get retry after 401 with token refresh
+  - authed_get double-failure (1 test): double-failure falls back to login
   - Theme toggle (4 tests): dark/light mode switch, round-trip toggle, ARIA attributes
-  - Page rendering (14 tests): TeamsPage (2), ItemsPage (2), OrdersPage (2), ProfilePage (2 + team memberships), AdminPage (2), RolesPage (2) — navigation, data rendering, admin visibility
+  - Page rendering (12 tests): TeamsPage (2), ItemsPage (2), OrdersPage (2), ProfilePage (2), AdminPage (2), RolesPage (2) — navigation, data rendering, admin visibility
   - Login error differentiation (2 tests): 429 rate limit message, 500 server error message
   - Table styling (4 tests): connect-table-header-cell class on admin, items, roles, teams tables
-  - Actions column (6 tests): actions modifier classes (3), no narrow inline width (2), multiple buttons present (2)
-  - Admin password reset (10 tests): button visibility, dialog open/close, validation (empty, short, mismatch), success toast
+  - Actions column (7 tests): actions modifier classes (3), no narrow inline width (2), multiple buttons present (2)
+  - Admin password reset (12 tests): button visibility, dialog open/close, target user display, validation (empty, short, mismatch, valid), mismatch error feedback, cancel close, success toast
   - Shared components (4 tests): toast region, sidebar nav items, sidebar active state, confirm modal structure
   - Profile page interactions (5 tests): edit mode toggle, password field reveal, cancel exits edit, save triggers PUT, password change requires current password
   - Admin dialogs (9 tests): CreateUserDialog open/fields/disabled/cancel/submit, EditUserDialog open/fields/cancel, CreateRole submit

@@ -6,9 +6,8 @@ use crate::{
     validate::validate,
 };
 use actix_web::{
-    HttpRequest, HttpResponse, Responder, http::header, web::Data, web::Json, web::Path,
+    HttpRequest, HttpResponse, Responder, http::header, web::Bytes, web::Data, web::Json, web::Path,
 };
-use std::sync::Arc;
 use tracing::instrument;
 
 /// GET /api/v1.0/avatars — list available avatars (id + name, no binary data).
@@ -57,21 +56,21 @@ pub async fn get_avatar(
         return Ok(HttpResponse::Ok()
             .insert_header((header::CONTENT_TYPE, content_type.as_str()))
             .insert_header((header::CACHE_CONTROL, "public, max-age=31536000, immutable"))
-            .body(data.as_ref().clone()));
+            .body(data.clone()));
     }
 
     // Cache miss — fetch from DB and populate cache
     let client = get_client(&state.pool).await?;
     let (data, content_type) = db::get_avatar(&client, avatar_id).await?;
-    let arc_data = Arc::new(data);
+    let bytes = Bytes::from(data);
     state
         .avatar_cache
-        .insert(avatar_id, (arc_data.clone(), content_type.clone()));
+        .insert(avatar_id, (bytes.clone(), content_type.clone()));
 
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, content_type.as_str()))
         .insert_header((header::CACHE_CONTROL, "public, max-age=31536000, immutable"))
-        .body(arc_data.as_ref().clone()))
+        .body(bytes))
 }
 
 /// PUT /api/v1.0/users/{user_id}/avatar — set a user's avatar.

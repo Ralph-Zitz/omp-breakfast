@@ -1,4 +1,4 @@
-use crate::api::{HttpMethod, PaginatedResponse, RoleEntry, UserContext, authed_get, authed_request};
+use crate::api::{HttpMethod, PaginatedResponse, RoleEntry, UserContext, authed_get, authed_request, is_admin_signal};
 use crate::components::card::PageHeader;
 use crate::components::icons::{Icon, IconKind};
 use crate::components::modal::{ConfirmModal, FormDialog};
@@ -19,7 +19,7 @@ pub fn RolesPage() -> impl IntoView {
     let (total, set_total) = signal(0usize);
     let limit = 50usize;
 
-    let is_admin = Signal::derive(move || user.get().map(|u| u.is_admin).unwrap_or(false));
+    let is_admin = is_admin_signal(user);
 
     // Fetch all roles on mount
     let fetch_roles = move |off: usize| {
