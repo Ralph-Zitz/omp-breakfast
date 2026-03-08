@@ -78,9 +78,11 @@ pub async fn get_user(state: Data<State>, path: Path<Uuid>) -> Result<impl Respo
 #[instrument(skip(basic, state), level = "debug")]
 pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Responder, Error> {
     // Credentials verified by basic_validator middleware; cache is guaranteed populated.
+    // Normalize email to lowercase — basic_validator stores cache entries under
+    // the lowercased email key for case-insensitive lookups.
     let user_id = state
         .cache
-        .get(&basic.user_id().to_string())
+        .get(&basic.user_id().to_lowercase())
         .map(|cached| cached.user.user_id)
         .ok_or_else(|| Error::Unauthorized("Unauthorized".to_string()))?;
     let auth = generate_token_pair(user_id, state.jwtsecret.expose_secret())?;
