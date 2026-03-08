@@ -104,7 +104,7 @@ impl ResponseError for Error {
                         })
                     }
                     // Foreign key constraint violation
-                    Some(st) if st.code() == "23503" => {
+                    Some(st) if st.code() == "23503" || st.code() == "23001" => {
                         let detail = e
                             .as_db_error()
                             .map(|db| {

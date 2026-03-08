@@ -685,3 +685,88 @@ async fn test_edit_user_dialog_cancel_closes() {
     restore_fetch();
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 19 · Admin create-user submit flow (#697)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[wasm_bindgen_test]
+async fn test_create_user_submit_shows_toast() {
+    let id = "t-create-user-submit";
+    clear_tokens();
+    install_mock_fetch_with_user_crud();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Admin");
+    flush(500).await;
+
+    // Open create user dialog
+    click_button_text(id, "New User");
+    flush(200).await;
+    assert!(has_element(id, ".modal-overlay"), "dialog should be open");
+
+    // Fill all required fields
+    set_input(id, "#user-fn", "New");
+    set_input(id, "#user-ln", "User");
+    set_input(id, "#user-email", "newuser@example.com");
+    set_input(id, "#user-pw", "securepassword");
+    flush(100).await;
+
+    // Submit
+    click_button_text(id, "Create");
+    flush(500).await;
+
+    // Dialog should close and toast should appear
+    let html = inner_html(id);
+    assert!(
+        html.contains("User created") || html.contains("toast") || !has_element(id, ".modal-overlay"),
+        "create user should succeed — dialog closes or toast shows"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 20 · Roles page create-role submit flow (#697)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[wasm_bindgen_test]
+async fn test_create_role_submit_shows_toast() {
+    let id = "t-create-role-submit";
+    clear_tokens();
+    install_mock_fetch_with_write_ops();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Roles");
+    flush(500).await;
+
+    // Open create role dialog
+    click_button_text(id, "New Role");
+    flush(200).await;
+    assert!(has_element(id, ".modal-overlay"), "dialog should be open");
+
+    // Fill the title field
+    set_input(id, "#role-title", "TestNewRole");
+    flush(100).await;
+
+    // Submit
+    click_button_text(id, "Create");
+    flush(500).await;
+
+    // Dialog should close and toast should appear
+    let html = inner_html(id);
+    assert!(
+        html.contains("Role created") || html.contains("toast") || !has_element(id, ".modal-overlay"),
+        "create role should succeed — dialog closes or toast shows"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+

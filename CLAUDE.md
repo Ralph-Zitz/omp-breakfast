@@ -163,6 +163,8 @@ migrations/
   V13__pickup_user.sql – Adds pickup_user_id column to teamorders table (FK to users, partial index)
   V14__user_text_check_constraints.sql – CHECK constraints on users.firstname (≤50), users.lastname (≤50), users.email (≤255)
   V15__restrict_cascade_fks.sql – Change memberof.memberof_user_id, teamorders.teamorders_team_id, orders.orders_team_id FKs from CASCADE to RESTRICT
+  V16__constraint_fixes.sql – Constraint fixes
+  V17__avatar_text_constraints.sql – CHECK constraints on avatars.name (≤255) and avatars.content_type (≤100)
 tests/
   common/          – Shared test helpers (setup, state, DB utilities)
   api_auth.rs      – Auth API integration tests (login, register, refresh, revoke)
@@ -416,7 +418,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 ### Backend
 
 - 248 unit tests across `config`, `db::migrate`, `errors`, `from_row`, `handlers`, `middleware::auth`, `middleware::openapi`, `models`, `routes`, `server`, `validate` modules and the `healthcheck` binary
-- 171 API integration tests in `tests/api_*.rs` (require running Postgres, marked `#[ignore]`)
+- 175 API integration tests in `tests/api_*.rs` (require running Postgres, marked `#[ignore]`)
 - 120 DB function integration tests in `tests/db_*.rs` (require running Postgres, marked `#[ignore]`)
 - Run unit tests only: `cargo test` or `make test-unit`
 - Run integration tests: `make test-integration` (starts a test DB on port 5433 via `docker-compose.test.yml`, runs all ignored tests, then tears down)
@@ -424,7 +426,7 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
 
 ### Frontend
 
-- 93 WASM tests in `frontend/tests/ui_*.rs` (run in headless Chrome via `wasm-pack`)
+- 97 WASM tests in `frontend/tests/ui_*.rs` (run in headless Chrome via `wasm-pack`)
 - Test categories:
   - JWT decode (4 tests): valid token, missing segments, bad base64, invalid JSON
   - Login page rendering (3 tests): brand/form elements, email attributes, password attributes
@@ -443,8 +445,8 @@ This assessment must consider **all** commands in `.claude/commands/` at the tim
   - Actions column (6 tests): actions modifier classes (3), no narrow inline width (2), multiple buttons present (2)
   - Admin password reset (10 tests): button visibility, dialog open/close, validation (empty, short, mismatch), success toast
   - Shared components (4 tests): toast region, sidebar nav items, sidebar active state, confirm modal structure
-  - Profile page interactions (3 tests): edit mode toggle, password field reveal, cancel exits edit
-  - Admin dialogs (7 tests): CreateUserDialog open/fields/disabled/cancel, EditUserDialog open/fields/cancel
+  - Profile page interactions (5 tests): edit mode toggle, password field reveal, cancel exits edit, save triggers PUT, password change requires current password
+  - Admin dialogs (9 tests): CreateUserDialog open/fields/disabled/cancel/submit, EditUserDialog open/fields/cancel, CreateRole submit
   - First-user registration (3 tests): registration form renders when setup_required, short password validation error, successful registration redirects to dashboard
   - authed_request mutations (3 tests): POST sends body and auth header, PUT sends body and auth header, DELETE sends auth header without body
   - Teams page interactions (3 tests): create dialog opens, create dialog cancel, add member dialog opens

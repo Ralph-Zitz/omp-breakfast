@@ -2,7 +2,7 @@
 
 This file contains all assessment findings that have been resolved, organized by their original severity. Items are moved here from `.claude/assessment-findings.md` when marked `[x]` (completed) as part of the "assess project" process.
 
-Last updated: 2026-03-19
+Last updated: 2026-03-08
 
 ## Critical Items
 
@@ -3692,8 +3692,68 @@ Last updated: 2026-03-19
   - Resolution: Accepted — expected. These are admin/programmatic endpoints (bulk delete orders, role CRUD, avatar list) not needed in the frontend UI. No action required.
   - Source commands: `api-completeness`
 
+### Security — Account Lockout, JWT Secret, Swagger, Login Attempts
+
+- [x] **#687 — Lockout is per-email only with no IP component — any unauthenticated attacker can lock any account**
+  - File: `src/middleware/auth.rs`
+  - Resolution: Changed lockout key from email-only to `email:ip` format via `lockout_key()` helper. Updated `is_account_locked`, `record_failed_attempt`, and `clear_failed_attempts` to accept `peer_ip` parameter. Peer IP extracted from `req.peer_addr()` in `basic_validator` with `"unknown"` fallback.
+  - Source commands: `security-audit`
+
+- [x] **#688 — Unlike `token_blacklist`, no periodic cleanup task for stale login attempt entries**
+  - File: `src/server.rs`
+  - Resolution: Added `spawn_login_attempts_cleanup_task()` background task that runs every 15 minutes, pruning `login_attempts` entries whose newest timestamp is older than the 15-minute lockout window.
+  - Source commands: `security-audit`
+
+- [x] **#689 — JWT secret in `State.jwtsecret` is a plain `String` — no zeroization on drop**
+  - File: `src/models.rs`, `src/server.rs`, `src/middleware/auth.rs`, `src/handlers/users.rs`
+  - Resolution: Changed `State.jwtsecret` from `String` to `secrecy::SecretString`. All callsites now use `.expose_secret()` to access the raw value. Added `secrecy = "0.10.3"` to `Cargo.toml`.
+  - Source commands: `security-audit`
+
+- [x] **#690 — If a non-production environment is publicly accessible, full OpenAPI spec is exposed**
+  - File: `src/routes.rs`
+  - Resolution: Changed Swagger UI default from on (for non-production) to off. Now requires explicit `ENABLE_SWAGGER=true` environment variable to activate. Removed unused `is_production` variable.
+  - Source commands: `security-audit`
+
+### Database — Avatar Text Constraints
+
+- [x] **#691 — `name` and `content_type` columns have no length constraints**
+  - File: `migrations/V17__avatar_text_constraints.sql`
+  - Resolution: Created V17 migration adding `CHECK (char_length(name) <= 255)` and `CHECK (char_length(content_type) <= 100)` on the `avatars` table.
+  - Source commands: `db-review`
+
+- [x] **#692 — Two independent CASCADE paths from `teams` to `orders` exist**
+  - Resolution: Already resolved by V15 migration (`V15__restrict_cascade_fks.sql`) which changed the relevant FKs from CASCADE to RESTRICT.
+  - Source commands: `db-review`
+
+### Testing — API and WASM Test Coverage
+
+- [x] **#693 — DB test exists for duplicate role, but no API test verifies 409 through HTTP stack**
+  - File: `tests/api_roles.rs`
+  - Resolution: Added `create_duplicate_role_returns_409` integration test.
+  - Source commands: `test-gaps`
+
+- [x] **#694 — Admin changing pickup user, clearing pickup user (`null`) not tested**
+  - File: `tests/api_orders.rs`, `src/models.rs`
+  - Resolution: Added `admin_can_clear_assigned_pickup_user` integration test. Fixed serde `Option<Option<T>>` deserialization: added `deserialize_optional` helper and applied `#[serde(deserialize_with = "deserialize_optional")]` to `UpdateTeamOrderEntry.duedate` and `.pickup_user_id` so that JSON `null` correctly maps to `Some(None)` (clear) vs absent mapping to `None` (preserve).
+  - Source commands: `test-gaps`
+
+- [x] **#695 — FK constraint 409 responses not tested through HTTP stack**
+  - File: `tests/api_roles.rs`, `tests/api_items.rs`, `src/errors.rs`
+  - Resolution: Added `delete_role_in_use_returns_409` and `delete_item_in_use_returns_409` integration tests. Fixed `Error::Db` handler to also match `23001` (RESTRICT_VIOLATION) alongside `23503` (FOREIGN_KEY_VIOLATION), since `ON DELETE RESTRICT` triggers error code 23001, not 23503.
+  - Source commands: `test-gaps`
+
+- [x] **#696 — Edit/save profile and password-change flow have no WASM tests**
+  - File: `frontend/tests/ui_pages.rs`
+  - Resolution: Added `test_profile_page_save_triggers_put_and_exits_edit` and `test_profile_page_password_change_requires_current_password` WASM tests.
+  - Source commands: `test-gaps`
+
+- [x] **#697 — Dialog fields tested but submit success/error paths not tested**
+  - File: `frontend/tests/ui_admin_dialogs.rs`
+  - Resolution: Added `test_create_user_submit_shows_toast` and `test_create_role_submit_shows_toast` WASM tests with write-capable mock fetch helpers.
+  - Source commands: `test-gaps`
+
 ## Notes
 
-- Total resolved items: 523 (7 critical, 54 important, 146 minor, 183 informational, plus items previously counted under different categories)
+- Total resolved items: 534 (7 critical, 54 important, 146 minor, 194 informational, plus items previously counted under different categories)
 - Items are preserved here permanently for historical reference
 - Finding numbers are never reused — new findings continue from the highest number in either file

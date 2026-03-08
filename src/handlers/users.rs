@@ -15,6 +15,7 @@ use actix_web::{
 use actix_web_httpauth::extractors::basic::BasicAuth;
 use argon2::password_hash::PasswordVerifier;
 use chrono::{DateTime, Duration, Utc};
+use secrecy::ExposeSecret;
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -82,7 +83,7 @@ pub async fn auth_user(basic: BasicAuth, state: Data<State>) -> Result<impl Resp
         .get(&basic.user_id().to_string())
         .map(|cached| cached.user.user_id)
         .ok_or_else(|| Error::Unauthorized("Unauthorized".to_string()))?;
-    let auth = generate_token_pair(user_id, &state.jwtsecret)?;
+    let auth = generate_token_pair(user_id, state.jwtsecret.expose_secret())?;
     Ok(HttpResponse::Ok()
         .insert_header(("Cache-Control", "no-store"))
         .json(auth))
@@ -163,7 +164,7 @@ pub async fn refresh_token(
     if let Some(Json(RefreshRequest {
         access_token: Some(old_access),
     })) = body
-        && let Ok(td) = verify_jwt_for_revocation(&old_access, &state.jwtsecret)
+        && let Ok(td) = verify_jwt_for_revocation(&old_access, state.jwtsecret.expose_secret())
         && td.sub == claims.sub
         && td.token_type == TokenType::Access
     {
@@ -172,7 +173,7 @@ pub async fn refresh_token(
     }
 
     // Issue a new token pair
-    let auth = generate_token_pair(claims.sub, &state.jwtsecret)?;
+    let auth = generate_token_pair(claims.sub, state.jwtsecret.expose_secret())?;
     Ok(HttpResponse::Ok()
         .insert_header(("Cache-Control", "no-store"))
         .json(auth))
@@ -199,7 +200,10 @@ pub async fn revoke_user_token(
     // Use lenient verification for revocation: skip expiry check so that
     // legitimately-expired tokens can still be revoked (harmless, and the
     // signature is still validated).
-    let token_data = match verify_jwt_for_revocation(&json.into_inner().token, &state.jwtsecret) {
+    let token_data = match verify_jwt_for_revocation(
+        &json.into_inner().token,
+        state.jwtsecret.expose_secret(),
+    ) {
         Ok(data) => data,
         Err(_) => {
             return Ok(HttpResponse::BadRequest().json(ErrorResponse {

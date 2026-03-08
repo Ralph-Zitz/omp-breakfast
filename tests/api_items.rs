@@ -452,3 +452,81 @@ async fn update_nonexistent_item_returns_404() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404, "PUT nonexistent item should be 404");
 }
+
+// ===========================================================================
+// Delete item referenced by order → 409 (#695)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn delete_item_in_use_returns_409() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
+
+    let suffix = Uuid::now_v7();
+
+    // Create an item, a team, and an order with that item
+    let item_id = create_test_item(&app, token, &format!("InUseItem-{suffix}"), 10.00).await;
+    let team_id = create_test_team(&app, token, &format!("ItemTeam-{suffix}")).await;
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"duedate": "2027-06-01"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+
+    // Add the item to the order
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items",
+            team_id, order_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"orders_item_id": item_id, "amt": 1}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201, "adding item to order should succeed");
+
+    // Attempt to delete the item — should fail with 409
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        409,
+        "delete item referenced by orders FK should return 409"
+    );
+
+    // Cleanup: delete order item, order, team, item
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1.0/teams/{}/orders/{}/items/{}",
+            team_id, order_id, item_id
+        ))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/items/{}", item_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}

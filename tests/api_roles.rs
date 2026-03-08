@@ -246,3 +246,118 @@ async fn update_nonexistent_role_returns_404() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404, "PUT nonexistent role should be 404");
 }
+
+// ===========================================================================
+// Duplicate role creation → 409 (#693)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn create_duplicate_role_returns_409() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
+
+    let suffix = Uuid::now_v7();
+    let title = format!("DupRole-{suffix}");
+
+    // Create a role
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"title": title}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201, "first creation should succeed");
+    let role: Value = test::read_body_json(resp).await;
+    let role_id = role["role_id"].as_str().unwrap();
+
+    // Attempt to create the same role again
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"title": title}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        409,
+        "duplicate role title should return 409 Conflict"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/roles/{}", role_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ===========================================================================
+// Delete role referenced by member → 409 (#695)
+// ===========================================================================
+
+#[actix_web::test]
+#[ignore]
+async fn delete_role_in_use_returns_409() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let auth: Auth = register_admin(&app).await;
+    let token = &auth.access_token;
+
+    let suffix = Uuid::now_v7();
+
+    // Create a custom role
+    let title = format!("InUseRole-{suffix}");
+    let req = test::TestRequest::post()
+        .uri("/api/v1.0/roles")
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .set_json(json!({"title": title}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let role: Value = test::read_body_json(resp).await;
+    let role_id = role["role_id"].as_str().unwrap().to_string();
+
+    // Create a team and a user, then assign the role
+    let team_id = create_test_team(&app, token, &format!("RoleTeam-{suffix}")).await;
+    let email = format!("roleinuse-{suffix}@test.local");
+    let (_user_auth, user_id) =
+        create_and_login_user(&app, token, "Role", "User", &email, "securepassword").await;
+    add_member(&app, token, &team_id, &user_id, &role_id).await;
+
+    // Attempt to delete the role — should fail with 409
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/roles/{}", role_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        409,
+        "delete role referenced by memberof FK should return 409"
+    );
+
+    // Cleanup: remove member, delete user, delete team, delete role
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/users/{}", team_id, user_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/users/{}", user_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/roles/{}", role_id))
+        .insert_header(("Authorization", format!("Bearer {}", token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}

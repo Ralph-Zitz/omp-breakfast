@@ -17,6 +17,7 @@ use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerPro
 use opentelemetry_stdout as stdout;
 use rustls::ServerConfig;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, pem::PemObject};
+use secrecy::SecretString;
 use std::{env, path::Path, sync::Arc, time::Duration};
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{error, info, warn};
@@ -29,6 +30,9 @@ use uuid::Uuid;
 
 /// Interval between token blacklist cleanup runs (1 hour).
 const TOKEN_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
+
+/// Interval between login attempt map cleanup runs (15 minutes, matches lockout window).
+const LOGIN_ATTEMPTS_CLEANUP_INTERVAL: Duration = Duration::from_secs(900);
 
 /// Background task that periodically removes expired entries from the
 /// `token_blacklist` table and the in-memory DashMap so neither grows
@@ -66,6 +70,35 @@ fn spawn_token_cleanup_task(state: Data<State>) {
                 Err(e) => {
                     error!(error = %e, "Failed to acquire DB client for token cleanup");
                 }
+            }
+        }
+    });
+}
+
+/// Background task that periodically removes stale entries from the
+/// `login_attempts` DashMap so it doesn't grow unbounded from targeted
+/// unique-email attacks.
+fn spawn_login_attempts_cleanup_task(state: Data<State>) {
+    actix_web::rt::spawn(async move {
+        loop {
+            actix_web::rt::time::sleep(LOGIN_ATTEMPTS_CLEANUP_INTERVAL).await;
+
+            let cutoff = Utc::now()
+                - chrono::Duration::try_seconds(LOGIN_ATTEMPTS_CLEANUP_INTERVAL.as_secs() as i64)
+                    .expect("valid duration");
+            let before = state.login_attempts.len();
+            // Remove entries whose most recent attempt is older than the window
+            state.login_attempts.retain(|_, attempts| {
+                attempts.retain(|t| *t > cutoff);
+                !attempts.is_empty()
+            });
+            let evicted = before - state.login_attempts.len();
+            if evicted > 0 {
+                info!(
+                    evicted = evicted,
+                    remaining = state.login_attempts.len(),
+                    "Cleaned up stale login attempt entries"
+                );
             }
         }
     });
@@ -513,7 +546,7 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     // Application state
     let state = Data::new(State {
         pool,
-        jwtsecret: settings.server.jwtsecret.clone(),
+        jwtsecret: SecretString::from(settings.server.jwtsecret.clone()),
         cache: DashMap::new(),
         token_blacklist: DashMap::new(),
         login_attempts: DashMap::new(),
@@ -559,6 +592,13 @@ pub async fn server() -> Result<(), Box<dyn std::error::Error>> {
     info!(
         "Token blacklist cleanup task started (interval: {:?})",
         TOKEN_CLEANUP_INTERVAL
+    );
+
+    // Start background task: periodic login attempt map cleanup
+    spawn_login_attempts_cleanup_task(state.clone());
+    info!(
+        "Login attempts cleanup task started (interval: {:?})",
+        LOGIN_ATTEMPTS_CLEANUP_INTERVAL
     );
 
     // Start HTTP→HTTPS redirect server as a background task

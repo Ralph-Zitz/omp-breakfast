@@ -75,7 +75,7 @@ pub async fn test_state() -> Data<State> {
         .expect("failed to create test pool");
     Data::new(State {
         pool,
-        jwtsecret: "Very Secret".to_string(),
+        jwtsecret: secrecy::SecretString::from("Very Secret".to_string()),
         cache: dashmap::DashMap::new(),
         token_blacklist: dashmap::DashMap::new(),
         login_attempts: dashmap::DashMap::new(),

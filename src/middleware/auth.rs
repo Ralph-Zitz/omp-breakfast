@@ -12,6 +12,7 @@ use actix_web_httpauth::extractors::{basic::BasicAuth, bearer::BearerAuth};
 use argon2::password_hash::{PasswordHash, PasswordVerifier};
 use chrono::{DateTime, Duration, Utc};
 use deadpool_postgres::Client;
+use secrecy::ExposeSecret;
 
 /// Pre-computed Argon2id hash used for timing-equalization when a non-existent
 /// user attempts authentication.  Without this, the server returns ~1ms for
@@ -229,12 +230,19 @@ pub fn invalidate_cache(state: Data<State>, key: &str) -> bool {
     cache.remove(key).is_some()
 }
 
-/// Check whether the account for `email` is locked out due to too many
-/// recent failed login attempts.
-fn is_account_locked(state: &Data<State>, email: &str) -> bool {
+/// Build the lockout key combining email and client IP to prevent
+/// unauthenticated attackers from locking any account from a single IP.
+fn lockout_key(email: &str, peer_ip: &str) -> String {
+    format!("{}:{}", email, peer_ip)
+}
+
+/// Check whether the account for `email` from `peer_ip` is locked out due
+/// to too many recent failed login attempts.
+fn is_account_locked(state: &Data<State>, email: &str, peer_ip: &str) -> bool {
+    let key = lockout_key(email, peer_ip);
     let cutoff =
         Utc::now() - Duration::try_seconds(LOCKOUT_WINDOW_SECONDS).expect("valid duration");
-    if let Some(mut attempts) = state.login_attempts.get_mut(email) {
+    if let Some(mut attempts) = state.login_attempts.get_mut(&key) {
         // Prune attempts outside the window
         attempts.retain(|t| *t > cutoff);
         attempts.len() >= LOCKOUT_THRESHOLD
@@ -243,18 +251,20 @@ fn is_account_locked(state: &Data<State>, email: &str) -> bool {
     }
 }
 
-/// Record a failed login attempt for `email`.
-fn record_failed_attempt(state: &Data<State>, email: &str) {
+/// Record a failed login attempt for `email` from `peer_ip`.
+fn record_failed_attempt(state: &Data<State>, email: &str, peer_ip: &str) {
+    let key = lockout_key(email, peer_ip);
     state
         .login_attempts
-        .entry(email.to_string())
+        .entry(key)
         .or_default()
         .push(Utc::now());
 }
 
-/// Clear failed login attempts for `email` (called on successful login).
-fn clear_failed_attempts(state: &Data<State>, email: &str) {
-    state.login_attempts.remove(email);
+/// Clear failed login attempts for `email` from `peer_ip` (called on successful login).
+fn clear_failed_attempts(state: &Data<State>, email: &str, peer_ip: &str) {
+    let key = lockout_key(email, peer_ip);
+    state.login_attempts.remove(&key);
 }
 
 #[instrument(skip(credentials, req), level = "debug")]
@@ -285,7 +295,7 @@ pub async fn jwt_validator(
             ));
         }
     };
-    let jwt_secret = &state.jwtsecret;
+    let jwt_secret = state.jwtsecret.expose_secret();
     let claims = verify_jwt(credentials.token(), jwt_secret);
     if let Ok(c) = claims {
         // Only accept access tokens for API endpoints
@@ -354,7 +364,7 @@ pub async fn refresh_validator(
             ));
         }
     };
-    let jwt_secret = &state.jwtsecret;
+    let jwt_secret = state.jwtsecret.expose_secret();
     let claims = verify_jwt(credentials.token(), jwt_secret);
     if let Ok(c) = claims {
         // Only accept refresh tokens
@@ -431,9 +441,13 @@ pub async fn basic_validator(
             ));
         }
     };
+    let peer_ip = req
+        .peer_addr()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
     // Check account lockout before processing credentials
-    if is_account_locked(state, credentials.user_id()) {
-        warn!(user = %credentials.user_id(), "Account temporarily locked due to too many failed login attempts");
+    if is_account_locked(state, credentials.user_id(), &peer_ip) {
+        warn!(user = %credentials.user_id(), peer = %peer_ip, "Account temporarily locked due to too many failed login attempts");
         return Err((
             actix_web::error::ErrorTooManyRequests(ErrorResponse {
                 error: "Account temporarily locked due to too many failed login attempts. Try again later.".to_string(),
@@ -514,7 +528,7 @@ pub async fn basic_validator(
                     })
                     .await;
                     warn!(user = %credentials.user_id(), "Unknown user attempted authentication");
-                    record_failed_attempt(state, credentials.user_id());
+                    record_failed_attempt(state, credentials.user_id(), &peer_ip);
                     return Err((
                         actix_web::error::ErrorUnauthorized(ErrorResponse {
                             error: "Unauthorized access".to_string(),
@@ -548,11 +562,11 @@ pub async fn basic_validator(
         .await
         .unwrap_or(false);
         if verify_result {
-            clear_failed_attempts(state, credentials.user_id());
+            clear_failed_attempts(state, credentials.user_id(), &peer_ip);
             Ok(req)
         } else {
             warn!(user = %credentials.user_id(), "Invalid password for user");
-            record_failed_attempt(state, credentials.user_id());
+            record_failed_attempt(state, credentials.user_id(), &peer_ip);
             Err((
                 actix_web::error::ErrorUnauthorized(ErrorResponse {
                     error: "Unauthorized access".to_string(),
@@ -562,7 +576,7 @@ pub async fn basic_validator(
         }
     } else {
         warn!(user = %credentials.user_id(), "Missing password in basic auth");
-        record_failed_attempt(state, credentials.user_id());
+        record_failed_attempt(state, credentials.user_id(), &peer_ip);
         Err((
             actix_web::error::ErrorUnauthorized(ErrorResponse {
                 error: "Unauthorized access".to_string(),
@@ -587,7 +601,7 @@ mod tests {
             .expect("dummy pool");
         Data::new(State {
             pool,
-            jwtsecret: TEST_SECRET.to_string(),
+            jwtsecret: secrecy::SecretString::from(TEST_SECRET.to_string()),
             cache: dashmap::DashMap::new(),
             token_blacklist: dashmap::DashMap::new(),
             login_attempts: dashmap::DashMap::new(),
@@ -802,16 +816,18 @@ mod tests {
 
     // -- Account lockout --
 
+    const TEST_IP: &str = "127.0.0.1";
+
     #[test]
     fn is_account_locked_below_threshold() {
         let state = test_state();
         let email = "test@example.com";
         // Record LOCKOUT_THRESHOLD - 1 failures — account should NOT be locked
         for _ in 0..LOCKOUT_THRESHOLD - 1 {
-            record_failed_attempt(&state, email);
+            record_failed_attempt(&state, email, TEST_IP);
         }
         assert!(
-            !is_account_locked(&state, email),
+            !is_account_locked(&state, email, TEST_IP),
             "Account should not be locked below threshold"
         );
     }
@@ -821,10 +837,10 @@ mod tests {
         let state = test_state();
         let email = "test@example.com";
         for _ in 0..LOCKOUT_THRESHOLD {
-            record_failed_attempt(&state, email);
+            record_failed_attempt(&state, email, TEST_IP);
         }
         assert!(
-            is_account_locked(&state, email),
+            is_account_locked(&state, email, TEST_IP),
             "Account should be locked at threshold"
         );
     }
@@ -834,12 +850,12 @@ mod tests {
         let state = test_state();
         let email = "test@example.com";
         for _ in 0..LOCKOUT_THRESHOLD {
-            record_failed_attempt(&state, email);
+            record_failed_attempt(&state, email, TEST_IP);
         }
-        assert!(is_account_locked(&state, email));
-        clear_failed_attempts(&state, email);
+        assert!(is_account_locked(&state, email, TEST_IP));
+        clear_failed_attempts(&state, email, TEST_IP);
         assert!(
-            !is_account_locked(&state, email),
+            !is_account_locked(&state, email, TEST_IP),
             "Account should be unlocked after clearing attempts"
         );
     }
@@ -851,29 +867,35 @@ mod tests {
         // Insert attempts with timestamps outside the lockout window
         let old_time =
             Utc::now() - Duration::try_seconds(LOCKOUT_WINDOW_SECONDS + 1).expect("valid duration");
+        let key = lockout_key(email, TEST_IP);
         state
             .login_attempts
-            .entry(email.to_string())
+            .entry(key)
             .or_default()
             .extend(vec![old_time; LOCKOUT_THRESHOLD]);
         assert!(
-            !is_account_locked(&state, email),
+            !is_account_locked(&state, email, TEST_IP),
             "Expired attempts should not trigger lockout"
         );
     }
 
     #[test]
-    fn lockout_is_per_email() {
+    fn lockout_is_per_email_and_ip() {
         let state = test_state();
         let email_a = "a@example.com";
         let email_b = "b@example.com";
         for _ in 0..LOCKOUT_THRESHOLD {
-            record_failed_attempt(&state, email_a);
+            record_failed_attempt(&state, email_a, TEST_IP);
         }
-        assert!(is_account_locked(&state, email_a));
+        assert!(is_account_locked(&state, email_a, TEST_IP));
         assert!(
-            !is_account_locked(&state, email_b),
+            !is_account_locked(&state, email_b, TEST_IP),
             "Lockout should be per-email"
+        );
+        // Same email from a different IP should not be locked
+        assert!(
+            !is_account_locked(&state, email_a, "10.0.0.1"),
+            "Lockout should be per-IP"
         );
     }
 

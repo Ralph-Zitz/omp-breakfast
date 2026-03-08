@@ -1373,3 +1373,107 @@ pub fn install_mock_fetch_with_user_crud() {
     );
     js_sys::eval(&js).expect("install_mock_fetch_with_user_crud failed");
 }
+
+/// Install a mock that extends `install_mock_fetch_full` by also handling
+/// write operations: PUT /api/v1.0/users/* (profile save), POST/DELETE
+/// /api/v1.0/roles, and DELETE /api/v1.0/users/*.
+pub fn install_mock_fetch_with_write_ops() {
+    let token = mock_token("12345678-1234-1234-1234-1234567890ab");
+    let js = format!(
+        r#"(() => {{
+            window.__original_fetch = window.fetch;
+            window.fetch = function(input, init) {{
+                var url = (typeof input === 'string') ? input : input.url;
+                var method = 'GET';
+                if (init && init.method) {{ method = init.method; }}
+                else if (typeof input !== 'string' && input.method) {{ method = input.method; }}
+
+                if (url.endsWith('/health')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"up":true,"setup_required":false}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.endsWith('/auth') && method === 'POST' && !url.includes('/refresh')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{access_token:"{token}",refresh_token:"mock_refresh",token_type:"Bearer",expires_in:900}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.includes('/auth/revoke')) {{
+                    return Promise.resolve(new Response(JSON.stringify({{}}),{{status:200,headers:{{"Content-Type":"application/json"}}}}));
+                }}
+                // PUT /api/v1.0/users/* (profile save or admin edit)
+                if (url.match(/\/api\/v1\.0\/users\/[^/]+$/) && method === 'PUT') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"user_id":"12345678-1234-1234-1234-1234567890ab","firstname":"John","lastname":"Doe","email":"john@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                // DELETE /api/v1.0/users/*
+                if (url.match(/\/api\/v1\.0\/users\/[^/]+$/) && method === 'DELETE') {{
+                    return Promise.resolve(new Response(null,{{status:204}}));
+                }}
+                // POST /api/v1.0/roles
+                if (url.split('?')[0].endsWith('/api/v1.0/roles') && method === 'POST') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"role_id":"dddd4444-0000-0000-0000-000000000099","title":"New Role","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}),
+                        {{status:201,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                // GET endpoints (same as install_mock_fetch_full)
+                if (url.includes('/api/v1.0/users/') && url.endsWith('/teams')) {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[{{"team_id":"aaaaaaaa-1234-1234-1234-1234567890ab","tname":"Core Team","title":"Admin","firstname":"John","lastname":"Doe","joined":"2025-01-01T00:00:00Z","role_changed":"2025-01-01T00:00:00Z"}}],"total":1,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.match(/\/api\/v1\.0\/users\/[^/]+$/) && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"user_id":"12345678-1234-1234-1234-1234567890ab","firstname":"John","lastname":"Doe","email":"john@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.split('?')[0].endsWith('/api/v1.0/users') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[{{"user_id":"12345678-1234-1234-1234-1234567890ab","firstname":"John","lastname":"Doe","email":"john@example.com","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}],"total":1,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.match(/\/api\/v1\.0\/teams\/[^/]+\/users/) && method === 'GET') {{
+                    return Promise.resolve(new Response(JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),{{status:200,headers:{{"Content-Type":"application/json"}}}}));
+                }}
+                if (url.match(/\/api\/v1\.0\/teams\/[^/]+\/orders\/[^/]+\/items/) && method === 'GET') {{
+                    return Promise.resolve(new Response(JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),{{status:200,headers:{{"Content-Type":"application/json"}}}}));
+                }}
+                if (url.match(/\/api\/v1\.0\/teams\/[^/]+\/orders/) && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[],"total":0,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.split('?')[0].endsWith('/api/v1.0/teams') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[{{"team_id":"bbbb2222-0000-0000-0000-000000000001","tname":"Core Team","descr":"The core breakfast team","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}],"total":1,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.split('?')[0].endsWith('/api/v1.0/items') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[{{"item_id":"cccc3333-0000-0000-0000-000000000001","descr":"Croissant","price":"25.00","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}],"total":1,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                if (url.split('?')[0].endsWith('/api/v1.0/roles') && method === 'GET') {{
+                    return Promise.resolve(new Response(
+                        JSON.stringify({{"items":[{{"role_id":"dddd4444-0000-0000-0000-000000000001","title":"Admin","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}},{{"role_id":"dddd4444-0000-0000-0000-000000000002","title":"Member","created":"2025-01-01T00:00:00Z","changed":"2025-01-01T00:00:00Z"}}],"total":2,"limit":50,"offset":0}}),
+                        {{status:200,headers:{{"Content-Type":"application/json"}}}}
+                    ));
+                }}
+                return Promise.resolve(new Response("Not Found", {{status:404}}));
+            }};
+        }})()"#,
+        token = token
+    );
+    js_sys::eval(&js).expect("install_mock_fetch_with_write_ops failed");
+}

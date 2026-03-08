@@ -1,6 +1,6 @@
 # Assessment Findings
 
-Last assessed: 2026-03-07
+Last assessed: 2026-03-08
 
 This file is **generated and maintained by the project assessment process** defined in `CLAUDE.md` § "Project Assessment". Each time `assess the project` is run, findings of all severities (critical, important, minor, and informational) are written here. The `/resume-assessment` command reads this file in future sessions to continue work.
 
@@ -26,84 +26,7 @@ _No open minor items._
 
 ## Informational Items
 
-### Security — Account Lockout Enables DoS Against Any User
-
-- [ ] **#687 — Lockout is per-email only with no IP component — any unauthenticated attacker can lock any account**
-  - File: `src/middleware/auth.rs` (~line 232–257)
-  - Problem: An attacker who knows a valid email can send 5 incorrect login attempts to lock that account for 15 minutes. `actix-governor` rate-limits per-IP, but the lockout itself is per-email from any IP.
-  - Note: In a small team deployment (FabuLab internal), the risk is lower. Consider combining lockout key with client IP, or implementing CAPTCHA after N failures.
-  - Source commands: `security-audit`
-
-### Security — `login_attempts` DashMap Grows Unbounded
-
-- [ ] **#688 — Unlike `token_blacklist`, no periodic cleanup task for stale login attempt entries**
-  - File: `src/middleware/auth.rs` (~line 247–257), `src/models.rs` (~line 117)
-  - Problem: Old entries are only pruned when that specific email is checked again. Entries for targeted unique emails accumulate indefinitely.
-  - Note: Add a periodic background task (similar to `spawn_token_cleanup_task`) to sweep stale entries, or add a max-size eviction policy.
-  - Source commands: `security-audit`
-
-### Security — JWT Secret Stored as Plain String
-
-- [ ] **#689 — JWT secret in `State.jwtsecret` is a plain `String` — no zeroization on drop**
-  - File: `src/models.rs` (~line 113)
-  - Note: Consider `secrecy::SecretString` for zeroization on drop and `Debug` as `[REDACTED]`. Low priority — requires core dump access to exploit.
-  - Source commands: `security-audit`
-
-### Security — Swagger UI Enabled by Default on Non-Production
-
-- [ ] **#690 — If a non-production environment is publicly accessible, full OpenAPI spec is exposed**
-  - File: `src/routes.rs` (~line 29–32)
-  - Note: The `ENABLE_SWAGGER` env var override exists, but default-on for non-production is the concern. Consider defaulting to off and requiring explicit opt-in.
-  - Source commands: `security-audit`
-
-### Database — No CHECK Constraints on `avatars` Text Columns
-
-- [ ] **#691 — `name` and `content_type` columns have no length constraints**
-  - File: `migrations/V8__avatars.sql`
-  - Note: Low risk — avatars are only seeded from `minifigs/` at startup, not user-provided. Add `CHECK (char_length(name) <= 255)` and `CHECK (char_length(content_type) <= 100)` for consistency.
-  - Source commands: `db-review`
-
-### Database — `orders.orders_team_id` CASCADE Creates Redundant Deletion Path
-
-- [ ] **#692 — Two independent CASCADE paths from `teams` to `orders` exist**
-  - File: `migrations/V1__initial_schema.sql`
-  - Note: PostgreSQL handles this correctly, but it makes deletion behavior harder to audit. Moot if #670 is addressed.
-  - Source commands: `db-review`
-
-### Testing — Duplicate Role Creation at API Level Not Tested
-
-- [ ] **#693 — DB test exists for duplicate role, but no API test verifies 409 through HTTP stack**
-  - File: `tests/api_roles.rs`
-  - Fix: Create role "TestRole", then create "TestRole" again → assert 409 Conflict.
-  - Source commands: `test-gaps`
-
-### Testing — Pickup User RBAC Edge Cases Not Fully Covered
-
-- [ ] **#694 — Admin changing pickup user, clearing pickup user (`null`) not tested**
-  - File: `tests/api_orders.rs`
-  - Fix: Test admin can change existing pickup user. Test admin can clear pickup user with `pickup_user_id: null`.
-  - Source commands: `test-gaps`
-
-### Testing — Delete Role/Item Referenced by Existing Records Not Tested at API Level
-
-- [ ] **#695 — FK constraint 409 responses not tested through HTTP stack**
-  - File: `tests/api_roles.rs`, `tests/api_items.rs`
-  - Fix: Create role + assign to member, delete role → assert 409. Create item + add to order, delete item → assert 409.
-  - Source commands: `test-gaps`
-
-### Testing — Profile Page Form Submission Not Tested in WASM
-
-- [ ] **#696 — Edit/save profile and password-change flow have no WASM tests**
-  - File: `frontend/src/pages/profile.rs`, `frontend/tests/ui_pages.rs`
-  - Fix: Test edit-mode submit (PUT), password change flow (current password → new password → confirm), error states.
-  - Source commands: `test-gaps`
-
-### Testing — Admin/Roles Page CRUD Submission Flows Not Tested in WASM
-
-- [ ] **#697 — Dialog fields tested but submit success/error paths not tested**
-  - File: `frontend/src/pages/admin.rs`, `frontend/src/pages/roles.rs`, `frontend/tests/ui_admin_dialogs.rs`
-  - Fix: Test create-user submit → toast success. Test delete-user confirm modal → toast success. Test create-role submit flow.
-  - Source commands: `test-gaps`
+_No open informational items._
 
 ## Completed Items
 
@@ -115,9 +38,9 @@ See that file for the full history of resolved findings.
 - **CONNECT Design System:** `git pull` on 2026-03-07 reported "Already up to date." No migration needed.
 - **`cargo audit`:** Clean — 0 vulnerabilities in 437 dependencies.
 - **`cargo fmt --all --check`:** Passes clean.
-- **Test counts verified (2026-03-07):** 248 unit (226 lib + 22 healthcheck), 171 API integration (ignored), 120 DB integration (ignored), 93 WASM.
-- Open items summary: 0 critical, 0 important, 0 minor, 11 informational.
-- 31 new findings in this session: #667–#697.
+- **Test counts verified (2026-03-08):** 248 unit (226 lib + 22 healthcheck), 175 API integration (ignored), 120 DB integration (ignored), 97 WASM.
+- Open items summary: 0 critical, 0 important, 0 minor, 0 informational.
+- 31 new findings in this session: #667–#697. All resolved.
 - Highest finding number: #697.
 - **0 regressions** — all 517 previously resolved items cross-checked, none regressed.
 - **False positives discarded:** Avatar cache clone (#638), frontend `expect_context` panics, hardcoded role strings in frontend, Duration::expect() safety, TOCTOU on `guard_last_admin_membership` (resolved in #643).

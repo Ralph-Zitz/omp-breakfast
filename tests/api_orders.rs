@@ -2762,6 +2762,68 @@ async fn member_can_set_pickup_when_unassigned() {
 }
 
 // ---------------------------------------------------------------------------
+// Admin clears assigned pickup user (#694)
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+#[ignore]
+async fn admin_can_clear_assigned_pickup_user() {
+    let state = test_state().await;
+    let app = test_app!(state);
+    let admin_auth: Auth = register_admin(&app).await;
+    let admin_token = &admin_auth.access_token;
+
+    let suffix = Uuid::now_v7();
+    let team_id = create_test_team(&app, admin_token, &format!("PickupClr-{suffix}")).await;
+    let admin_user_id = admin_user_id_from_token(admin_token);
+
+    // Add admin to the team
+    let admin_role_id = find_role_id(&app, admin_token, "Admin").await;
+    add_member(&app, admin_token, &team_id, &admin_user_id, &admin_role_id).await;
+
+    // Create order with pickup_user_id set
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1.0/teams/{}/orders", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({"pickup_user_id": admin_user_id}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let order: Value = test::read_body_json(resp).await;
+    let order_id = order["teamorders_id"].as_str().unwrap().to_string();
+    assert!(
+        order["pickup_user_id"].as_str().is_some(),
+        "pickup should be set"
+    );
+
+    // Admin clears pickup by sending null
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .set_json(json!({"pickup_user_id": null}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "admin should be able to clear pickup");
+    let updated: Value = test::read_body_json(resp).await;
+    assert!(
+        updated["pickup_user_id"].is_null(),
+        "pickup_user_id should be null after clearing"
+    );
+
+    // Cleanup
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}/orders/{}", team_id, order_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1.0/teams/{}", team_id))
+        .insert_header(("Authorization", format!("Bearer {}", admin_token)))
+        .to_request();
+    test::call_service(&app, req).await;
+}
+
+// ---------------------------------------------------------------------------
 // Due date cannot be in the past
 // ---------------------------------------------------------------------------
 

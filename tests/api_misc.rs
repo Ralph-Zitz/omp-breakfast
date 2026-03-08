@@ -45,7 +45,7 @@ async fn health_returns_503_when_db_unreachable() {
         .expect("pool creation should succeed");
     let state = Data::new(State {
         pool,
-        jwtsecret: "test".to_string(),
+        jwtsecret: secrecy::SecretString::from("test".to_string()),
         cache: dashmap::DashMap::new(),
         token_blacklist: dashmap::DashMap::new(),
         login_attempts: dashmap::DashMap::new(),

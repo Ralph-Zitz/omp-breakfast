@@ -574,7 +574,9 @@ async fn lockout_lifecycle_5_failures_then_429_then_success_clears() {
     );
 
     // 3. Clear lockout by directly manipulating state (simulates window expiry)
-    state.login_attempts.remove(&test_email);
+    state
+        .login_attempts
+        .remove(&format!("{}:{}", test_email, PEER.ip()));
 
     // 4. Correct password should now succeed
     let req = test::TestRequest::post()

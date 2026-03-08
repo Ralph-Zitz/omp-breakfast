@@ -698,6 +698,91 @@ async fn test_profile_page_cancel_exits_edit_mode() {
     restore_fetch();
 }
 
+// ── #696 · Profile page form submission ─────────────────────────────────────
+
+#[wasm_bindgen_test]
+async fn test_profile_page_save_triggers_put_and_exits_edit() {
+    let id = "t-profile-save";
+    clear_tokens();
+    install_mock_fetch_with_write_ops();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Profile");
+    flush(500).await;
+
+    // Enter edit mode
+    click_button_text(id, "Edit");
+    flush(300).await;
+    assert!(has_element(id, "#profile-fn"), "should be in edit mode");
+
+    // Modify a field
+    set_input(id, "#profile-fn", "Johnny");
+    flush(100).await;
+
+    // Click Save
+    click_button_text(id, "Save");
+    flush(500).await;
+
+    // Should exit edit mode after successful save
+    assert!(
+        !has_element(id, "#profile-fn"),
+        "should exit edit mode after successful save"
+    );
+    // Toast should appear
+    let html = inner_html(id);
+    assert!(
+        html.contains("Profile updated") || html.contains("toast"),
+        "success toast should appear after save"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
+#[wasm_bindgen_test]
+async fn test_profile_page_password_change_requires_current_password() {
+    let id = "t-profile-pwreq";
+    clear_tokens();
+    install_mock_fetch_with_write_ops();
+    let container = create_test_container(id);
+    let _handle = leptos::mount::mount_to(container.clone(), app::App);
+    flush(100).await;
+    login_to_dashboard(id).await;
+    click_nav(id, "Profile");
+    flush(500).await;
+
+    // Enter edit mode
+    click_button_text(id, "Edit");
+    flush(300).await;
+
+    // Type a new password — current password field should appear
+    set_input(id, "#profile-pw", "newpassword123");
+    flush(200).await;
+    assert!(
+        has_element(id, "#profile-curpw"),
+        "current password field should appear"
+    );
+
+    // Fill current password and save
+    set_input(id, "#profile-curpw", "oldpassword123");
+    flush(100).await;
+    click_button_text(id, "Save");
+    flush(500).await;
+
+    // Should exit edit mode after successful save
+    assert!(
+        !has_element(id, "#profile-fn"),
+        "should exit edit mode after password change save"
+    );
+
+    remove_test_container(id);
+    clear_tokens();
+    restore_fetch();
+}
+
 // ── #684 · TeamsPage CRUD interactions ──────────────────────────────────────
 
 #[wasm_bindgen_test]

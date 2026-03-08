@@ -1,12 +1,26 @@
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use deadpool_postgres::Pool;
-use serde::{Deserialize, Serialize};
+use secrecy::SecretString;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::{fmt, fmt::Display, sync::Arc};
 
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
+
+/// Deserializer that distinguishes between a JSON field being absent vs `null`.
+///
+/// - Field absent (with `#[serde(default)]`) → `None`
+/// - `"field": null`                         → `Some(None)`
+/// - `"field": <value>`                      → `Some(Some(value))`
+fn deserialize_optional<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    Ok(Some(Option::deserialize(deserializer)?))
+}
 
 // ── Pagination ──────────────────────────────────────────────────────────────
 
@@ -107,7 +121,7 @@ pub struct CachedUser {
 #[derive(Debug)]
 pub struct State {
     pub pool: Pool,
-    pub jwtsecret: String,
+    pub jwtsecret: SecretString,
     pub cache: DashMap<String, CachedUser>,
     /// Revoked token JTIs mapped to their original expiry time.
     /// Entries are evicted by the background cleanup task once expired.
@@ -404,13 +418,21 @@ pub struct UpdateTeamOrderEntry {
     /// `None` = field absent (preserve existing value).
     /// `Some(None)` = explicitly set to null (clear the due date).
     /// `Some(Some(date))` = update to the given date.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional"
+    )]
     pub duedate: Option<Option<chrono::NaiveDate>>,
     pub closed: Option<bool>,
     /// `None` = field absent (preserve existing value).
     /// `Some(None)` = explicitly clear the pickup user.
     /// `Some(Some(id))` = assign a new pickup user.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional"
+    )]
     pub pickup_user_id: Option<Option<Uuid>>,
 }
 
