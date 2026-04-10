@@ -84,18 +84,6 @@ Custom frontend components created for OMP Breakfast that are not provided by th
 - **Props:** None
 - **Rationale:** CONNECT provides `.connect-progress-circle` CSS and the `connect-progress-circle--indeterminate` modifier, but not a Leptos component wrapper. This component wraps the CONNECT markup in a reusable `#[component]` so pages don't repeat the SVG structure.
 
-## PaginationBar
-
-- **File:** `frontend/src/components/mod.rs`
-- **Purpose:** Prev/Next pagination control showing "X–Y of N" item count. Renders only when total items exceed the page limit.
-- **Props:**
-  - `offset: ReadSignal<usize>` — current zero-based page offset
-  - `limit: usize` — items per page
-  - `total: ReadSignal<usize>` — total item count from API response
-  - `on_prev: impl Fn(usize)` — callback receiving the new offset when Prev is clicked
-  - `on_next: impl Fn(usize)` — callback receiving the new offset when Next is clicked
-- **Rationale:** CONNECT does not provide a pagination component. Uses CONNECT button styles (`.connect-button--neutral`, `.connect-button--outline`, `.connect-button--small`) and DS spacing tokens for layout.
-
 ## FormDialog
 
 - **File:** `frontend/src/components/modal.rs`

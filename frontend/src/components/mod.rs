@@ -43,10 +43,8 @@ pub fn LoadingSpinner() -> impl IntoView {
     }
 }
 
-/// Pagination bar: shows "Showing X-Y of N" + prev/next buttons.
-/// `offset` and `limit` are the current slice parameters.
-/// `total` is the total item count from the API response.
-/// `on_prev` / `on_next` receive the new offset value.
+/// Pagination bar: shows "Prev / X–Y of N / Next" using CONNECT pagination classes.
+/// Renders nothing when all items fit on one page.
 #[component]
 pub fn PaginationBar(
     offset: ReadSignal<usize>,
@@ -69,29 +67,25 @@ pub fn PaginationBar(
             let on_prev2 = on_prev.clone();
             let on_next2 = on_next.clone();
             view! {
-                <div class="pagination-bar" style="display: flex; align-items: center; gap: var(--ds-layout-spacing-200, 8px); margin-top: var(--ds-layout-spacing-200, 12px);">
+                <nav class="connect-pagination connect-pagination--with-labels" style="margin-top: var(--ds-layout-spacing-200);">
                     <button
-                        class="connect-button connect-button--neutral connect-button--outline connect-button--small"
+                        class="connect-pagination__arrow-button connect-pagination__arrow-button--labelled"
                         disabled=!has_prev
                         on:click=move |_| on_prev2(off.saturating_sub(limit))
                     >
-                        <span class="connect-button__content">
-                            <span class="connect-button__label">"← Prev"</span>
-                        </span>
+                        <span>"← Prev"</span>
                     </button>
-                    <span class="text-muted" style="font-size: var(--ds-typo-font-size-075, 12px);">
+                    <span style="font-size: var(--ds-typo-font-size-075); color: var(--ds-color-content-muted); white-space: nowrap;">
                         {format!("{start}–{end} of {tot}")}
                     </span>
                     <button
-                        class="connect-button connect-button--neutral connect-button--outline connect-button--small"
+                        class="connect-pagination__arrow-button connect-pagination__arrow-button--labelled"
                         disabled=!has_next
                         on:click=move |_| on_next2(off + limit)
                     >
-                        <span class="connect-button__content">
-                            <span class="connect-button__label">"Next →"</span>
-                        </span>
+                        <span>"Next →"</span>
                     </button>
-                </div>
+                </nav>
             }.into_any()
         }}
     }

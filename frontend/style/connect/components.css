@@ -43,6 +43,7 @@
 @import '../../../connect-design-system/packages/connect-components-styles/css/components/menu-item/menu-item.module.css';
 @import '../../../connect-design-system/packages/connect-components-styles/css/components/menu-section/menu-section.module.css';
 @import '../../../connect-design-system/packages/connect-components-styles/css/components/overlay/overlay.module.css';
+@import '../../../connect-design-system/packages/connect-components-styles/css/components/pagination/pagination.module.css';
 @import '../../../connect-design-system/packages/connect-components-styles/css/components/popover/popover.module.css';
 @import '../../../connect-design-system/packages/connect-components-styles/css/components/progress-circle/progress-circle.module.css';
 @import '../../../connect-design-system/packages/connect-components-styles/css/components/radio-button/radio-button.module.css';
